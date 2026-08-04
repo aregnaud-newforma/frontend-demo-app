@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Vitest Browser Mode. Screenshots on failure are off by choice (see
+# vitest.config.ts), but the runner still writes attachments when it has any.
+__screenshots__/
+.vitest-attachments/
+
+# Coverage
+coverage/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Local env files. None are used today; here so the first one added is not
+# committed by accident.
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+# .vscode is deliberately NOT ignored: settings.json pins the oxfmt formatter
+# and extensions.json recommends the Oxc extension, both of which are part of
+# how this repo is meant to be used.
+.idea/
+*.swp
+.DS_Store

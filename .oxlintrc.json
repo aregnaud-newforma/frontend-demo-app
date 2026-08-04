@@ -1,0 +1,65 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+
+  // Setting `plugins` REPLACES the default set, so this list is the whole set.
+  // react-perf is deliberately absent: it flags every inline handler and every
+  // `style={{...}}`, which is exactly what babel-plugin-react-compiler exists to
+  // memoize (see vite.config.ts). A linter arguing with the compiler is noise.
+  "plugins": ["typescript", "unicorn", "oxc", "react", "jsx-a11y", "import", "promise"],
+
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+
+  "env": { "browser": true, "es2024": true },
+
+  "rules": {
+    // The automatic JSX runtime ("jsx": "react-jsx" in tsconfig.json) means no
+    // component imports React, and this rule predates it.
+    "react/react-in-jsx-scope": "off",
+
+    // Would have us write the loading message as <output> because that tag
+    // carries role="status" implicitly. It does - but <output> is defined as the
+    // result of a calculation, and "Loading your account..." is not one. The
+    // role is on a <p> on purpose; the a11y outcome is identical.
+    "jsx-a11y/prefer-tag-over-role": "off"
+  },
+
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "public/mockServiceWorker.js",
+    "test-results",
+    "playwright-report"
+  ],
+
+  "overrides": [
+    {
+      // Vitest's own rules, only where tests live. `expect-expect` is the one
+      // that earns its place here: a test that drives the app and asserts
+      // nothing passes silently, which is the failure this repo's whole point
+      // depends on not happening.
+      "files": ["**/__tests__/**", "e2e/**", "vitest.setup.ts"],
+      "plugins": ["vitest"],
+      "rules": {
+        "vitest/expect-expect": "error",
+        "vitest/no-focused-tests": "error",
+        "vitest/no-disabled-tests": "warn",
+        "vitest/no-identical-title": "error",
+        "vitest/valid-expect": "error",
+
+        // vitest.setup.ts imports vitest-browser-react purely for its side
+        // effects, which is the documented way to install it.
+        "import/no-unassigned-import": "off"
+      }
+    },
+    {
+      // `/// <reference types="vitest/config" />` is how vitest.config.ts gets
+      // its types; there is no import form of it.
+      "files": ["*.config.ts"],
+      "rules": { "typescript/triple-slash-reference": "off" }
+    }
+  ]
+}

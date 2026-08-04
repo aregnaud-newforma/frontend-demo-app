@@ -1,0 +1,5 @@
+{
+  "printWidth": 100,
+  "sortPackageJson": false,
+  "ignorePatterns": ["dist/**", "test-results/**", "public/mockServiceWorker.js"]
+}

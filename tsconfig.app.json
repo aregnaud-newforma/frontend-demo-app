@@ -1,0 +1,27 @@
+{
+  // The SHIPPED app, and only it - the narrowing half of the pair described in
+  // ./tsconfig.json. `yarn build` compiles against this rather than the wide
+  // config, so the bundle is still checked on its own terms: with the test
+  // files out of the program and `types: []` shutting off the ambient vitest
+  // and node declarations, an app file that reached for `expect`, or imported
+  // a mock, or used `process.env`, is an error here even though the editor -
+  // which uses the wide config - would have said nothing.
+  //
+  // Deliberately NOT named tsconfig.*.json by accident: the editor only ever
+  // discovers files named exactly `tsconfig.json`, so this one is reached by
+  // `tsc -p` and nothing else. That is the point - it is a gate, not the
+  // project anyone edits in.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [],
+    "noEmit": true
+  },
+  "include": ["src"],
+  "exclude": [
+    "src/**/__tests__/**",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/mocks/**",
+    "src/testing/**"
+  ]
+}

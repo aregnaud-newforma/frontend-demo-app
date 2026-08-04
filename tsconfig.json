@@ -1,0 +1,54 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "useDefineForClassFields": true,
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    // One namespace per top-level folder in src/. The runtime half of this list
+    // lives in ./alias.ts, which vite.config.ts and vitest.config.ts import;
+    // Playwright reads the mapping straight from here. Keep the two in step.
+    "baseUrl": ".",
+    "paths": {
+      "@account/*": ["src/account/*"],
+      "@home/*": ["src/home/*"],
+      "@layout/*": ["src/layout/*"],
+      "@testing/*": ["src/testing/*"]
+    },
+    // Restricted on purpose: `types` is the ambient half of the program, and
+    // these three are what the tests need. `vitest/browser` is what teaches
+    // TypeScript about `expect.element(...)` and the DOM matchers - without it
+    // every assertion in an integration test is an error on a real API.
+    "types": ["vitest/globals", "vitest/browser", "node"],
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  // EVERY TypeScript file in the repo, deliberately.
+  //
+  // This file used to cover src/ minus the tests, which left the tests, the
+  // e2e specs and the API server belonging to NO project - and a file in no
+  // project is resolved by the editor in an INFERRED one, on default options.
+  // No `baseUrl`/`paths`, so every `@account/...` import reads as a missing
+  // package; no `types`, so `expect.element` is not a function. None of it
+  // showed up in CI either, because `tsc` was never asked to compile those
+  // files: `yarn verify` passed on a program that did not contain them.
+  //
+  // An editor picks a file's project by walking up to the nearest file NAMED
+  // tsconfig.json - `tsconfig.*.json` is invisible to that search, and test
+  // files sit inside src/ next to the app files, so no amount of splitting by
+  // folder can reach them. The one arrangement that does is this: the widest
+  // config is the discoverable one. tsconfig.app.json then narrows BACK DOWN
+  // to the shipped app for the build (see the `build` script), which is the
+  // check the old exclude list was really there to make.
+  "include": ["src", "e2e", "server", "vitest.setup.ts", "alias.ts", "*.config.ts"]
+}
