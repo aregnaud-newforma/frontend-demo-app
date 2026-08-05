@@ -1,17 +1,6 @@
 /**
  * UNIT TEST - best practices
- * - Test pure logic in isolation: no DOM, no network, no mocks needed.
- * - Cover every BRANCH and boundary, not just the happy value. Here: each
- *   separator style, each international prefix, and each failure reason.
- * - Use table-driven cases (it.each) to make the branch matrix explicit and to
- *   keep one assertion idea per row.
- * - Assert on the exact contract (e164 / national / reason), not internals.
- * - Fast and deterministic: hundreds of these should run in milliseconds.
- * - Given/When/Then like the rest of the suite, but note how little room the
- *   format has here: for a pure function the input IS the Given and calling it
- *   IS the When, so the two are written on one line rather than padded apart.
- *   In the table-driven cases the Given is the table itself - which is the
- *   point of it.each, and why these read as one row per scenario.
+ * - Test pure logic in isolation.
  */
 import { parseFrenchPhone, isValidFrenchPhone } from "../phone";
 import { expect, it, describe } from "vitest";
