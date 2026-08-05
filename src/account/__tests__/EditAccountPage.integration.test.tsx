@@ -1,43 +1,8 @@
 /**
  * INTEGRATION TEST - best practices
- * - Runs in a REAL Chromium (Vitest Browser Mode + vitest-browser-react), so
- *   focus, typing, native <select> behaviour and fetch are the browser's own -
- *   no jsdom approximation between the component and the assertion.
- * - Test the page the way a user uses it: query by ROLE and LABEL, drive it
- *   through locators (real CDP input events), never reach into state or call
- *   handlers.
- * - Locators are lazy and retried: `expect.element` keeps re-querying until the
- *   assertion passes, which removes the findBy / waitFor dance and most flake.
- *   That matters twice as much here, where the form only appears after a GET.
- * - Mock the NETWORK at the boundary with MSW, not the fetch function. The page,
- *   validation, payload building and api layer are all exercised for real; only
- *   the server is fake. Because the mock db is stateful, the GET and the PUT are
- *   checked against the same store - a stubbed fetch could fake either half, but
- *   not the fact that they agree.
  * - Cover the happy path of BOTH round trips (load, save) and the edges that
  *   matter for each: a failed load, validation, a failed save, the two
  *   in-flight states.
- * - Assert on user-visible outcomes (values in the fields, the route the save
- *   leads to, disabled button) and on the persisted record.
- * - Seed and build input through the shared factories in mocks/db-utils, never
- *   inline: the test states only the fields it asserts on, and the rest is valid
- *   by construction. Faker keeps the values varied run to run.
- * - One setup function per file (AHA - Avoid Hasty Abstractions) returning the
- *   locators and one action PER FIELD, so each test types only what its
- *   scenario is about. A helper that fills the whole form would hide which
- *   inputs a test actually depends on. The repetition that remains is the price
- *   of that: preferred over an abstraction that decides for the test what it
- *   needs.
- * - A successful save NAVIGATES, so "it saved" is asserted as "we are back on
- *   the account page showing the new value" rather than as a banner. That is
- *   the outcome the user actually gets, and it is why these tests mount the
- *   real route tree (see test/render-route).
- * - Each body is laid out as GIVEN (what is seeded, which handler is
- *   overridden, the form loaded) / WHEN (what the user does) / THEN (what they
- *   can observe), with AND for a second observation - usually the persisted
- *   record, which most of these tests check alongside the visible outcome.
- *   Markers only, no DSL: the locators and assertions are unchanged, so the
- *   phrasing is a reading aid and never something a test is written around.
  */
 import { http, HttpResponse, delay } from "msw";
 import { expect, it, describe } from "vitest";

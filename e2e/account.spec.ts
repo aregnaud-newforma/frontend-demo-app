@@ -2,35 +2,7 @@
  * E2E TEST (Playwright) - best practices
  * - Cover the HAPPY PATH only at this level. E2E is slow and expensive; it exists
  *   to prove the whole flow wires together, not to enumerate edge cases (those
- *   live in the integration and unit tests). Here that flow is
- *   arrive-navigate-read-edit-save-return, because a form that loads its own
- *   data is only really proven end to end when both round trips happen in order
- *   - and because the routing between the three pages is a wire only this level
- *   can check. The integration tests mount the route tree over a memory history,
- *   so they prove the pages CAN reach each other; only this level proves they do
- *   so in a real browser, over real URLs, against the production build.
- * - Drive the real browser through the real production build (see webServer in
- *   playwright.config.ts).
- * - Query by accessible role/label (getByRole/getByLabel), the same way the
- *   integration test does, so selectors survive refactors and assert a11y.
- * - Use web-first assertions (expect(locator).toBeVisible()) which auto-wait; no
- *   manual sleeps.
- * - Stub NOTHING. This is the tier that exists to prove the pieces agree when
- *   nothing is standing in for anything, so the specs run against the real API
- *   in server/api.ts, in its own process, over real HTTP. The other tiers mock
- *   the network deliberately; if this one did too, no test in the repo would
- *   ever catch the frontend and the backend disagreeing.
- * - Assert against what the SERVER stored, read back out of it at the end,
- *   rather than against a variable this process filled in. That is the whole
- *   round trip - request, storage, response - rather than the half of it that
- *   left the browser.
- * - Reuse the SAME test-data factories as the integration tests (@account/mocks/db-utils),
- *   so "what a valid account looks like" is defined once for the whole pyramid.
- * - Laid out as GIVEN / WHEN / THEN like the integration tests, with one
- *   difference that is the point of this level: it is a JOURNEY, so it runs
- *   four When/Then pairs in sequence rather than one. Each Then is also the
- *   Given of the step that follows - being on the summary is what makes the
- *   edit link clickable - which is exactly the ordering E2E exists to prove.
+ *   live in the integration and unit tests).
  */
 import { test, expect, type Page } from "@playwright/test";
 import { createUser, createFrenchPhone } from "@account/mocks/db-utils";

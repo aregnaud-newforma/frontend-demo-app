@@ -1,24 +1,8 @@
 /**
  * INTEGRATION TEST - the read-only route.
  *
- * Same rules as EditAccountPage.integration.test.tsx: a real Chromium, MSW at
- * the network boundary, queries by role and text rather than by structure.
- *
- * Short on purpose. The page has one interaction, so what is worth proving is
- * what the edit route's tests cannot show: that it formats the phone the same
- * way, says something when an optional field is empty, and fails the same way -
- * the places a second view of one record drifts from the first.
- *
- * The failed load is here rather than assumed because the two pages hold their
- * own copies of that branch (they share the QUERY, through `useAccount`, not
- * the markup). Duplicated markup that only one page tests is duplicated markup
- * that quietly stops matching.
- *
- * Each test body is laid out as GIVEN (the state of the world: what is seeded,
- * which handler is overridden) / WHEN (what the user does - opening the route
- * counts) / THEN (what they can observe). Markers only, no DSL: the locators
- * and the assertions stay exactly as they were, so the phrasing is a reading
- * aid and never something the test has to be written around.
+ * Best practices
+ * - Cover the happy path of the page and edges cases.
  */
 import { http, HttpResponse } from "msw";
 import { expect, it, describe } from "vitest";

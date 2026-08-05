@@ -1,27 +1,8 @@
 /**
- * E2E TEST (Playwright) - the landing route.
- *
- * The welcome is already crossed in account.spec.ts, which arrives at "/" before
- * navigating on. So this file only earns its cost by asserting things that spec
- * does not, and that no cheaper level CAN:
- *
- * - "/" is served at all. The integration tests mount the route tree over a
- *   MEMORY history, so they never ask a server for a URL; whether the built
- *   bundle is actually reachable at the root of a real origin is a claim only
- *   this level makes.
- * - The landing page costs zero round trips. Nothing on it queries, and that is
- *   a property worth pinning: the cheapest way for it to regress is a hook added
- *   to the shell, which every integration test would happily keep passing
- *   against a mocked backend. Here it shows up as a request that should not
- *   exist.
- * - The BACK BUTTON works. TanStack Router pushes real history entries, and a
- *   memory history cannot prove the browser's own back and forward agree with
- *   them - this is the classic SPA-router bug that only ever appears in a real
- *   browser.
- *
- * Same rules as account.spec.ts otherwise: the production build, queries by
- * accessible role, web-first assertions, the shared factories from
- * @account/mocks/db-utils, and GIVEN / WHEN / THEN.
+ * E2E TEST (Playwright) - best practices
+ * - Cover the HAPPY PATH only at this level. E2E is slow and expensive; it exists
+ *   to prove the whole flow wires together, not to enumerate edge cases (those
+ *   live in the integration and unit tests).
  */
 import { test, expect, type Page } from "@playwright/test";
 import { createUser } from "@account/mocks/db-utils";
