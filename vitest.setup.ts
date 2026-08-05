@@ -7,6 +7,10 @@
 // tree *before* each test rather than after, so the last render stays on screen
 // in the Browser UI for inspection.
 import "vitest-browser-react";
+// The app's stylesheet, so a component under test is laid out the way it ships
+// rather than as unstyled markup. main.tsx is not involved in these tests, so
+// nothing else would pull it in.
+import "./src/global.css";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { worker } from "@testing/worker";
 import { accounts } from "@account/mocks/db";

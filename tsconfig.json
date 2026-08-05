@@ -9,18 +9,24 @@
     // One namespace per top-level folder in src/. The runtime half of this list
     // lives in ./alias.ts, which vite.config.ts and vitest.config.ts import;
     // Playwright reads the mapping straight from here. Keep the two in step.
-    "baseUrl": ".",
+    //
+    // Written relative, with no `baseUrl`: TypeScript 7 removed that option, and
+    // a non-relative target is now an error. `./` is resolved against this file,
+    // which is what `baseUrl: "."` used to mean anyway.
     "paths": {
-      "@account/*": ["src/account/*"],
-      "@home/*": ["src/home/*"],
-      "@layout/*": ["src/layout/*"],
-      "@testing/*": ["src/testing/*"]
+      "@account/*": ["./src/account/*"],
+      "@home/*": ["./src/home/*"],
+      "@layout/*": ["./src/layout/*"],
+      "@testing/*": ["./src/testing/*"]
     },
     // Restricted on purpose: `types` is the ambient half of the program, and
-    // these three are what the tests need. `vitest/browser` is what teaches
+    // these are what the code needs. `vitest/browser` is what teaches
     // TypeScript about `expect.element(...)` and the DOM matchers - without it
     // every assertion in an integration test is an error on a real API.
-    "types": ["vitest/globals", "vitest/browser", "node"],
+    // `vite/client` declares the asset modules, so `import "./global.css"` has
+    // something to resolve to - TypeScript 7 rejects a side-effect import of a
+    // module it knows nothing about, where 5 let it pass.
+    "types": ["vitest/globals", "vitest/browser", "node", "vite/client"],
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -50,5 +56,5 @@
   // config is the discoverable one. tsconfig.app.json then narrows BACK DOWN
   // to the shipped app for the build (see the `build` script), which is the
   // check the old exclude list was really there to make.
-  "include": ["src", "e2e", "server", "vitest.setup.ts", "alias.ts", "*.config.ts"]
+  "include": ["src", "e2e", "server", "types", "vitest.setup.ts", "alias.ts", "*.config.ts"]
 }

@@ -1,4 +1,6 @@
+import * as stylex from "@stylexjs/stylex";
 import type { AnyFieldApi } from "@tanstack/react-form";
+import { colors, space, text } from "../../tokens.stylex";
 
 /**
  * How a field reports that it is invalid, in two halves that always ship
@@ -45,12 +47,24 @@ export function errorProps(field: AnyFieldApi) {
  * validator may return - so the next form is not forced to validate the way
  * this one happens to.
  */
+const styles = stylex.create({
+  // Colour is not the only signal - the message is text, it is announced by
+  // `role="alert"`, and the input beside it wears `aria-invalid`. The red is
+  // the fourth way of saying it, not the first.
+  message: {
+    margin: 0,
+    marginTop: space.xs,
+    fontSize: text.sm,
+    color: colors.danger,
+  },
+});
+
 export function FieldError({ field }: { field: AnyFieldApi }) {
   const [error] = field.state.meta.errors;
   if (!error) return null;
 
   return (
-    <p id={errorId(field)} role="alert">
+    <p id={errorId(field)} role="alert" {...stylex.props(styles.message)}>
       {typeof error === "string" ? error : error.message}
     </p>
   );

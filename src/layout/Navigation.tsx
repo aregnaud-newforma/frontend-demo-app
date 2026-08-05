@@ -1,4 +1,6 @@
+import * as stylex from "@stylexjs/stylex";
 import { Link } from "@tanstack/react-router";
+import { colors, radius, space, text } from "../tokens.stylex";
 
 /**
  * Where you can go in this app - the one list of destinations, rendered by the
@@ -18,10 +20,51 @@ import { Link } from "@tanstack/react-router";
  * its destinations as props would make that honest, but it is an abstraction
  * built for one caller, which is what the README argues against.
  */
+const styles = stylex.create({
+  nav: {
+    marginBottom: space.xl,
+  },
+  list: {
+    display: "flex",
+    gap: space.xs,
+    listStyle: "none",
+    margin: 0,
+    padding: 0,
+  },
+  link: {
+    display: "inline-block",
+    paddingBlock: space.sm,
+    paddingInline: space.md,
+    borderRadius: radius.sm,
+    fontSize: text.sm,
+    fontWeight: 500,
+    textDecoration: "none",
+    color: { default: colors.textMuted, ":hover": colors.text },
+    backgroundColor: { default: "transparent", ":hover": colors.accentSoft },
+  },
+  // The current page: same box, carrying the accent instead of borrowing it on
+  // hover.
+  linkCurrent: {
+    color: colors.accent,
+    backgroundColor: colors.accentSoft,
+  },
+});
+
+/**
+ * Active and inactive are two separate `stylex.props` calls handed to the
+ * router, rather than one base class plus an "active" class layered on top.
+ * That is StyleX's determinism rule taken seriously: merging inside a single
+ * `props()` call is resolved by argument order, but two class names arriving on
+ * the same element from different places are resolved by CSS source order,
+ * which is the specificity guessing game StyleX exists to remove.
+ */
+const linkProps = stylex.props(styles.link);
+const currentLinkProps = stylex.props(styles.link, styles.linkCurrent);
+
 export function Navigation() {
   return (
-    <nav aria-label="Main">
-      <ul style={{ display: "flex", gap: "1rem", listStyle: "none", padding: 0 }}>
+    <nav aria-label="Main" {...stylex.props(styles.nav)}>
+      <ul {...stylex.props(styles.list)}>
         <li>
           {/*
            * `exact` on both, because the active link is marked `aria-current="page"`
@@ -29,12 +72,22 @@ export function Navigation() {
            * it "/" prefix-matches every route and would announce itself as current
            * everywhere, and "/account" would keep claiming the page on /account/edit.
            */}
-          <Link to="/" activeOptions={{ exact: true }}>
+          <Link
+            to="/"
+            activeOptions={{ exact: true }}
+            activeProps={currentLinkProps}
+            inactiveProps={linkProps}
+          >
             Home
           </Link>
         </li>
         <li>
-          <Link to="/account" activeOptions={{ exact: true }}>
+          <Link
+            to="/account"
+            activeOptions={{ exact: true }}
+            activeProps={currentLinkProps}
+            inactiveProps={linkProps}
+          >
             Your account
           </Link>
         </li>

@@ -13,7 +13,10 @@
   // project anyone edits in.
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": [],
+    // `vite/client` and nothing else: the app genuinely depends on it (it is
+    // what makes `import "./global.css"` resolve), while the vitest and node
+    // declarations stay out - which is the whole point of this config.
+    "types": ["vite/client"],
     "noEmit": true
   },
   "include": ["src"],

@@ -4,6 +4,7 @@ import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import { playwright } from "@vitest/browser-playwright";
 import { alias } from "./alias.ts";
+import { stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
 
 // Two projects, two costs - which is the point of the pyramid:
 //   unit        *.unit.test.ts        pure functions, Node, no DOM, milliseconds
@@ -29,11 +30,17 @@ export default defineConfig({
         },
       },
       {
-        // Browser Mode serves the test files through Vite, so the React plugin
-        // has to be declared on the project, not only on the app config - and
-        // the compiler pass with it, so the integration tests run against the
-        // same compiled components the app ships.
-        plugins: [react(), babel({ presets: [reactCompilerPreset()] })],
+        // Browser Mode serves the test files through its OWN Vite pipeline, so
+        // everything the app's build does has to be declared here too: the
+        // React plugin, the compiler pass, and both halves of StyleX. Without
+        // the last of those the components render carrying compiled class
+        // names that no stylesheet defines, and the tests would be driving
+        // something the users never see.
+        plugins: [
+          react(),
+          babel({ presets: [reactCompilerPreset()], plugins: [stylexBabelPlugin] }),
+        ],
+        css: { postcss: { plugins: [stylexPostcss()] } },
         // vitest-browser-react bundles the React it renders with, and a router
         // resolved to a SECOND copy of React sees a null dispatcher - "Cannot
         // read properties of null (reading 'useContext')" the moment a route

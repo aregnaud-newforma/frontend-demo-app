@@ -1,27 +1,142 @@
-import { revalidateLogic, useForm } from "@tanstack/react-form";
+import * as stylex from "@stylexjs/stylex";
+import { revalidateLogic, useForm, type AnyFieldApi } from "@tanstack/react-form";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FieldError, errorProps } from "./components/FieldError";
 import { toValues, updateAccount, type Account } from "./helpers/api";
 import { accountQueryKey, useAccount } from "./hooks/use-account";
 import { LANGUAGES, LANGUAGE_LABELS, accountSchema } from "./helpers/validation";
+import { colors, radius, shadow, space, text } from "../tokens.stylex";
+
+const styles = stylex.create({
+  title: {
+    margin: 0,
+    marginBottom: space.xl,
+    fontSize: text.xl,
+    fontWeight: 650,
+    letterSpacing: "-0.02em",
+  },
+  form: {
+    display: "flex",
+    flexDirection: "column",
+    gap: space.lg,
+    marginBottom: space.xl,
+  },
+  field: {
+    display: "flex",
+    flexDirection: "column",
+    gap: space.xs,
+  },
+  label: {
+    fontSize: text.sm,
+    fontWeight: 550,
+    color: colors.textMuted,
+  },
+  // One control style for <input>, <select> and <textarea>: they are the same
+  // box with different insides, and writing it once is what keeps them from
+  // drifting a pixel apart.
+  control: {
+    width: "100%",
+    paddingBlock: space.sm,
+    paddingInline: space.md,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: { default: colors.border, ":focus": colors.accent },
+    backgroundColor: colors.surface,
+    color: colors.text,
+    outline: "none",
+    boxShadow: { default: null, ":focus": shadow.focus },
+  },
+  // Applied AFTER `control` in the same props() call, so its border wins by
+  // argument order rather than by being more specific.
+  controlInvalid: {
+    borderColor: colors.danger,
+  },
+  textarea: {
+    minHeight: "5.5rem",
+    resize: "vertical",
+  },
+  actions: {
+    display: "flex",
+    alignItems: "center",
+    gap: space.lg,
+    marginTop: space.sm,
+  },
+  submit: {
+    paddingBlock: space.md,
+    paddingInline: space.xl,
+    borderRadius: radius.md,
+    borderStyle: "none",
+    backgroundColor: colors.accent,
+    color: colors.accentText,
+    fontWeight: 550,
+    cursor: { default: "pointer", ":disabled": "progress" },
+    opacity: { default: 1, ":hover": 0.9, ":disabled": 0.6 },
+  },
+  cancel: {
+    color: colors.textMuted,
+    fontSize: text.sm,
+    textDecoration: { default: "none", ":hover": "underline" },
+  },
+  status: {
+    margin: 0,
+    color: colors.textMuted,
+  },
+  error: {
+    margin: 0,
+    padding: space.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.dangerSoft,
+    color: colors.danger,
+  },
+});
+
+/**
+ * The control's styles, plus the invalid border when the field is flagged.
+ *
+ * A function rather than six copies of the same expression, and ONE
+ * `stylex.props` call rather than a base class with an "invalid" class layered
+ * on: inside a single call the last argument wins deterministically, which is
+ * the guarantee StyleX is built to give.
+ */
+const controlProps = (field: AnyFieldApi) =>
+  stylex.props(styles.control, field.state.meta.errors.length > 0 && styles.controlInvalid);
+
+/** Same, for the one control that is a box rather than a line. */
+const textareaProps = (field: AnyFieldApi) =>
+  stylex.props(
+    styles.control,
+    styles.textarea,
+    field.state.meta.errors.length > 0 && styles.controlInvalid,
+  );
 
 export function EditAccountPage() {
   const { data: account, isError: loadFailed } = useAccount();
 
   if (loadFailed) {
-    return <p role="alert">Could not load your account. Please try again.</p>;
+    return (
+      <p role="alert" {...stylex.props(styles.error)}>
+        Could not load your account. Please try again.
+      </p>
+    );
   }
 
   if (!account) {
-    return <p role="status">Loading your account...</p>;
+    return (
+      <p role="status" {...stylex.props(styles.status)}>
+        Loading your account...
+      </p>
+    );
   }
 
   return (
     <>
-      <h1>Edit your account</h1>
+      <h1 {...stylex.props(styles.title)}>Edit your account</h1>
       <AccountFields account={account} />
-      <Link to="/account">Cancel</Link>
+      <Link to="/account" {...stylex.props(styles.cancel)}>
+        Cancel
+      </Link>
     </>
   );
 }
@@ -65,17 +180,21 @@ function AccountFields({ account }: { account: Account }) {
       }}
       noValidate
       aria-label="Account form"
+      {...stylex.props(styles.form)}
     >
       <form.Field name="nom">
         {(field) => (
-          <div>
-            <label htmlFor="nom">Name</label>
+          <div {...stylex.props(styles.field)}>
+            <label htmlFor="nom" {...stylex.props(styles.label)}>
+              Name
+            </label>
             <input
               id="nom"
               name={field.name}
               value={field.state.value}
               onChange={(event) => field.handleChange(event.target.value)}
               onBlur={field.handleBlur}
+              {...controlProps(field)}
               {...errorProps(field)}
             />
             <FieldError field={field} />
@@ -85,14 +204,17 @@ function AccountFields({ account }: { account: Account }) {
 
       <form.Field name="prenom">
         {(field) => (
-          <div>
-            <label htmlFor="prenom">First name</label>
+          <div {...stylex.props(styles.field)}>
+            <label htmlFor="prenom" {...stylex.props(styles.label)}>
+              First name
+            </label>
             <input
               id="prenom"
               name={field.name}
               value={field.state.value}
               onChange={(event) => field.handleChange(event.target.value)}
               onBlur={field.handleBlur}
+              {...controlProps(field)}
               {...errorProps(field)}
             />
             <FieldError field={field} />
@@ -102,8 +224,10 @@ function AccountFields({ account }: { account: Account }) {
 
       <form.Field name="email">
         {(field) => (
-          <div>
-            <label htmlFor="email">Email</label>
+          <div {...stylex.props(styles.field)}>
+            <label htmlFor="email" {...stylex.props(styles.label)}>
+              Email
+            </label>
             <input
               id="email"
               type="email"
@@ -111,6 +235,7 @@ function AccountFields({ account }: { account: Account }) {
               value={field.state.value}
               onChange={(event) => field.handleChange(event.target.value)}
               onBlur={field.handleBlur}
+              {...controlProps(field)}
               {...errorProps(field)}
             />
             <FieldError field={field} />
@@ -120,14 +245,17 @@ function AccountFields({ account }: { account: Account }) {
 
       <form.Field name="telephone">
         {(field) => (
-          <div>
-            <label htmlFor="telephone">Phone (optional)</label>
+          <div {...stylex.props(styles.field)}>
+            <label htmlFor="telephone" {...stylex.props(styles.label)}>
+              Phone (optional)
+            </label>
             <input
               id="telephone"
               name={field.name}
               value={field.state.value}
               onChange={(event) => field.handleChange(event.target.value)}
               onBlur={field.handleBlur}
+              {...controlProps(field)}
               {...errorProps(field)}
             />
             <FieldError field={field} />
@@ -137,8 +265,10 @@ function AccountFields({ account }: { account: Account }) {
 
       <form.Field name="langue">
         {(field) => (
-          <div>
-            <label htmlFor="langue">Language</label>
+          <div {...stylex.props(styles.field)}>
+            <label htmlFor="langue" {...stylex.props(styles.label)}>
+              Language
+            </label>
             <select
               id="langue"
               name={field.name}
@@ -147,6 +277,7 @@ function AccountFields({ account }: { account: Account }) {
                 field.handleChange(event.target.value as typeof field.state.value)
               }
               onBlur={field.handleBlur}
+              {...controlProps(field)}
               {...errorProps(field)}
             >
               <option value="">Choose a language</option>
@@ -163,14 +294,17 @@ function AccountFields({ account }: { account: Account }) {
 
       <form.Field name="bio">
         {(field) => (
-          <div>
-            <label htmlFor="bio">Bio (optional)</label>
+          <div {...stylex.props(styles.field)}>
+            <label htmlFor="bio" {...stylex.props(styles.label)}>
+              Bio (optional)
+            </label>
             <textarea
               id="bio"
               name={field.name}
               value={field.state.value}
               onChange={(event) => field.handleChange(event.target.value)}
               onBlur={field.handleBlur}
+              {...textareaProps(field)}
               {...errorProps(field)}
             />
             <FieldError field={field} />
@@ -178,11 +312,17 @@ function AccountFields({ account }: { account: Account }) {
         )}
       </form.Field>
 
-      <button type="submit" disabled={save.isPending}>
-        {save.isPending ? "Saving..." : "Save"}
-      </button>
+      <div {...stylex.props(styles.actions)}>
+        <button type="submit" disabled={save.isPending} {...stylex.props(styles.submit)}>
+          {save.isPending ? "Saving..." : "Save"}
+        </button>
+      </div>
 
-      {save.isError && <p role="alert">Something went wrong. Please try again.</p>}
+      {save.isError && (
+        <p role="alert" {...stylex.props(styles.error)}>
+          Something went wrong. Please try again.
+        </p>
+      )}
     </form>
   );
 }

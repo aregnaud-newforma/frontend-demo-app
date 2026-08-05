@@ -60,6 +60,13 @@
       // its types; there is no import form of it.
       "files": ["*.config.ts"],
       "rules": { "typescript/triple-slash-reference": "off" }
+    },
+    {
+      // The entry point imports global.css for its side effect - that IS how a
+      // stylesheet is pulled into a bundle, and there is nothing to assign it
+      // to. Same exemption as vitest.setup.ts above, for the same reason.
+      "files": ["src/main.tsx"],
+      "rules": { "import/no-unassigned-import": "off" }
     }
   ]
 }

@@ -1,5 +1,7 @@
+import * as stylex from "@stylexjs/stylex";
 import { Outlet } from "@tanstack/react-router";
 import { Navigation } from "./Navigation";
+import { colors, radius, shadow, space, text } from "../tokens.stylex";
 
 /**
  * The shell every route renders inside: the site navigation, then the page in
@@ -10,12 +12,33 @@ import { Navigation } from "./Navigation";
  * the frame - the width, the landmarks, the order the two sit in - and stays
  * unaware that a route tree exists at all.
  */
+const styles = stylex.create({
+  shell: {
+    maxWidth: 640,
+    marginInline: "auto",
+    // Room to breathe on a laptop, none wasted on a phone.
+    paddingBlock: { default: space.xxl, "@media (max-width: 40rem)": space.lg },
+    paddingInline: space.lg,
+    fontFamily: text.family,
+    fontSize: text.base,
+    lineHeight: 1.55,
+    color: colors.text,
+  },
+  main: {
+    backgroundColor: colors.surface,
+    border: `1px solid ${colors.border}`,
+    borderRadius: radius.lg,
+    boxShadow: shadow.card,
+    padding: { default: space.xxl, "@media (max-width: 40rem)": space.xl },
+  },
+});
+
 export function RootLayout() {
   return (
-    <div style={{ maxWidth: 640, margin: "3rem auto", fontFamily: "system-ui, sans-serif" }}>
+    <div {...stylex.props(styles.shell)}>
       <Navigation />
 
-      <main>
+      <main {...stylex.props(styles.main)}>
         <Outlet />
       </main>
     </div>

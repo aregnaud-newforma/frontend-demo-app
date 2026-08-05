@@ -25,6 +25,10 @@
  * data. This is the part a mocked backend never has to solve, and the part real
  * E2E against a shared environment always does.
  *
+ * A request that names no session gets DEMO_SESSION, which is seeded at startup
+ * - that is what makes `yarn dev` show an account rather than an error, since
+ * nothing outside the specs ever sets the cookie.
+ *
  * Run it with `yarn api:start`. Playwright starts it itself (see the webServer
  * array in playwright.config.ts), so no one has to remember to.
  */
@@ -37,16 +41,41 @@ const PORT = Number(process.env.PORT ?? 3001);
 export const SESSION_COOKIE = "e2e-session";
 export const SESSION_HEADER = "x-e2e-session";
 
+/**
+ * The session a request belongs to when it names none - which is every request
+ * from a browser someone opened themselves, since only the specs set the
+ * cookie. Without it `yarn dev` has no way to reach any data at all: the store
+ * starts empty and `/__test__/account` is the only thing that fills it.
+ *
+ * Seeded at startup (below) so the app has something to show, and mutable like
+ * any other session, so the form saves and the summary comes back changed.
+ *
+ * A spec that forgets `startSession` lands here rather than on an error - but
+ * it still fails, and at the right place: its assertions name the random values
+ * it seeded, and this record matches none of them.
+ */
+const DEMO_SESSION = "demo";
+
 /** session id -> that session's single account. */
 const accountsBySession = new Map<string, Account>();
 
-function readSession(request: IncomingMessage): string | null {
+accountsBySession.set(DEMO_SESSION, {
+  id: "demo-account",
+  nom: "Durand",
+  prenom: "Camille",
+  email: "camille.durand@example.com",
+  telephone: "+33612345678", // stored in E.164, shown as 0612345678
+  langue: "fr",
+  bio: "Designs things, occasionally writes about them.",
+});
+
+function readSession(request: IncomingMessage): string {
   const fromHeader = request.headers[SESSION_HEADER];
   if (typeof fromHeader === "string" && fromHeader) return fromHeader;
 
   const cookies = request.headers.cookie ?? "";
   const match = cookies.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
-  return match ? decodeURIComponent(match[1]) : null;
+  return match ? decodeURIComponent(match[1]) : DEMO_SESSION;
 }
 
 async function readJsonBody<T>(request: IncomingMessage): Promise<T> {
@@ -84,15 +113,6 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   }
 
   const session = readSession(request);
-  if (!session) {
-    // Loud on purpose. A request with no session means a spec navigated before
-    // starting one, and answering 404 would send it looking for the bug in the
-    // app instead of in its own setup.
-    sendJson(response, 400, {
-      error: `Missing session. Send the ${SESSION_HEADER} header or the ${SESSION_COOKIE} cookie.`,
-    });
-    return;
-  }
 
   // Test-only: put an account in this session's store. Namespaced away from
   // /api/ so it is obvious at the call site that it is not part of the product

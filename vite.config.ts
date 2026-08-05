@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import { alias } from "./alias.ts";
+import { stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
 
 // plugin-react v6 transforms with Oxc, not Babel, so the React Compiler is not
 // an option on `react()` any more: it runs as its own Babel pass alongside it.
@@ -15,7 +16,10 @@ import { alias } from "./alias.ts";
 const apiProxy = { "/api": { target: "http://localhost:3001", changeOrigin: false } };
 
 export default defineConfig({
-  plugins: [react(), babel({ presets: [reactCompilerPreset()] })],
+  // StyleX joins the Babel pass the React Compiler already needs, rather than
+  // adding a second one. See ./stylex.config.ts for why the postcss half exists.
+  plugins: [react(), babel({ presets: [reactCompilerPreset()], plugins: [stylexBabelPlugin] })],
+  css: { postcss: { plugins: [stylexPostcss()] } },
   resolve: { alias },
   server: { port: 5173, strictPort: true, proxy: apiProxy },
   preview: { port: 4173, strictPort: true, proxy: apiProxy },

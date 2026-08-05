@@ -1,0 +1,42 @@
+/*
+ * The only hand-written CSS in the app.
+ *
+ * Everything below `@stylex;` is generated: the postcss plugin replaces that
+ * directive with every rule collected from every `stylex.create` call in the
+ * tree (see ../stylex.config.ts). One stylesheet, loaded upfront, with each
+ * declaration written exactly once no matter how many components used it.
+ *
+ * What stays hand-written is only what has no element to hang off - the reset,
+ * and the page background, which belongs to <body> rather than to any
+ * component. In `@layer base` so the generated rules win over it by layer order
+ * rather than by specificity.
+ */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    /* Set here rather than on the shell so the colour reaches the whole
+       viewport, not just the 640px the layout occupies. */
+    background: light-dark(#fbfbfd, #111114);
+    color: light-dark(#1c1c21, #ececf1);
+    color-scheme: light dark;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* The tests drive real inputs, so the controls have to inherit the app's
+     font rather than the browser's default form font. */
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+}
+
+@stylex;
