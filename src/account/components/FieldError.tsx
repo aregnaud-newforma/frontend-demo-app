@@ -64,7 +64,12 @@ export function FieldError({ field }: { field: AnyFieldApi }) {
   if (!error) return null;
 
   return (
-    <p id={errorId(field)} role="alert" {...stylex.props(styles.message)}>
+    <p
+      id={errorId(field)}
+      role="alert"
+      data-testid={`field-error-${field.name}`}
+      {...stylex.props(styles.message)}
+    >
       {typeof error === "string" ? error : error.message}
     </p>
   );

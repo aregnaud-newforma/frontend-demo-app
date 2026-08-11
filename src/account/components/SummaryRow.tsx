@@ -16,10 +16,16 @@ const styles = stylex.create({
 });
 
 export function SummaryRow({ term, children }: { term: string; children: ReactNode }) {
+  const slug = term.toLowerCase().replace(/\s+/g, "-");
+
   return (
     <>
-      <dt {...stylex.props(styles.term)}>{term}</dt>
-      <dd {...stylex.props(styles.value)}>{children}</dd>
+      <dt data-testid={`summary-term-${slug}`} {...stylex.props(styles.term)}>
+        {term}
+      </dt>
+      <dd data-testid={`summary-value-${slug}`} {...stylex.props(styles.value)}>
+        {children}
+      </dd>
     </>
   );
 }

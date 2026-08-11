@@ -54,7 +54,7 @@ export function AccountPage() {
 
   if (loadFailed) {
     return (
-      <p role="alert" {...stylex.props(styles.error)}>
+      <p role="alert" data-testid="account-error" {...stylex.props(styles.error)}>
         Could not load your account. Please try again.
       </p>
     );
@@ -62,7 +62,7 @@ export function AccountPage() {
 
   if (!account) {
     return (
-      <p role="status" {...stylex.props(styles.status)}>
+      <p role="status" data-testid="account-loading" {...stylex.props(styles.status)}>
         Loading your account...
       </p>
     );
@@ -72,9 +72,15 @@ export function AccountPage() {
 
   return (
     <>
-      <h1 {...stylex.props(styles.title)}>Your account</h1>
+      <h1 data-testid="account-heading" {...stylex.props(styles.title)}>
+        Your account
+      </h1>
 
-      <dl aria-label="Account summary" {...stylex.props(styles.summary)}>
+      <dl
+        aria-label="Account summary"
+        data-testid="account-summary"
+        {...stylex.props(styles.summary)}
+      >
         <SummaryRow term="Name">{account.nom}</SummaryRow>
         <SummaryRow term="First name">{account.prenom}</SummaryRow>
         <SummaryRow term="Email">{account.email}</SummaryRow>
@@ -86,7 +92,7 @@ export function AccountPage() {
         <SummaryRow term="Bio">{account.bio || "Not provided"}</SummaryRow>
       </dl>
 
-      <Link to="/account/edit" {...stylex.props(styles.editLink)}>
+      <Link to="/account/edit" data-testid="edit-account-link" {...stylex.props(styles.editLink)}>
         Edit your account
       </Link>
     </>
