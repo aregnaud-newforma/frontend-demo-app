@@ -3,19 +3,58 @@
  * selectors stay stable when the copy or the markup changes.
  */
 import { http, HttpResponse, delay } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { worker } from "@testing/worker";
 import { renderRoute } from "@testing/render-route";
 import { accounts } from "../mocks/db";
 import { ACCOUNT_URL } from "../mocks/handlers";
-import { createFrenchPhone, seedAccount } from "../mocks/db-utils";
+import { createFrenchPhone, createUser, seedAccount } from "../mocks/db-utils";
 import { LANGUAGE_LABELS } from "../helpers/validation";
-import type { Account } from "../helpers/api";
+import { getAccount, toValues, type Account } from "../helpers/api";
+import { SummaryRow } from "../components/SummaryRow";
+import { useAccount } from "../hooks/use-account";
+
+// Every collaborator the page reaches for is swapped for a spy that still calls
+// the real thing, so a test can either assert on the call or take the module
+// over entirely with mockReturnValue.
+vi.mock("../hooks/use-account", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../hooks/use-account")>();
+  return { ...actual, useAccount: vi.fn<typeof actual.useAccount>(actual.useAccount) };
+});
+
+vi.mock("../components/SummaryRow", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../components/SummaryRow")>();
+  return { ...actual, SummaryRow: vi.fn<typeof actual.SummaryRow>(actual.SummaryRow) };
+});
+
+vi.mock("../helpers/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../helpers/api")>();
+  return {
+    ...actual,
+    getAccount: vi.fn<typeof actual.getAccount>(actual.getAccount),
+    toValues: vi.fn<typeof actual.toValues>(actual.toValues),
+  };
+});
+
+vi.mock("../helpers/validation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../helpers/validation")>();
+  return { ...actual, LANGUAGE_LABELS: { ...actual.LANGUAGE_LABELS } };
+});
+
+/** The query result the page reads: it only ever touches `data` and `isError`. */
+function mockQueryResult(result: { data?: Account; isError?: boolean }) {
+  vi.mocked(useAccount).mockReturnValue({
+    data: result.data,
+    isError: result.isError ?? false,
+  } as unknown as ReturnType<typeof useAccount>);
+}
 
 let account: Account;
 let phone: ReturnType<typeof createFrenchPhone>;
 
 beforeEach(async () => {
+  // Puts the delegating implementations back after a test replaced one.
+  vi.resetAllMocks();
   phone = createFrenchPhone();
   account = await seedAccount({ telephone: phone.e164 });
 });
@@ -209,6 +248,110 @@ describe("AccountPage (test ids)", () => {
       const screen = await renderRoute("/account");
       await screen.getByTestId("edit-account-link").click();
       await expect.element(screen.getByTestId("account-summary")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("collaborators", () => {
+    it("calls the account hook", async () => {
+      const screen = await renderRoute("/account");
+      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
+      expect(useAccount).toHaveBeenCalled();
+    });
+
+    it("calls the account hook without options", async () => {
+      const screen = await renderRoute("/account");
+      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
+      expect(useAccount).toHaveBeenCalledWith();
+    });
+
+    it("fetches the account through the api helper", async () => {
+      const screen = await renderRoute("/account");
+      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
+      expect(getAccount).toHaveBeenCalledTimes(1);
+    });
+
+    it("maps the loaded account through toValues", async () => {
+      const screen = await renderRoute("/account");
+      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
+      expect(toValues).toHaveBeenCalledWith(account);
+    });
+
+    it("returns the national phone from toValues", async () => {
+      const screen = await renderRoute("/account");
+      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
+      expect(vi.mocked(toValues).mock.results[0]?.value).toMatchObject({
+        telephone: phone.national,
+      });
+    });
+
+    it("renders a summary row per field", async () => {
+      const screen = await renderRoute("/account");
+      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
+      const terms = vi.mocked(SummaryRow).mock.calls.map(([props]) => props.term);
+      expect(new Set(terms)).toEqual(
+        new Set(["Name", "First name", "Email", "Phone", "Language", "Bio"]),
+      );
+    });
+
+    it("passes the stored name to its summary row", async () => {
+      const screen = await renderRoute("/account");
+      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
+      expect(SummaryRow).toHaveBeenCalledWith(
+        expect.objectContaining({ term: "Name", children: account.nom }),
+        undefined,
+      );
+    });
+
+    it("passes the fallback to the phone row when there is no phone", async () => {
+      accounts.clear();
+      await seedAccount({ telephone: null });
+
+      const screen = await renderRoute("/account");
+      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
+      expect(SummaryRow).toHaveBeenCalledWith(
+        expect.objectContaining({ term: "Phone", children: "Not provided" }),
+        undefined,
+      );
+    });
+
+    it("does not render a summary row while the account is loading", async () => {
+      mockQueryResult({ data: undefined });
+
+      const screen = await renderRoute("/account");
+      await expect.element(screen.getByTestId("account-loading")).toBeVisible();
+      expect(SummaryRow).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("stubbed hook states", () => {
+    it("renders the loading node when the hook reports no data", async () => {
+      mockQueryResult({ data: undefined });
+
+      const screen = await renderRoute("/account");
+      await expect.element(screen.getByTestId("account-loading")).toBeVisible();
+    });
+
+    it("renders the error node when the hook reports a failure", async () => {
+      mockQueryResult({ isError: true });
+
+      const screen = await renderRoute("/account");
+      await expect.element(screen.getByTestId("account-error")).toBeVisible();
+    });
+
+    it("prefers the error node when the hook reports data and a failure", async () => {
+      mockQueryResult({ data: createUser(), isError: true });
+
+      const screen = await renderRoute("/account");
+      await expect.element(screen.getByTestId("account-error")).toBeVisible();
+    });
+
+    it("renders the stubbed account without touching the network", async () => {
+      const stub = createUser({ nom: "Lovelace" });
+      mockQueryResult({ data: stub });
+
+      const screen = await renderRoute("/account");
+      await expect.element(screen.getByTestId("summary-value-name")).toHaveTextContent("Lovelace");
+      expect(getAccount).not.toHaveBeenCalled();
     });
   });
 });
