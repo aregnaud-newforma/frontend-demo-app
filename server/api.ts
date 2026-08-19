@@ -32,6 +32,12 @@
  * Run it with `yarn api:start`. Playwright starts it itself (see the webServer
  * array in playwright.config.ts), so no one has to remember to.
  */
+// FIRST, deliberately. Modules are evaluated in the order they are imported,
+// and this one starts the OpenTelemetry SDK - anything traced has to be loaded
+// after it. See server/instrumentation.ts.
+import { langfuseSpanProcessor } from "./instrumentation.ts";
+
+import { propagateAttributes, startActiveObservation, startObservation } from "@langfuse/tracing";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Account, AccountPayload } from "../src/account/helpers/api.ts";
 
@@ -102,50 +108,75 @@ const server = createServer((request, response) => {
   });
 });
 
+/**
+ * What a route decided. Routing returns one of these rather than writing to the
+ * socket itself, so that the status and the body exist as a value: `handle`
+ * sends it, and the trace around it can record what was answered without every
+ * branch having to remember to say so.
+ */
+interface ApiResult {
+  status: number;
+  body: unknown;
+}
+
 async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   const method = request.method ?? "GET";
 
-  // Playwright's webServer polls this to know the process is up.
+  // Playwright's webServer polls this to know the process is up. Left untraced:
+  // it fires every few hundred milliseconds and says nothing about the app, and
+  // a trace list drowned in health checks is a trace list no one reads.
   if (url.pathname === "/health") {
     sendJson(response, 200, { ok: true, sessions: accountsBySession.size });
     return;
   }
 
   const session = readSession(request);
+  const result = await traced(method, url.pathname, session, () =>
+    route(method, url.pathname, session, request),
+  );
 
+  sendJson(response, result.status, result.body);
+}
+
+async function route(
+  method: string,
+  pathname: string,
+  session: string,
+  request: IncomingMessage,
+): Promise<ApiResult> {
   // Test-only: put an account in this session's store. Namespaced away from
   // /api/ so it is obvious at the call site that it is not part of the product
   // surface the specs are exercising.
-  if (url.pathname === "/__test__/account" && method === "PUT") {
+  if (pathname === "/__test__/account" && method === "PUT") {
     const account = await readJsonBody<Account>(request);
     accountsBySession.set(session, account);
-    sendJson(response, 201, account);
-    return;
+    return { status: 201, body: account };
   }
 
-  if (url.pathname === "/api/account") {
+  if (pathname === "/api/account") {
     const stored = accountsBySession.get(session);
 
     if (method === "GET") {
-      if (!stored) {
-        sendJson(response, 404, { error: "No account for this session" });
-        return;
-      }
-      sendJson(response, 200, stored);
-      return;
+      if (!stored) return { status: 404, body: { error: "No account for this session" } };
+      return { status: 200, body: stored };
     }
 
     if (method === "PUT") {
-      if (!stored) {
-        sendJson(response, 404, { error: "No account for this session" });
-        return;
-      }
+      if (!stored) return { status: 404, body: { error: "No account for this session" } };
 
       // The server owns the id: it is not in the payload and must not be
       // overwritten by one. Everything else the client sent replaces what
       // is stored, which is what makes the GET after a PUT meaningful.
       const payload = await readJsonBody<AccountPayload>(request);
+
+      // Nested under the request's own observation, so a trace shows the write
+      // as its own step: which fields the payload carried, and how long the
+      // parse before it took. Field NAMES only - the values are a person.
+      const persist = startObservation("persist-account", {
+        input: { fields: Object.keys(payload) },
+      });
+
       const updated: Account = {
         id: stored.id,
         nom: payload.nom,
@@ -157,17 +188,109 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       };
 
       accountsBySession.set(session, updated);
-      sendJson(response, 200, updated);
-      return;
+      persist.update({ output: { accountId: updated.id } }).end();
+
+      return { status: 200, body: updated };
     }
 
-    sendJson(response, 405, { error: `${method} not allowed on ${url.pathname}` });
-    return;
+    return { status: 405, body: { error: `${method} not allowed on ${pathname}` } };
   }
 
-  sendJson(response, 404, { error: `No route for ${method} ${url.pathname}` });
+  return { status: 404, body: { error: `No route for ${method} ${pathname}` } };
+}
+
+/**
+ * The name one request's trace carries in Langfuse.
+ *
+ * Names are an API there: evaluators, dashboard filters and saved views all
+ * target them, so they have to be stable and few. That is why this maps to a
+ * fixed set of verbs rather than interpolating the path - `get-account`, not
+ * `GET /api/account`, and never anything carrying a session or an id.
+ */
+function operationName(method: string, pathname: string): string {
+  if (pathname === "/api/account") {
+    if (method === "GET") return "get-account";
+    if (method === "PUT") return "update-account";
+    return "reject-account-method";
+  }
+  if (pathname === "/__test__/account" && method === "PUT") return "seed-account";
+  return "reject-unknown-route";
+}
+
+/**
+ * What the trace records as the answer. The account itself is NOT it: this
+ * server stores a person, and a trace is a copy of whatever you put in it, kept
+ * somewhere else. The status, the id, and which fields came back say what
+ * happened; the values would only say who it happened to.
+ */
+function traceOutput({ status, body }: ApiResult): Record<string, unknown> {
+  if (body && typeof body === "object" && "id" in body) {
+    return { status, accountId: (body as Account).id, fields: Object.keys(body) };
+  }
+  return { status, ...(body as Record<string, unknown>) };
+}
+
+/**
+ * One trace per request.
+ *
+ * A request here is exactly the self-contained unit of work Langfuse means by a
+ * trace: it arrives, it reads or writes one session's account, it answers.
+ * `sessionId` is the same id the specs put in the cookie (see the note on
+ * per-test isolation above), so the Sessions view groups a whole spec's round
+ * trips the way the store already groups its data - which is what turns "the
+ * third PUT returned 404" into something readable.
+ *
+ * With no Langfuse keys configured this is a pass-through, so the E2E tier
+ * never depends on an account existing.
+ */
+function traced(
+  method: string,
+  pathname: string,
+  session: string,
+  run: () => Promise<ApiResult>,
+): Promise<ApiResult> {
+  if (!langfuseSpanProcessor) return run();
+
+  return startActiveObservation(operationName(method, pathname), (span) =>
+    propagateAttributes(
+      {
+        sessionId: session,
+        // The account id doubles as the user id: one session holds one account.
+        userId: accountsBySession.get(session)?.id,
+        tags: ["account-api"],
+      },
+      async () => {
+        span.update({ input: { method, path: pathname } });
+        const result = await run();
+        span.update({
+          output: traceOutput(result),
+          // So "show me what failed" is a filter rather than a read-through of
+          // every trace. A 4xx is the client being told no, which is worth
+          // seeing but not an incident; a 5xx is this server breaking.
+          ...(result.status >= 400 && {
+            level: result.status >= 500 ? ("ERROR" as const) : ("WARNING" as const),
+            statusMessage: `${result.status} on ${operationName(method, pathname)}`,
+          }),
+        });
+        return result;
+      },
+    ),
+  );
 }
 
 server.listen(PORT, () => {
   console.log(`[api] listening on http://localhost:${PORT}`);
 });
+
+// Spans are batched in memory and sent on a timer, and nobody asks this process
+// to stop politely - Playwright kills it when the run ends, Ctrl-C kills it in
+// development. Without this, the last few seconds of a run are the ones you
+// wanted to look at and the ones that never left the process.
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    void (async () => {
+      await langfuseSpanProcessor?.forceFlush();
+      server.close(() => process.exit(0));
+    })();
+  });
+}

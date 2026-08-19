@@ -19,13 +19,12 @@ yarn e2e                # end-to-end, against a real API
 
 ## What it demonstrates
 
-| Practice                        | What it means                                                                 |
-| ------------------------------- | ----------------------------------------------------------------------------- |
-| Modern toolchain                | One Rust-based pipeline: Rolldown to build, oxlint to lint, oxfmt to format    |
-| Vertical codebase               | Group by feature, not file type: pages, schema, queries, mocks, tests colocated |
-| Testing strategy (Trophy)       | Playwright, Vitest, MSW, FakerJS and Zod, weighted toward integration, unit and E2E  |
-| Build-time CSS-in-JS            | StyleX compiles styles at build time: no runtime cost, no class collisions      |                             |
-
+| Practice                  | What it means                                                                       |
+| ------------------------- | ----------------------------------------------------------------------------------- |
+| Modern toolchain          | One Rust-based pipeline: Rolldown to build, oxlint to lint, oxfmt to format         |
+| Vertical codebase         | Group by feature, not file type: pages, schema, queries, mocks, tests colocated     |
+| Testing strategy (Trophy) | Playwright, Vitest, MSW, FakerJS and Zod, weighted toward integration, unit and E2E |
+| Build-time CSS-in-JS      | StyleX compiles styles at build time: no runtime cost, no class collisions          |     |
 
 ## Scripts
 
@@ -38,3 +37,19 @@ yarn verify        # oxlint + oxfmt --check + both tsc projects - the CI gate
 yarn lint          # oxlint  (yarn lint:fix to apply what it can)
 yarn format        # oxfmt   (yarn format:check to only report)
 ```
+
+## Tracing the API
+
+`server/api.ts` reports one [Langfuse](https://langfuse.com) trace per request:
+`get-account`, `update-account`, `seed-account`, and the two rejections, with
+the write nested under the PUT that made it. Traces carry the session id the
+E2E specs already use, so a whole spec's round trips read back as one session.
+
+Off by default. Copy `.env.example` to `.env` and fill in a project's keys to
+turn it on - `yarn api:start` and `yarn e2e` then send traces to that project.
+Without keys the server runs exactly as before.
+
+Nothing personal is traced: spans record the route, the status, the account id
+and which fields a request touched, never the name, email, phone or bio behind
+them. `server/instrumentation.ts` masks emails and phone numbers on the way out
+as a second lock on that.
