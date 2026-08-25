@@ -1,357 +1,131 @@
 /**
- * Integration coverage for the account summary, driven through test ids so the
- * selectors stay stable when the copy or the markup changes.
+ * Integration coverage for AccountPage - the account summary a visitor lands
+ * on at "/account".
  */
-import { http, HttpResponse, delay } from "msw";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { http, HttpResponse } from "msw";
+import { expect, it } from "vitest";
 import { worker } from "@testing/worker";
+import { deferred } from "@testing/deferred";
 import { renderRoute } from "@testing/render-route";
 import { accounts } from "../mocks/db";
 import { ACCOUNT_URL } from "../mocks/handlers";
-import { createFrenchPhone, createUser, seedAccount } from "../mocks/db-utils";
+import { createFrenchPhone, seedAccount } from "../mocks/db-utils";
 import { LANGUAGE_LABELS } from "../helpers/validation";
-import { getAccount, toValues, type Account } from "../helpers/api";
-import { SummaryRow } from "../components/SummaryRow";
-import { useAccount } from "../hooks/use-account";
 
-// Every collaborator the page reaches for is swapped for a spy that still calls
-// the real thing, so a test can either assert on the call or take the module
-// over entirely with mockReturnValue.
-vi.mock("../hooks/use-account", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../hooks/use-account")>();
-  return { ...actual, useAccount: vi.fn<typeof actual.useAccount>(actual.useAccount) };
-});
+/*
+ * Integration: page
+ */
 
-vi.mock("../components/SummaryRow", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../components/SummaryRow")>();
-  return { ...actual, SummaryRow: vi.fn<typeof actual.SummaryRow>(actual.SummaryRow) };
-});
+/**
+ * The setup function for this file. Apply AHA Testing principle.
+ */
+async function renderAccountPage() {
+  const screen = await renderRoute("/account");
 
-vi.mock("../helpers/api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../helpers/api")>();
   return {
-    ...actual,
-    getAccount: vi.fn<typeof actual.getAccount>(actual.getAccount),
-    toValues: vi.fn<typeof actual.toValues>(actual.toValues),
+    // exact: true - "Edit your account" is a substring match on "Your account"
+    // otherwise, and the Happy path journey needs this heading gone once it
+    // navigates there.
+    heading: () => screen.getByRole("heading", { name: "Your account", exact: true }),
+    loadingIndicator: () => screen.getByRole("status"),
+    errorBanner: () => screen.getByRole("alert"),
+    editLink: () => screen.getByRole("link", { name: "Edit your account" }),
+    editFormHeading: () => screen.getByRole("heading", { name: "Edit your account" }),
+    /** One field's value on the summary, paired with its own term, e.g.
+     *  summaryValue("Email") - proving the pairing, not just that the text is
+     *  somewhere on the page. exact: true - "Name" is a case-insensitive
+     *  substring of "First name" otherwise. */
+    summaryValue: (term: string) => screen.getByRole("group", { name: term, exact: true }),
+
+    followEditLink: () => screen.getByRole("link", { name: "Edit your account" }).click(),
   };
-});
-
-vi.mock("../helpers/validation", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../helpers/validation")>();
-  return { ...actual, LANGUAGE_LABELS: { ...actual.LANGUAGE_LABELS } };
-});
-
-/** The query result the page reads: it only ever touches `data` and `isError`. */
-function mockQueryResult(result: { data?: Account; isError?: boolean }) {
-  vi.mocked(useAccount).mockReturnValue({
-    data: result.data,
-    isError: result.isError ?? false,
-  } as unknown as ReturnType<typeof useAccount>);
 }
 
-let account: Account;
-let phone: ReturnType<typeof createFrenchPhone>;
+// Use case: Reading your account — Default render
+it("shows a loading state, then every stored field once the account arrives", async () => {
+  // Given a stored account, with its GET held open
+  const phone = createFrenchPhone();
+  const account = await seedAccount({ telephone: phone.e164 });
+  const { promise: accountArrives, resolve: releaseAccount } = deferred<void>();
+  worker.use(
+    http.get(ACCOUNT_URL, async () => {
+      await accountArrives;
+      return HttpResponse.json(accounts.findFirst());
+    }),
+  );
+  const view = await renderAccountPage();
 
-beforeEach(async () => {
-  // Puts the delegating implementations back after a test replaced one.
-  vi.resetAllMocks();
-  phone = createFrenchPhone();
-  account = await seedAccount({ telephone: phone.e164 });
+  // Then the page shows it is loading
+  await expect.element(view.loadingIndicator()).toBeVisible();
+  await expect.element(view.loadingIndicator()).toHaveTextContent("Loading your account...");
+
+  // Given the account arrives
+  releaseAccount();
+
+  // Then the heading, the edit link, and every stored field are shown - the
+  // phone in national format, the language as its label rather than the
+  // stored code - each value paired with its own term
+  await expect.element(view.heading()).toBeVisible();
+  await expect.element(view.summaryValue("Name")).toHaveTextContent(account.nom);
+  await expect.element(view.summaryValue("First name")).toHaveTextContent(account.prenom);
+  await expect.element(view.summaryValue("Email")).toHaveTextContent(account.email);
+  await expect.element(view.summaryValue("Phone")).toHaveTextContent(phone.national);
+  await expect
+    .element(view.summaryValue("Language"))
+    .toHaveTextContent(LANGUAGE_LABELS[account.langue]);
+  await expect.element(view.summaryValue("Bio")).toHaveTextContent(account.bio);
+  await expect.element(view.editLink()).toBeVisible();
+
+  // Then the loading state is gone
+  await expect.element(view.loadingIndicator()).not.toBeInTheDocument();
 });
 
-describe("AccountPage (test ids)", () => {
-  describe("structure", () => {
-    it("renders the heading", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-heading")).toBeVisible();
-    });
+// Use case: Reading your account — Happy path
+it("follows the edit link from the summary to the edit form", async () => {
+  // Given a loaded summary
+  await seedAccount();
+  const view = await renderAccountPage();
+  await expect.element(view.heading()).toBeVisible();
 
-    it("renders the heading copy", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-heading")).toHaveTextContent("Your account");
-    });
+  // When the visitor follows the edit link
+  await view.followEditLink();
 
-    it("renders the summary container", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
-    });
+  // Then they leave the summary behind and land on the form
+  await expect.element(view.heading()).not.toBeInTheDocument();
+  await expect.element(view.editFormHeading()).toBeVisible();
+});
 
-    it("renders the edit link", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("edit-account-link")).toBeVisible();
-    });
+// Use case: Reading your account — Edge case
+it('shows "Not provided" for a missing phone and an empty bio, and every other field as stored', async () => {
+  // Given an account with no phone and an empty bio
+  const account = await seedAccount({ telephone: null, bio: "" });
+  const view = await renderAccountPage();
 
-    it("renders the edit link copy", async () => {
-      const screen = await renderRoute("/account");
-      await expect
-        .element(screen.getByTestId("edit-account-link"))
-        .toHaveTextContent("Edit your account");
-    });
-  });
+  // Then the phone and the bio fall back to the placeholder text
+  await expect.element(view.summaryValue("Phone")).toHaveTextContent("Not provided");
+  await expect.element(view.summaryValue("Bio")).toHaveTextContent("Not provided");
 
-  describe("summary terms", () => {
-    it("renders the name term", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("summary-term-name")).toHaveTextContent("Name");
-    });
+  // And every other field still shows what is stored
+  await expect.element(view.summaryValue("Name")).toHaveTextContent(account.nom);
+  await expect.element(view.summaryValue("First name")).toHaveTextContent(account.prenom);
+  await expect.element(view.summaryValue("Email")).toHaveTextContent(account.email);
+  await expect
+    .element(view.summaryValue("Language"))
+    .toHaveTextContent(LANGUAGE_LABELS[account.langue]);
+});
 
-    it("renders the first name term", async () => {
-      const screen = await renderRoute("/account");
-      await expect
-        .element(screen.getByTestId("summary-term-first-name"))
-        .toHaveTextContent("First name");
-    });
+// Use case: Reading your account — Edge case
+it("shows an error and no summary when the account fails to load", async () => {
+  // Given a server that fails the load
+  worker.use(http.get(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
 
-    it("renders the email term", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("summary-term-email")).toHaveTextContent("Email");
-    });
+  // When the visitor lands on the summary
+  const view = await renderAccountPage();
 
-    it("renders the phone term", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("summary-term-phone")).toHaveTextContent("Phone");
-    });
-
-    it("renders the language term", async () => {
-      const screen = await renderRoute("/account");
-      await expect
-        .element(screen.getByTestId("summary-term-language"))
-        .toHaveTextContent("Language");
-    });
-
-    it("renders the bio term", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("summary-term-bio")).toHaveTextContent("Bio");
-    });
-  });
-
-  describe("summary values", () => {
-    it("renders the name value", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("summary-value-name")).toHaveTextContent(account.nom);
-    });
-
-    it("renders the first name value", async () => {
-      const screen = await renderRoute("/account");
-      await expect
-        .element(screen.getByTestId("summary-value-first-name"))
-        .toHaveTextContent(account.prenom);
-    });
-
-    it("renders the email value", async () => {
-      const screen = await renderRoute("/account");
-      await expect
-        .element(screen.getByTestId("summary-value-email"))
-        .toHaveTextContent(account.email);
-    });
-
-    it("renders the phone value", async () => {
-      const screen = await renderRoute("/account");
-      await expect
-        .element(screen.getByTestId("summary-value-phone"))
-        .toHaveTextContent(phone.national);
-    });
-
-    it("renders the language value", async () => {
-      const screen = await renderRoute("/account");
-      await expect
-        .element(screen.getByTestId("summary-value-language"))
-        .toHaveTextContent(LANGUAGE_LABELS[account.langue]);
-    });
-
-    it("renders the bio value", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("summary-value-bio")).toHaveTextContent(account.bio);
-    });
-
-    it("renders the fallback in the phone value when there is no phone", async () => {
-      accounts.clear();
-      await seedAccount({ telephone: null });
-
-      const screen = await renderRoute("/account");
-      await expect
-        .element(screen.getByTestId("summary-value-phone"))
-        .toHaveTextContent("Not provided");
-    });
-
-    it("renders the fallback in the bio value when the bio is empty", async () => {
-      accounts.clear();
-      await seedAccount({ bio: "" });
-
-      const screen = await renderRoute("/account");
-      await expect
-        .element(screen.getByTestId("summary-value-bio"))
-        .toHaveTextContent("Not provided");
-    });
-  });
-
-  describe("states", () => {
-    it("renders the loading node while the account is in flight", async () => {
-      worker.use(
-        http.get(ACCOUNT_URL, async () => {
-          await delay(300);
-          return HttpResponse.json(accounts.findFirst());
-        }),
-      );
-
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-loading")).toBeVisible();
-    });
-
-    it("renders the loading copy while the account is in flight", async () => {
-      worker.use(
-        http.get(ACCOUNT_URL, async () => {
-          await delay(300);
-          return HttpResponse.json(accounts.findFirst());
-        }),
-      );
-
-      const screen = await renderRoute("/account");
-      await expect
-        .element(screen.getByTestId("account-loading"))
-        .toHaveTextContent("Loading your account...");
-    });
-
-    it("removes the loading node once the account arrives", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
-      await expect.element(screen.getByTestId("account-loading")).not.toBeInTheDocument();
-    });
-
-    it("renders the error node when the load fails", async () => {
-      worker.use(http.get(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
-
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-error")).toBeVisible();
-    });
-
-    it("renders the error copy when the load fails", async () => {
-      worker.use(http.get(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
-
-      const screen = await renderRoute("/account");
-      await expect
-        .element(screen.getByTestId("account-error"))
-        .toHaveTextContent("Could not load your account. Please try again.");
-    });
-
-    it("removes the summary when the load fails", async () => {
-      worker.use(http.get(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
-
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-error")).toBeVisible();
-      await expect.element(screen.getByTestId("account-summary")).not.toBeInTheDocument();
-    });
-  });
-
-  describe("navigation", () => {
-    it("moves to the edit form when the edit link is clicked", async () => {
-      const screen = await renderRoute("/account");
-      await screen.getByTestId("edit-account-link").click();
-      await expect.element(screen.getByTestId("account-summary")).not.toBeInTheDocument();
-    });
-  });
-
-  describe("collaborators", () => {
-    it("calls the account hook", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
-      expect(useAccount).toHaveBeenCalled();
-    });
-
-    it("calls the account hook without options", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
-      expect(useAccount).toHaveBeenCalledWith();
-    });
-
-    it("fetches the account through the api helper", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
-      expect(getAccount).toHaveBeenCalledTimes(1);
-    });
-
-    it("maps the loaded account through toValues", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
-      expect(toValues).toHaveBeenCalledWith(account);
-    });
-
-    it("returns the national phone from toValues", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
-      expect(vi.mocked(toValues).mock.results[0]?.value).toMatchObject({
-        telephone: phone.national,
-      });
-    });
-
-    it("renders a summary row per field", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
-      const terms = vi.mocked(SummaryRow).mock.calls.map(([props]) => props.term);
-      expect(new Set(terms)).toEqual(
-        new Set(["Name", "First name", "Email", "Phone", "Language", "Bio"]),
-      );
-    });
-
-    it("passes the stored name to its summary row", async () => {
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
-      expect(SummaryRow).toHaveBeenCalledWith(
-        expect.objectContaining({ term: "Name", children: account.nom }),
-        undefined,
-      );
-    });
-
-    it("passes the fallback to the phone row when there is no phone", async () => {
-      accounts.clear();
-      await seedAccount({ telephone: null });
-
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-summary")).toBeVisible();
-      expect(SummaryRow).toHaveBeenCalledWith(
-        expect.objectContaining({ term: "Phone", children: "Not provided" }),
-        undefined,
-      );
-    });
-
-    it("does not render a summary row while the account is loading", async () => {
-      mockQueryResult({ data: undefined });
-
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-loading")).toBeVisible();
-      expect(SummaryRow).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("stubbed hook states", () => {
-    it("renders the loading node when the hook reports no data", async () => {
-      mockQueryResult({ data: undefined });
-
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-loading")).toBeVisible();
-    });
-
-    it("renders the error node when the hook reports a failure", async () => {
-      mockQueryResult({ isError: true });
-
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-error")).toBeVisible();
-    });
-
-    it("prefers the error node when the hook reports data and a failure", async () => {
-      mockQueryResult({ data: createUser(), isError: true });
-
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("account-error")).toBeVisible();
-    });
-
-    it("renders the stubbed account without touching the network", async () => {
-      const stub = createUser({ nom: "Lovelace" });
-      mockQueryResult({ data: stub });
-
-      const screen = await renderRoute("/account");
-      await expect.element(screen.getByTestId("summary-value-name")).toHaveTextContent("Lovelace");
-      expect(getAccount).not.toHaveBeenCalled();
-    });
-  });
+  // Then they see the error, and no summary
+  await expect.element(view.errorBanner()).toBeVisible();
+  await expect
+    .element(view.errorBanner())
+    .toHaveTextContent("Could not load your account. Please try again.");
+  await expect.element(view.heading()).not.toBeInTheDocument();
 });

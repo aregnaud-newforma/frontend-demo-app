@@ -24,9 +24,13 @@
  * to the account too, and role-name matching is a substring match, so an
  * unscoped `link named "Your account"` would be ambiguous by construction.
  */
-import { expect, it, describe } from "vitest";
+import { expect, it } from "vitest";
 import { seedAccount } from "@account/mocks/db-utils";
 import { renderRoute } from "@testing/render-route";
+
+/*
+ * Integration: component
+ */
 
 /** The setup function for this file. Apply AHA Testing principle */
 async function renderNavigationAt(initialPath: string) {
@@ -37,54 +41,37 @@ async function renderNavigationAt(initialPath: string) {
     navigation,
     homeLink: navigation.getByRole("link", { name: "Home" }),
     accountLink: navigation.getByRole("link", { name: "Your account" }),
+    editAccountLink: screen.getByRole("link", { name: "Edit your account" }),
     welcome: screen.getByRole("heading", { name: "Welcome" }),
     accountHeading: screen.getByRole("heading", { name: "Your account" }),
   };
 }
 
-describe("Navigation", () => {
-  it("takes the visitor from the welcome to their account", async () => {
-    // Given an account on the server, and a visitor on the welcome page
-    await seedAccount();
-    const page = await renderNavigationAt("/");
+// Use case: Reading your account, Editing your account — Happy path
+it("marks the current route as the visitor moves from the welcome to the account and the edit form, and Home always returns them to the welcome", async () => {
+  // Given an account, and a visitor on the welcome page
+  await seedAccount();
+  const page = await renderNavigationAt("/");
 
-    // When they follow the account link in the nav
-    await page.accountLink.click();
+  // Then Home is marked current, and Your account is not
+  await expect.element(page.homeLink).toHaveAttribute("aria-current", "page");
+  await expect.element(page.accountLink).not.toHaveAttribute("aria-current");
 
-    // Then the summary is what they land on
-    await expect.element(page.accountHeading).toBeVisible();
-  });
+  // When they follow the account link in the nav
+  await page.accountLink.click();
 
-  it("takes them back again from any page", async () => {
-    // Given the same visitor, deeper in - on the edit form rather than the
-    // summary, so this proves the nav from a route that is not its own parent
-    await seedAccount();
-    const page = await renderNavigationAt("/account/edit");
+  // Then they land on the summary, and the mark moves with them. Home
+  // dropping its mark is the assertion that matters: "/" is a prefix of
+  // every route, so it is the one that goes wrong quietly.
+  await expect.element(page.accountHeading).toBeVisible();
+  await expect.element(page.accountLink).toHaveAttribute("aria-current", "page");
+  await expect.element(page.homeLink).not.toHaveAttribute("aria-current");
 
-    // When they follow the home link in the nav
-    await page.homeLink.click();
+  // When they open the edit form - a route that is not the nav's own parent -
+  // and follow Home from there
+  await page.editAccountLink.click();
+  await page.homeLink.click();
 
-    // Then they are back on the welcome
-    await expect.element(page.welcome).toBeVisible();
-  });
-
-  it("marks the page the visitor is on, and only that one", async () => {
-    // Given a visitor on the welcome page
-    await seedAccount();
-    const page = await renderNavigationAt("/");
-
-    // Then the nav says so, and says nothing about the other destination
-    await expect.element(page.homeLink).toHaveAttribute("aria-current", "page");
-    await expect.element(page.accountLink).not.toHaveAttribute("aria-current");
-
-    // When they move to the account
-    await page.accountLink.click();
-    await expect.element(page.accountHeading).toBeVisible();
-
-    // Then the mark moves with them. Home dropping its mark is the assertion
-    // that matters: "/" is a prefix of every route, so it is the one that goes
-    // wrong quietly.
-    await expect.element(page.accountLink).toHaveAttribute("aria-current", "page");
-    await expect.element(page.homeLink).not.toHaveAttribute("aria-current");
-  });
+  // Then they are back on the welcome
+  await expect.element(page.welcome).toBeVisible();
 });

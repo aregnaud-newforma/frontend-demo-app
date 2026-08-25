@@ -17,13 +17,19 @@ const styles = stylex.create({
 
 export function SummaryRow({ term, children }: { term: string; children: ReactNode }) {
   const slug = term.toLowerCase().replace(/\s+/g, "-");
+  const termId = `summary-term-${slug}`;
 
   return (
     <>
-      <dt data-testid={`summary-term-${slug}`} {...stylex.props(styles.term)}>
+      <dt id={termId} data-testid={termId} {...stylex.props(styles.term)}>
         {term}
       </dt>
-      <dd data-testid={`summary-value-${slug}`} {...stylex.props(styles.value)}>
+      <dd
+        role="group"
+        aria-labelledby={termId}
+        data-testid={`summary-value-${slug}`}
+        {...stylex.props(styles.value)}
+      >
         {children}
       </dd>
     </>

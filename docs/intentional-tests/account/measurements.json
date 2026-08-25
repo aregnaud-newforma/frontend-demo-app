@@ -1,0 +1,128 @@
+{
+  "runs": [
+    {
+      "at": "2026-08-25T09:43:54Z",
+      "sha": "f683e5d4eba683055e5705ecd552cdd1b1577692",
+      "before": {
+        "counts": {
+          "E2E": {
+            "files": 1,
+            "cases": 1
+          },
+          "Integration page": {
+            "files": 1,
+            "cases": 39
+          },
+          "Integration component": {
+            "files": 2,
+            "cases": 20
+          },
+          "Unit": {
+            "files": 2,
+            "cases": 35
+          }
+        },
+        "coverage": {
+          "files": 11,
+          "statements": [
+            239,
+            270
+          ],
+          "branches": [
+            140,
+            179
+          ]
+        }
+      },
+      "after": {
+        "counts": {
+          "E2E": {
+            "files": 1,
+            "cases": 1
+          },
+          "Integration page": {
+            "files": 1,
+            "cases": 4
+          },
+          "Integration component": {
+            "files": 1,
+            "cases": 1
+          },
+          "Unit": {
+            "files": 2,
+            "cases": 19
+          }
+        },
+        "coverage": {
+          "files": 11,
+          "statements": [
+            232,
+            270
+          ],
+          "branches": [
+            130,
+            180
+          ]
+        }
+      }
+    },
+    {
+      "at": "2026-08-25T10:07:59Z",
+      "sha": "f683e5d4eba683055e5705ecd552cdd1b1577692",
+      "before": {
+        "counts": {
+          "Integration page": {
+            "files": 1,
+            "cases": 11
+          },
+          "Integration component": {
+            "files": 1,
+            "cases": 16
+          },
+          "Unit": {
+            "files": 1,
+            "cases": 33
+          }
+        },
+        "coverage": {
+          "files": 11,
+          "statements": [
+            232,
+            270
+          ],
+          "branches": [
+            130,
+            180
+          ]
+        }
+      },
+      "after": {
+        "counts": {
+          "Integration page": {
+            "files": 1,
+            "cases": 6
+          },
+          "Integration component": {
+            "files": 0,
+            "cases": 0
+          },
+          "Unit": {
+            "files": 1,
+            "cases": 13
+          }
+        },
+        "coverage": {
+          "files": 11,
+          "statements": [
+            235,
+            270
+          ],
+          "branches": [
+            133,
+            180
+          ]
+        }
+      }
+    }
+  ]
+}

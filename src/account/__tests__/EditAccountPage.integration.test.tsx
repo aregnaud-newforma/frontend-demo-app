@@ -1,259 +1,275 @@
 /**
- * INTEGRATION TEST - best practices
- * - Cover the happy path of BOTH round trips (load, save) and the edges that
- *   matter for each: a failed load, validation, a failed save, the two
- *   in-flight states.
+ * Integration coverage for EditAccountPage - the form a visitor edits their
+ * account through, at "/account/edit".
  */
-import { http, HttpResponse, delay } from "msw";
-import { expect, it, describe } from "vitest";
+import { http, HttpResponse } from "msw";
+import { expect, it } from "vitest";
 import { worker } from "@testing/worker";
+import { deferred } from "@testing/deferred";
+import { renderRoute } from "@testing/render-route";
 import { accounts } from "../mocks/db";
 import { ACCOUNT_URL } from "../mocks/handlers";
-import { createAccountValues, createFrenchPhone, seedAccount } from "../mocks/db-utils";
-import { renderRoute } from "@testing/render-route";
-import type { AccountValues } from "../helpers/validation";
+import { accountValuesFactory, createFrenchPhone, seedAccount } from "../mocks/db-utils";
+import { LANGUAGE_LABELS } from "../helpers/validation";
+import type { AccountValues, Language } from "../helpers/validation";
+import type { AccountPayload } from "../helpers/api";
+
+/*
+ * Integration: page
+ */
 
 /**
- * The setup function for this file. Apply AHA Testing principle
+ * The setup function for this file. Apply AHA Testing principle.
  */
 async function renderEditAccountPage() {
   const screen = await renderRoute("/account/edit");
 
-  const nameInput = screen.getByLabelText("Name", { exact: true });
-  const firstNameInput = screen.getByLabelText("First name");
-  const emailInput = screen.getByLabelText("Email");
-  const phoneInput = screen.getByLabelText("Phone (optional)");
-  const languageSelect = screen.getByLabelText("Language");
-  const bioInput = screen.getByLabelText("Bio (optional)");
-  const saveButton = screen.getByRole("button", { name: "Save", exact: true });
-
   return {
-    nameInput,
-    firstNameInput,
-    emailInput,
-    phoneInput,
-    languageSelect,
-    bioInput,
+    nameInput: () => screen.getByLabelText("Name", { exact: true }),
+    firstNameInput: () => screen.getByLabelText("First name"),
+    emailInput: () => screen.getByLabelText("Email"),
+    phoneInput: () => screen.getByLabelText("Phone (optional)"),
+    languageSelect: () => screen.getByLabelText("Language"),
+    bioInput: () => screen.getByLabelText("Bio (optional)"),
 
-    loadingIndicator: screen.getByRole("status"),
-    errorBanner: screen.getByRole("alert"),
-    savingButton: screen.getByRole("button", { name: "Saving..." }),
-    accountHeading: screen.getByRole("heading", { name: "Your account" }),
-    summaryValue: (value: string) => screen.getByText(value, { exact: true }),
-
+    loadingIndicator: () => screen.getByRole("status"),
+    errorBanner: () => screen.getByRole("alert"),
+    saveButton: () => screen.getByRole("button", { name: "Save", exact: true }),
+    savingButton: () => screen.getByRole("button", { name: "Saving...", exact: true }),
+    cancelLink: () => screen.getByRole("link", { name: "Cancel" }),
+    // exact: true - "Edit your account" is a substring match on "Your account"
+    // otherwise, and the Happy path and Cancel journeys need this heading gone
+    // once they leave the form.
+    accountHeading: () => screen.getByRole("heading", { name: "Your account", exact: true }),
     /** One field's validation message, e.g. fieldError("Name is required"). */
     fieldError: (message: string) => screen.getByText(message, { exact: true }),
+    /** One field's value on the summary, paired with its own term, e.g.
+     *  summaryValue("Phone") - proving the pairing, not just that the text is
+     *  somewhere on the page. */
+    summaryValue: (term: string) => screen.getByRole("group", { name: term, exact: true }),
 
-    changeName: (value: string) => nameInput.fill(value),
-    changeFirstName: (value: string) => firstNameInput.fill(value),
-    changeEmail: (value: string) => emailInput.fill(value),
-    changePhone: (value: string) => phoneInput.fill(value),
-    changeLanguage: (value: AccountValues["langue"]) => languageSelect.selectOptions(value),
-    changeBio: (value: string) => bioInput.fill(value),
+    changeName: (value: string) => screen.getByLabelText("Name", { exact: true }).fill(value),
+    changeFirstName: (value: string) => screen.getByLabelText("First name").fill(value),
+    changeEmail: (value: string) => screen.getByLabelText("Email").fill(value),
+    changePhone: (value: string) => screen.getByLabelText("Phone (optional)").fill(value),
+    changeLanguage: (value: AccountValues["langue"]) =>
+      screen.getByLabelText("Language").selectOptions(value),
+    changeBio: (value: string) => screen.getByLabelText("Bio (optional)").fill(value),
 
-    saveForm: () => saveButton.click(),
+    saveForm: () => screen.getByRole("button", { name: "Save", exact: true }).click(),
+    cancelEdit: () => screen.getByRole("link", { name: "Cancel" }).click(),
   };
 }
 
-describe("EditAccountPage", () => {
-  it("loads the account and shows it in the form", async () => {
-    // Given an account whose phone is seeded explicitly, because it is the one
-    // field the server and the form disagree about on purpose: stored E.164,
-    // displayed national.
-    const phone = createFrenchPhone();
-    const account = await seedAccount({ telephone: phone.e164 });
+// Use case: Editing your account — Default render
+it("shows a loading state, then every field seeded from the stored account", async () => {
+  // Given a stored account, with its GET held open
+  const phone = createFrenchPhone();
+  const account = await seedAccount({ telephone: phone.e164 });
+  const { promise: accountArrives, resolve: releaseAccount } = deferred<void>();
+  worker.use(
+    http.get(ACCOUNT_URL, async () => {
+      await accountArrives;
+      return HttpResponse.json(accounts.findFirst());
+    }),
+  );
+  const form = await renderEditAccountPage();
 
-    // When the user opens the edit form
-    const form = await renderEditAccountPage();
+  // Then the page shows it is loading
+  await expect.element(form.loadingIndicator()).toBeVisible();
+  await expect.element(form.loadingIndicator()).toHaveTextContent("Loading your account...");
 
-    // Then every field holds the stored value
-    await expect.element(form.nameInput).toHaveValue(account.nom);
-    await expect.element(form.firstNameInput).toHaveValue(account.prenom);
-    await expect.element(form.emailInput).toHaveValue(account.email);
-    await expect.element(form.phoneInput).toHaveValue(phone.national);
-    await expect.element(form.languageSelect).toHaveValue(account.langue);
-    await expect.element(form.bioInput).toHaveValue(account.bio);
-  });
+  // Given the account arrives
+  releaseAccount();
 
-  it("shows a loading state until the account arrives", async () => {
-    // Given a slow load
-    await seedAccount();
-    worker.use(
-      http.get(ACCOUNT_URL, async () => {
-        await delay(300);
-        return HttpResponse.json(accounts.findFirst());
-      }),
-    );
+  // Then every field is seeded from the stored account - the phone in
+  // national format, and the language selected by its stored code
+  await expect.element(form.nameInput()).toHaveValue(account.nom);
+  await expect.element(form.firstNameInput()).toHaveValue(account.prenom);
+  await expect.element(form.emailInput()).toHaveValue(account.email);
+  await expect.element(form.phoneInput()).toHaveValue(phone.national);
+  await expect.element(form.languageSelect()).toHaveValue(account.langue);
+  await expect.element(form.bioInput()).toHaveValue(account.bio);
 
-    // When the user opens the edit form
-    const form = await renderEditAccountPage();
+  // And the language select offers its placeholder beside French and English
+  await expect.element(form.languageSelect()).toHaveTextContent("Choose a language");
+  await expect.element(form.languageSelect()).toHaveTextContent("French");
+  await expect.element(form.languageSelect()).toHaveTextContent("English");
 
-    // Then they are told it is loading
-    await expect.element(form.loadingIndicator).toHaveTextContent("Loading your account");
+  // And Save is enabled, with no field flagged
+  await expect.element(form.saveButton()).toBeEnabled();
+  await expect.element(form.nameInput()).not.toHaveAttribute("aria-invalid");
+  await expect.element(form.firstNameInput()).not.toHaveAttribute("aria-invalid");
+  await expect.element(form.emailInput()).not.toHaveAttribute("aria-invalid");
+  await expect.element(form.phoneInput()).not.toHaveAttribute("aria-invalid");
+  await expect.element(form.languageSelect()).not.toHaveAttribute("aria-invalid");
+  await expect.element(form.bioInput()).not.toHaveAttribute("aria-invalid");
 
-    // And it gives way to the real form once the request lands
-    await expect.element(form.emailInput).toBeVisible();
-  });
+  // Then the loading state is gone
+  await expect.element(form.loadingIndicator()).not.toBeInTheDocument();
+});
 
-  it("shows an error and no form when the account cannot be loaded", async () => {
-    // Given a server that fails the load
-    worker.use(http.get(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
+// Use case: Editing your account — Happy path
+it("edits every field of an account with no phone, saves, and lands on the summary showing every new value", async () => {
+  // Given a loaded form for an account stored with no phone
+  await seedAccount({ telephone: null });
+  const form = await renderEditAccountPage();
+  await expect.element(form.emailInput()).toBeVisible();
 
-    // When the user opens the edit form
-    const form = await renderEditAccountPage();
+  // When the user edits every field and saves, with the save held open
+  const edited = accountValuesFactory.build();
+  const phone = createFrenchPhone();
+  const { promise: saveArrives, resolve: releaseSave } = deferred<void>();
+  worker.use(
+    http.put(ACCOUNT_URL, async ({ request }) => {
+      await saveArrives;
+      const body = (await request.json()) as AccountPayload;
+      const updated = await accounts.update(accounts.findFirst()!, {
+        strict: true,
+        data(draft) {
+          draft.nom = body.nom;
+          draft.prenom = body.prenom;
+          draft.email = body.email;
+          draft.telephone = body.telephone;
+          draft.langue = body.langue;
+          draft.bio = body.bio;
+        },
+      });
+      return HttpResponse.json(updated);
+    }),
+  );
+  await form.changeName(edited.nom);
+  await form.changeFirstName(edited.prenom);
+  await form.changeEmail(edited.email);
+  await form.changePhone(phone.formatted);
+  await form.changeLanguage(edited.langue);
+  await form.changeBio(edited.bio);
+  await form.saveForm();
 
-    // Then they are told, and are given no form to fill in
-    await expect.element(form.errorBanner).toHaveTextContent("Could not load your account");
-    await expect.element(form.emailInput).not.toBeInTheDocument();
-  });
+  // Then Save is disabled and relabelled while the save is in flight
+  await expect.element(form.savingButton()).toBeVisible();
+  await expect.element(form.savingButton()).toBeDisabled();
 
-  it("saves an edited account and returns to the summary", async () => {
-    // Given a loaded edit form
-    const account = await seedAccount();
-    const form = await renderEditAccountPage();
+  // Given the save resolves
+  releaseSave();
 
-    // When the user changes the name and the phone, and saves. The rest keeps the loaded values, which is
-    // itself part of the contract.
-    const phone = createFrenchPhone();
-    const edited = createAccountValues();
-    await form.changeName(edited.nom);
-    await form.changePhone(phone.formatted);
-    await form.saveForm();
+  // Then the visitor lands on the summary, showing every new value - the
+  // phone entered in national format, even though the account started with
+  // none
+  await expect.element(form.accountHeading()).toBeVisible();
+  await expect.element(form.summaryValue("Name")).toHaveTextContent(edited.nom);
+  await expect.element(form.summaryValue("First name")).toHaveTextContent(edited.prenom);
+  await expect.element(form.summaryValue("Email")).toHaveTextContent(edited.email);
+  await expect.element(form.summaryValue("Phone")).toHaveTextContent(phone.national);
+  await expect
+    .element(form.summaryValue("Language"))
+    // accountValuesFactory always builds a real language, never the placeholder.
+    .toHaveTextContent(LANGUAGE_LABELS[edited.langue as Language]);
+  await expect.element(form.summaryValue("Bio")).toHaveTextContent(edited.bio);
 
-    // Then they are back on the summary, showing the saved name.
-    await expect.element(form.accountHeading).toBeVisible();
-    await expect.element(form.summaryValue(edited.nom)).toBeVisible();
+  // And the store holds the phone in E.164
+  expect(accounts.findFirst()).toMatchObject({ telephone: phone.e164 });
+});
 
-    // And what actually reached the "server" is the edit applied, the phone
-    // normalized to E.164, and the untouched fields preserved.
-    expect(accounts.findFirst()).toMatchObject({
-      id: account.id,
-      nom: edited.nom,
-      telephone: phone.e164,
-      email: account.email,
-      bio: account.bio,
-    });
-  });
+// Use case: Editing your account — Edge case
+it("rejects the form when every field is invalid, flags each one, sends nothing, and clears a message the moment it is corrected", async () => {
+  // Given a loaded form
+  const account = await seedAccount();
+  const form = await renderEditAccountPage();
+  await expect.element(form.emailInput()).toBeVisible();
 
-  it("shows the phone in the national format on the page it returns to", async () => {
-    // Given a loaded edit form for an account with no phone
-    await seedAccount({ telephone: null });
-    const form = await renderEditAccountPage();
+  // When the user clears the name, breaks the email, enters an invalid
+  // phone, and puts the language back on its placeholder, then saves
+  await form.changeName("");
+  await form.changeEmail("not-an-email");
+  await form.changePhone("06 12 34 56");
+  await form.changeLanguage("");
+  await form.saveForm();
 
-    // When the user types a phone with spaces and saves
-    const phone = createFrenchPhone();
-    await form.changePhone(phone.formatted);
-    await form.saveForm();
+  // Then each field is flagged with its own message, and points at it
+  await expect.element(form.fieldError("Name is required")).toBeVisible();
+  await expect.element(form.nameInput()).toHaveAttribute("aria-invalid", "true");
+  await expect.element(form.nameInput()).toHaveAttribute("aria-describedby", "nom-error");
 
-    // Then the summary shows it in the national format on arrival.
-    await expect.element(form.accountHeading).toBeVisible();
-    await expect.element(form.summaryValue(phone.national)).toBeVisible();
-  });
+  await expect.element(form.fieldError("Email is invalid")).toBeVisible();
+  await expect.element(form.emailInput()).toHaveAttribute("aria-invalid", "true");
+  await expect.element(form.emailInput()).toHaveAttribute("aria-describedby", "email-error");
 
-  it("clears the failure banner once the user edits again", async () => {
-    // Given a save that has already failed
-    await seedAccount();
-    worker.use(http.put(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
-    const form = await renderEditAccountPage();
-    await form.changeBio("Rewritten bio.");
-    await form.saveForm();
-    await expect.element(form.errorBanner).toHaveTextContent("Something went wrong");
+  await expect.element(form.fieldError("Phone number is invalid")).toBeVisible();
+  await expect.element(form.phoneInput()).toHaveAttribute("aria-invalid", "true");
+  await expect.element(form.phoneInput()).toHaveAttribute("aria-describedby", "telephone-error");
 
-    // When the user edits again
-    await form.changeBio("Rewritten again.");
+  await expect.element(form.fieldError("Language is required")).toBeVisible();
+  await expect.element(form.languageSelect()).toHaveAttribute("aria-invalid", "true");
+  await expect.element(form.languageSelect()).toHaveAttribute("aria-describedby", "langue-error");
 
-    // Then the banner is gone.
-    await expect.element(form.errorBanner).not.toBeInTheDocument();
-  });
+  // And nothing was sent
+  expect(accounts.findFirst()).toEqual(account);
 
-  it("rejects the placeholder language option", async () => {
-    // Given a loaded edit form
-    await seedAccount();
-    const form = await renderEditAccountPage();
+  // When the user corrects the name alone, without saving again
+  await form.changeName(account.nom);
 
-    // When the user puts the language back to the placeholder and saves. The
-    // <select> opens on "Choose a language", so "" is a value a user can put back
-    await form.changeLanguage("");
-    await form.saveForm();
+  // Then its message clears live, on its own
+  await expect.element(form.fieldError("Name is required")).not.toBeInTheDocument();
+});
 
-    // Then the field is flagged
-    await expect.element(form.fieldError("Language is required")).toBeVisible();
-    await expect.element(form.languageSelect).toHaveAttribute("aria-invalid", "true");
-  });
+// Use case: Editing your account — Edge case
+it("stays on the form and shows an error banner when the save fails, clearing it once the user edits again", async () => {
+  // Given a loaded form and a server that refuses the save
+  const account = await seedAccount();
+  worker.use(http.put(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
+  const form = await renderEditAccountPage();
+  await expect.element(form.emailInput()).toBeVisible();
 
-  it("shows validation errors and saves nothing when a required field is cleared", async () => {
-    // Given a loaded edit form
-    const account = await seedAccount();
-    const form = await renderEditAccountPage();
+  // When the user rewrites the bio and saves
+  await form.changeBio("Rewritten bio.");
+  await form.saveForm();
 
-    // When the user clears the name and saves
-    await form.changeName("");
-    await form.saveForm();
+  // Then they stay on the form and are told, with the edit intact
+  await expect.element(form.errorBanner()).toHaveTextContent("Something went wrong");
+  await expect.element(form.bioInput()).toHaveValue("Rewritten bio.");
 
-    // Then the field is flagged
-    await expect.element(form.fieldError("Name is required")).toBeVisible();
-    await expect.element(form.nameInput).toHaveAttribute("aria-invalid", "true");
+  // And nothing was persisted
+  expect(accounts.findFirst()).toMatchObject({ bio: account.bio });
 
-    // And nothing was sent: the store still holds what was seeded.
-    expect(accounts.findFirst()).toMatchObject({ nom: account.nom });
-  });
+  // When the user edits again
+  await form.changeBio("Rewritten again.");
 
-  it("flags an invalid email", async () => {
-    // Given a loaded edit form
-    const account = await seedAccount();
-    const form = await renderEditAccountPage();
+  // Then the banner is gone
+  await expect.element(form.errorBanner()).not.toBeInTheDocument();
+});
 
-    // When the user replaces the email with something invalid and saves.
-    // Everything else keeps its loaded, valid value, so the email is provably
-    // the only reason the save was rejected.
-    await form.changeEmail("not-an-email");
-    await form.saveForm();
+// Use case: Editing your account — Edge case
+it("abandons the edit: Cancel returns to the summary leaving the stored account unchanged", async () => {
+  // Given a loaded form
+  const account = await seedAccount();
+  const form = await renderEditAccountPage();
+  await expect.element(form.emailInput()).toBeVisible();
 
-    // Then the field is flagged
-    await expect.element(form.fieldError("Email is invalid")).toBeVisible();
-    await expect.element(form.emailInput).toHaveAttribute("aria-invalid", "true");
+  // When the user edits a field but leaves via Cancel instead of saving
+  await form.changeBio("Abandoned edit.");
+  await form.cancelEdit();
 
-    // And nothing was sent
-    expect(accounts.findFirst()).toMatchObject({ email: account.email });
-  });
+  // Then they land back on the summary, showing the stored value untouched
+  await expect.element(form.accountHeading()).toBeVisible();
+  await expect.element(form.summaryValue("Bio")).toHaveTextContent(account.bio);
 
-  it("stays put and shows an error banner when the save fails", async () => {
-    // Given a loaded edit form and a server that fails the save
-    const account = await seedAccount();
-    worker.use(http.put(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
-    const form = await renderEditAccountPage();
+  // And the store holds exactly what was there before
+  expect(accounts.findFirst()).toEqual(account);
+});
 
-    // When the user rewrites the bio and saves
-    await form.changeBio("Rewritten bio.");
-    await form.saveForm();
+// Use case: Editing your account — Edge case
+it("shows an error and no form fields when the account fails to load", async () => {
+  // Given a server that fails the load
+  worker.use(http.get(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
 
-    // Then they are told, and are still on the form with the edit intact.
-    await expect.element(form.errorBanner).toHaveTextContent("Something went wrong");
-    await expect.element(form.bioInput).toHaveValue("Rewritten bio.");
+  // When the visitor opens the edit form
+  const form = await renderEditAccountPage();
 
-    // And nothing was persisted
-    expect(accounts.findFirst()).toMatchObject({ bio: account.bio });
-  });
-
-  it("disables the button and shows a pending label while saving", async () => {
-    // Given a loaded edit form and a slow save.
-    await seedAccount();
-    worker.use(
-      http.put(ACCOUNT_URL, async () => {
-        await delay(300);
-        return HttpResponse.json(accounts.findFirst());
-      }),
-    );
-    const form = await renderEditAccountPage();
-
-    // When the user rewrites the bio and saves
-    await form.changeBio("Rewritten bio.");
-    await form.saveForm();
-
-    // Then the button is disabled and relabelled mid-flight
-    await expect.element(form.savingButton).toBeDisabled();
-
-    // And it resolves into the navigation
-    await expect.element(form.accountHeading).toBeVisible();
-  });
+  // Then they see the error, and are given no form to fill in
+  await expect.element(form.errorBanner()).toBeVisible();
+  await expect
+    .element(form.errorBanner())
+    .toHaveTextContent("Could not load your account. Please try again.");
+  await expect.element(form.emailInput()).not.toBeInTheDocument();
 });

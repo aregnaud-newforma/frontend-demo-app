@@ -5,7 +5,7 @@
  *   live in the integration and unit tests).
  */
 import { test, expect, type Page } from "@playwright/test";
-import { createUser, createFrenchPhone } from "@account/mocks/db-utils";
+import { accountFactory, createFrenchPhone } from "@account/mocks/db-utils";
 import { LANGUAGE_LABELS } from "@account/helpers/validation";
 import { startSession } from "./session";
 
@@ -21,6 +21,7 @@ const summaryValue = (page: Page, term: string) =>
     .locator("dt", { hasText: new RegExp(`^${term}$`) })
     .locator("xpath=following-sibling::dd[1]");
 
+// Use case: Reading your account, Editing your account — Happy path
 test("visitor navigates to their account, edits every field and is returned to the summary", async ({
   page,
   request,
@@ -28,11 +29,11 @@ test("visitor navigates to their account, edits every field and is returned to t
   // Given an account stored in the real API, in a session of this test's own so
   // the specs running beside it cannot touch it.
   const phone = createFrenchPhone();
-  const account = createUser({ telephone: phone.e164 });
+  const account = accountFactory.build({ telephone: phone.e164 });
   await startSession(page, request, account);
 
   const editedPhone = createFrenchPhone();
-  const edited = createUser({
+  const edited = accountFactory.build({
     langue: account.langue === "fr" ? "en" : "fr",
     telephone: editedPhone.e164,
   });

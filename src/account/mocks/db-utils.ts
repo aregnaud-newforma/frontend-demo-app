@@ -18,6 +18,7 @@
  */
 import { faker } from "@faker-js/faker";
 import { UniqueEnforcer } from "enforce-unique";
+import { Factory, type DeepPartial } from "fishery";
 import { LANGUAGES, type AccountValues } from "../helpers/validation";
 import type { Account } from "../helpers/api";
 import { accounts } from "./db";
@@ -53,48 +54,59 @@ export function createFrenchPhone() {
 }
 
 /**
- * A complete, schema-valid *stored* account - the server's shape, phone in
- * E.164. Use `seedAccount` unless you specifically want the object without
- * putting it in the store.
+ * The fields both shapes below spell identically. Only the phone and the id
+ * differ between them, so only those are left to each factory.
  */
-export function createUser(overrides: Partial<Account> = {}): Account {
+function createPerson() {
   return {
-    id: faker.string.uuid(),
     nom: faker.person.lastName(),
     prenom: faker.person.firstName(),
     email: createEmail(),
-    telephone: createFrenchPhone().e164,
     langue: faker.helpers.arrayElement(LANGUAGES),
     bio: faker.lorem.sentence(),
-    ...overrides,
   };
 }
 
 /**
- * Puts an account in the mock db so the GET has something to return, and hands
- * it back so the test can assert against what it seeded.
+ * A complete, schema-valid *stored* account - the server's shape, phone in
+ * E.164:
  *
- *   const account = await seedAccount({ telephone: phone.e164 });
+ *   accountFactory.build()
+ *   accountFactory.build({ bio: "" })
+ *   accountFactory.buildList(3)
  */
-export async function seedAccount(overrides: Partial<Account> = {}) {
-  return accounts.create(createUser(overrides));
-}
+export const accountFactory = Factory.define<Account>(() => ({
+  id: faker.string.uuid(),
+  ...createPerson(),
+  telephone: createFrenchPhone().e164,
+}));
 
 /**
  * A complete, schema-valid set of *form* values - the shape the user edits,
- * phone in the national format the form displays. Pass `overrides` for the
- * fields the test actually cares about:
+ * phone in the national format the form displays:
  *
- *   createAccountValues({ email: "not-an-email" })
+ *   accountValuesFactory.build({ email: "not-an-email" })
  */
-export function createAccountValues(overrides: Partial<AccountValues> = {}): AccountValues {
-  return {
-    nom: faker.person.lastName(),
-    prenom: faker.person.firstName(),
-    email: createEmail(),
-    telephone: createFrenchPhone().formatted,
-    langue: faker.helpers.arrayElement(LANGUAGES),
-    bio: faker.lorem.sentence(),
-    ...overrides,
-  };
+export const accountValuesFactory = Factory.define<AccountValues>(() => ({
+  ...createPerson(),
+  telephone: createFrenchPhone().formatted,
+}));
+
+/* -------------------------------------------------------------------------- */
+/* Putting data in the store - the only part that knows the mock db exists.   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Builds an account and puts it in the mock db, so the GET has something to
+ * return, then hands the record back for the test to assert against.
+ *
+ *   const account = await seedAccount({ telephone: phone.e164 });
+ *
+ * The overrides are forwarded straight to `accountFactory.build`, so seeding
+ * reads the same as building and a test never repeats the factory call to get
+ * one row into the store. The factory stays usable on its own - the E2E specs
+ * build accounts they post to a real API and never come near this function.
+ */
+export async function seedAccount(overrides: DeepPartial<Account> = {}) {
+  return accounts.create(accountFactory.build(overrides));
 }

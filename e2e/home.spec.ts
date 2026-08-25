@@ -5,7 +5,7 @@
  *   live in the integration and unit tests).
  */
 import { test, expect, type Page } from "@playwright/test";
-import { createUser } from "@account/mocks/db-utils";
+import { accountFactory } from "@account/mocks/db-utils";
 import { startSession } from "./session";
 
 /**
@@ -46,7 +46,7 @@ test("the root serves the welcome", async ({ page }) => {
 
 test("the browser's own back and forward buttons follow the nav", async ({ page, request }) => {
   // Given a stored account.
-  await startSession(page, request, createUser());
+  await startSession(page, request, accountFactory.build());
 
   // ...and a visitor who has walked from the welcome to their account
   await page.goto("/");

@@ -1,202 +1,118 @@
 /**
- * Unit coverage for the account schema.
+ * UNIT TEST - ../validation: accountSchema.
+ *
+ * One `it` per input class: every rejection reason and every boundary the
+ * schema distinguishes. `valid` is a fully valid account; each test overrides
+ * only the field its case turns on.
  */
-import { beforeEach, describe, expect, it } from "vitest";
-import { accountSchema, LANGUAGES, LANGUAGE_LABELS } from "../validation";
+import { describe, expect, it } from "vitest";
+import { accountSchema } from "../validation";
 import type { AccountValues } from "../validation";
 
+const valid: AccountValues = {
+  nom: "Lovelace",
+  prenom: "Ada",
+  email: "ada@example.com",
+  telephone: "0612345678",
+  langue: "fr",
+  bio: "Mathematician",
+};
+
 describe("accountSchema", () => {
-  let values: AccountValues;
-
-  beforeEach(() => {
-    values = {
-      nom: "Lovelace",
-      prenom: "Ada",
-      email: "ada@example.com",
-      telephone: "0612345678",
-      langue: "fr",
-      bio: "",
-    };
+  it.each(["", "   "])("rejects the nom %j as required", (nom) => {
+    // Arrange: a fully valid account, with the nom this row turns on
+    const input: AccountValues = { ...valid, nom };
+    // Act
+    const result = accountSchema.safeParse(input);
+    // Assert
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe("Name is required");
   });
 
-  describe("shape", () => {
-    it("is defined", () => {
-      expect(accountSchema).toBeDefined();
-    });
-
-    it("exposes a safeParse method", () => {
-      expect(typeof accountSchema.safeParse).toBe("function");
-    });
-
-    it("returns a result object with a success flag", () => {
-      const result = accountSchema.safeParse(values);
-      expect(result).toHaveProperty("success");
-    });
-
-    it("accepts a fully valid account", () => {
-      expect(accountSchema.safeParse(values).success).toBe(true);
-    });
+  it("rejects an empty prenom", () => {
+    // Arrange
+    const input: AccountValues = { ...valid, prenom: "" };
+    // Act
+    const result = accountSchema.safeParse(input);
+    // Assert
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe("First name is required");
   });
 
-  describe("nom", () => {
-    it("rejects an empty nom", () => {
-      values.nom = "";
-      expect(accountSchema.safeParse(values).success).toBe(false);
-    });
-
-    it("reports the required message for an empty nom", () => {
-      values.nom = "";
-      const result = accountSchema.safeParse(values);
-      expect(result.error?.issues[0]?.message).toBe("Name is required");
-    });
-
-    it("rejects a whitespace-only nom", () => {
-      values.nom = "   ";
-      expect(accountSchema.safeParse(values).success).toBe(false);
-    });
+  it("rejects an empty email", () => {
+    // Arrange
+    const input: AccountValues = { ...valid, email: "" };
+    // Act
+    const result = accountSchema.safeParse(input);
+    // Assert
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe("Email is required");
   });
 
-  describe("prenom", () => {
-    it("rejects an empty prenom", () => {
-      values.prenom = "";
-      expect(accountSchema.safeParse(values).success).toBe(false);
-    });
-
-    it("reports the required message for an empty prenom", () => {
-      values.prenom = "";
-      const result = accountSchema.safeParse(values);
-      expect(result.error?.issues[0]?.message).toBe("First name is required");
-    });
+  it.each(["ada.example.com", "ada@"])("rejects the malformed email %j", (email) => {
+    // Arrange: a fully valid account, with the email this row turns on
+    const input: AccountValues = { ...valid, email };
+    // Act
+    const result = accountSchema.safeParse(input);
+    // Assert
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe("Email is invalid");
   });
 
-  describe("email", () => {
-    it("rejects an empty email", () => {
-      values.email = "";
-      expect(accountSchema.safeParse(values).success).toBe(false);
-    });
-
-    it("reports the required message for an empty email", () => {
-      values.email = "";
-      const result = accountSchema.safeParse(values);
-      expect(result.error?.issues[0]?.message).toBe("Email is required");
-    });
-
-    it("rejects an email with no @", () => {
-      values.email = "ada.example.com";
-      expect(accountSchema.safeParse(values).success).toBe(false);
-    });
-
-    it("rejects an email with no domain", () => {
-      values.email = "ada@";
-      expect(accountSchema.safeParse(values).success).toBe(false);
-    });
-
-    it("reports the invalid message for a malformed email", () => {
-      values.email = "ada.example.com";
-      const result = accountSchema.safeParse(values);
-      expect(result.error?.issues[0]?.message).toBe("Email is invalid");
-    });
-
-    it("accepts a normal email", () => {
-      values.email = "ada@example.com";
-      expect(accountSchema.safeParse(values).success).toBe(true);
-    });
+  it.each(["06 12 34 AB 78", "06 12 34 56"])("rejects the telephone %j", (telephone) => {
+    // Arrange: a fully valid account, with the telephone this row turns on
+    const input: AccountValues = { ...valid, telephone };
+    // Act
+    const result = accountSchema.safeParse(input);
+    // Assert
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe("Phone number is invalid");
   });
 
-  describe("telephone", () => {
-    it("accepts an empty telephone", () => {
-      values.telephone = "";
-      expect(accountSchema.safeParse(values).success).toBe(true);
-    });
-
-    it("accepts a national telephone", () => {
-      values.telephone = "0612345678";
-      expect(accountSchema.safeParse(values).success).toBe(true);
-    });
-
-    it("accepts an international telephone", () => {
-      values.telephone = "+33612345678";
-      expect(accountSchema.safeParse(values).success).toBe(true);
-    });
-
-    it("rejects a telephone with letters in it", () => {
-      values.telephone = "06 12 34 AB 78";
-      expect(accountSchema.safeParse(values).success).toBe(false);
-    });
-
-    it("rejects a telephone that is too short", () => {
-      values.telephone = "0612345";
-      expect(accountSchema.safeParse(values).success).toBe(false);
-    });
+  it("rejects the placeholder langue", () => {
+    // Arrange
+    const input: AccountValues = { ...valid, langue: "" };
+    // Act
+    const result = accountSchema.safeParse(input);
+    // Assert
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe("Language is required");
   });
 
-  describe("langue", () => {
-    it("accepts fr", () => {
-      values.langue = "fr";
-      expect(accountSchema.safeParse(values).success).toBe(true);
-    });
-
-    it("accepts en", () => {
-      values.langue = "en";
-      expect(accountSchema.safeParse(values).success).toBe(true);
-    });
-
-    it("rejects the empty placeholder option", () => {
-      values.langue = "";
-      expect(accountSchema.safeParse(values).success).toBe(false);
-    });
-
-    it("reports the required message for the placeholder option", () => {
-      values.langue = "";
-      const result = accountSchema.safeParse(values);
-      expect(result.error?.issues[0]?.message).toBe("Language is required");
-    });
+  it("rejects a bio of 201 characters", () => {
+    // Arrange
+    const input: AccountValues = { ...valid, bio: "a".repeat(201) };
+    // Act
+    const result = accountSchema.safeParse(input);
+    // Assert
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe("Bio must be 200 characters or less");
   });
 
-  describe("bio", () => {
-    it("accepts an empty bio", () => {
-      values.bio = "";
-      expect(accountSchema.safeParse(values).success).toBe(true);
-    });
-
-    it("accepts a bio of exactly 200 characters", () => {
-      values.bio = "a".repeat(200);
-      expect(accountSchema.safeParse(values).success).toBe(true);
-    });
-
-    it("rejects a bio of 201 characters", () => {
-      values.bio = "a".repeat(201);
-      expect(accountSchema.safeParse(values).success).toBe(false);
-    });
-  });
-});
-
-describe("LANGUAGES", () => {
-  it("contains fr", () => {
-    expect(LANGUAGES).toContain("fr");
+  it("accepts a bio of exactly 200 characters", () => {
+    // Arrange
+    const input: AccountValues = { ...valid, bio: "a".repeat(200) };
+    // Act
+    const result = accountSchema.safeParse(input);
+    // Assert
+    expect(result.success).toBe(true);
   });
 
-  it("contains en", () => {
-    expect(LANGUAGES).toContain("en");
+  it("accepts an empty telephone", () => {
+    // Arrange
+    const input: AccountValues = { ...valid, telephone: "" };
+    // Act
+    const result = accountSchema.safeParse(input);
+    // Assert
+    expect(result.success).toBe(true);
   });
 
-  it("holds exactly two languages", () => {
-    expect(LANGUAGES).toHaveLength(2);
-  });
-});
-
-describe("LANGUAGE_LABELS", () => {
-  it("labels fr as French", () => {
-    expect(LANGUAGE_LABELS.fr).toBe("French");
-  });
-
-  it("labels en as English", () => {
-    expect(LANGUAGE_LABELS.en).toBe("English");
-  });
-
-  it("has a label for every supported language", () => {
-    for (const language of LANGUAGES) {
-      expect(LANGUAGE_LABELS[language]).toBeTruthy();
-    }
+  it("accepts an empty bio", () => {
+    // Arrange
+    const input: AccountValues = { ...valid, bio: "" };
+    // Act
+    const result = accountSchema.safeParse(input);
+    // Assert
+    expect(result.success).toBe(true);
   });
 });

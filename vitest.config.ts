@@ -6,9 +6,10 @@ import { playwright } from "@vitest/browser-playwright";
 import { alias } from "./alias.ts";
 import { stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
 
-// Two projects, two costs - which is the point of the pyramid:
+// Two projects, two costs - which is the point of the trophy:
 //   unit        *.unit.test.ts        pure functions, Node, no DOM, milliseconds
-//   integration *.integration.test.tsx the component in a REAL Chromium
+//   integration *.integration.test.tsx the component in a REAL Chromium, where
+//                                      most of the coverage belongs
 // The FILENAME decides which project a test belongs to, not its folder: the
 // level is then visible in the file tree, in the runner output and in a `vitest
 // --project unit` run, and a test cannot silently land in the wrong tier by
@@ -16,6 +17,35 @@ import { stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
 // e2e/*.spec.ts is owned by Playwright and belongs to neither project.
 export default defineConfig({
   test: {
+    // Coverage is a ROOT option, never a per-project one: both projects
+    // instrument the same `src/`, and one set of numbers over the two is the
+    // only reading that means anything - a helper covered by a unit test and a
+    // page covered in Chromium are the same source either way.
+    coverage: {
+      // v8 is the default; naming it keeps the choice visible next to the
+      // browser project, which is the half people expect to be missing.
+      provider: "v8",
+      // Root-relative, and a non-wildcard pattern is read as a directory.
+      include: ["src"],
+      // What is left is the app's own source. Tests, factories and MSW handlers
+      // are the things doing the covering, and counting them flatters the
+      // number by measuring the suite against itself; the bootstrap files have
+      // no behaviour to lose.
+      exclude: [
+        "src/**/__tests__/**",
+        "src/account/mocks/**",
+        "src/testing/**",
+        "src/main.tsx",
+        "src/routes.tsx",
+        "src/tokens.stylex.ts",
+      ],
+      // `text` prints the table but HIDES every file already at 100%, so a file
+      // that slips from 100% to 90% appears out of nowhere and one that was
+      // never instrumented looks identical to one that was perfect. The summary
+      // json carries every file either way, which is what makes a before/after
+      // comparison (see .claude/skills/tune-tests) an actual subtraction.
+      reporter: ["text", "json-summary", "html"],
+    },
     projects: [
       {
         // Each project resolves on its own, so the namespaces from ./alias.ts

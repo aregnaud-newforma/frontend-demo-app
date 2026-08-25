@@ -1,8 +1,7 @@
 import { render } from "vitest-browser-react";
-import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryHistory, createRouter } from "@tanstack/react-router";
-import { createQueryClient } from "../query-client";
 import { routeTree } from "../routes";
+import { AppProviders } from "./app-providers";
 
 /**
  * Mounts the app at one route, the way a visitor arrives at it.
@@ -14,10 +13,14 @@ import { routeTree } from "../routes";
  * URL bar - and it means the tests exercise the same route definitions the app
  * does, so a path renamed in one place fails here rather than in production.
  *
- * Both the router and the QueryClient are built fresh per call. A shared router
- * would carry one test's history into the next, and a shared cache would carry
- * one test's account - the two ways a browser suite starts passing, or failing,
- * according to file order.
+ * The router is built fresh per call, and ./app-providers builds a fresh
+ * QueryClient per mount. A shared router would carry one test's history into
+ * the next, and a shared cache would carry one test's account - the two ways a
+ * browser suite starts passing, or failing, according to file order.
+ *
+ * Everything below the router comes from AppProviders, the same composition
+ * root ./render-component mounts a lone component under, so a page and a
+ * component see the same contexts.
  *
  * This is the only setup shared between the page test files. The LOCATORS stay
  * in each file, where the test can see what it is driving.
@@ -29,8 +32,8 @@ export async function renderRoute(initialPath: string) {
   });
 
   return await render(
-    <QueryClientProvider client={createQueryClient()}>
+    <AppProviders>
       <RouterProvider router={router} />
-    </QueryClientProvider>,
+    </AppProviders>,
   );
 }
