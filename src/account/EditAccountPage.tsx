@@ -3,6 +3,7 @@ import { revalidateLogic, useForm, type AnyFieldApi } from "@tanstack/react-form
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FieldError, errorProps } from "./components/FieldError";
+import { ErrorBanner, LoadingStatus } from "./components/PageState";
 import { toValues, updateAccount, type Account } from "./helpers/api";
 import { accountQueryKey, useAccount } from "./hooks/use-account";
 import { LANGUAGES, LANGUAGE_LABELS, accountSchema } from "./helpers/validation";
@@ -79,17 +80,6 @@ const styles = stylex.create({
     fontSize: text.sm,
     textDecoration: { default: "none", ":hover": "underline" },
   },
-  status: {
-    margin: 0,
-    color: colors.textMuted,
-  },
-  error: {
-    margin: 0,
-    padding: space.lg,
-    borderRadius: radius.md,
-    backgroundColor: colors.dangerSoft,
-    color: colors.danger,
-  },
 });
 
 /**
@@ -115,19 +105,11 @@ export function EditAccountPage() {
   const { data: account, isError: loadFailed } = useAccount();
 
   if (loadFailed) {
-    return (
-      <p role="alert" {...stylex.props(styles.error)}>
-        Could not load your account. Please try again.
-      </p>
-    );
+    return <ErrorBanner>Could not load your account. Please try again.</ErrorBanner>;
   }
 
   if (!account) {
-    return (
-      <p role="status" {...stylex.props(styles.status)}>
-        Loading your account...
-      </p>
-    );
+    return <LoadingStatus>Loading your account...</LoadingStatus>;
   }
 
   return (
@@ -318,11 +300,7 @@ function AccountFields({ account }: { account: Account }) {
         </button>
       </div>
 
-      {save.isError && (
-        <p role="alert" {...stylex.props(styles.error)}>
-          Something went wrong. Please try again.
-        </p>
-      )}
+      {save.isError && <ErrorBanner>Something went wrong. Please try again.</ErrorBanner>}
     </form>
   );
 }
