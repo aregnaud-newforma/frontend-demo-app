@@ -1,0 +1,80 @@
+# The gate from README.md and AGENTS.md, run on every PR and on main:
+# `yarn verify && yarn test`, plus `yarn e2e` because the e2e suite is the only
+# tier that crosses the wire to the real API process.
+#
+# Three jobs rather than one so a lint failure shows up in seconds instead of
+# after a Chromium install, and so each tier's log is its own thing to read.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push to the same PR supersedes the run already in flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify (oxlint, oxfmt, tsc)
+    runs-on: ubuntu-latest
+    # The whole job is a minute or two; a hang is the runner, not the code.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # `.nvmrc` pins Node 22: `server/api.ts` runs on
+          # --experimental-strip-types, which Node 20 rejects outright.
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn verify
+
+  test:
+    name: test (unit + integration)
+    runs-on: ubuntu-latest
+    # The whole job is a minute or two; a hang is the runner, not the code.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # `.nvmrc` pins Node 22: `server/api.ts` runs on
+          # --experimental-strip-types, which Node 20 rejects outright.
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      # The integration tier runs in a real Chromium through Vitest's
+      # Playwright provider, so the browser has to exist before `yarn test`.
+      - run: yarn browsers:install
+      - run: yarn test
+
+  e2e:
+    name: e2e (playwright)
+    runs-on: ubuntu-latest
+    # The whole job is a minute or two; a hang is the runner, not the code.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # `.nvmrc` pins Node 22: `server/api.ts` runs on
+          # --experimental-strip-types, which Node 20 rejects outright.
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn browsers:install
+      # playwright.config.ts starts the API and the preview build itself
+      # through `webServer`; with CI set it never reuses a stale server.
+      - run: yarn e2e
+      # `trace: on-first-retry` in playwright.config.ts writes traces to
+      # test-results/; keep them when a run fails so the failure can be replayed.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results
+          retention-days: 7
