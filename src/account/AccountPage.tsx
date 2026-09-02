@@ -4,6 +4,7 @@ import { toValues } from "./helpers/api";
 import { useAccount } from "./hooks/use-account";
 import { LANGUAGE_LABELS } from "./helpers/validation";
 import { SummaryRow } from "./components/SummaryRow";
+import { ErrorBanner, LoadingStatus } from "./components/PageState";
 import { colors, radius, space, text } from "../tokens.stylex";
 
 const styles = stylex.create({
@@ -36,17 +37,6 @@ const styles = stylex.create({
     fontSize: text.sm,
     textDecoration: "none",
   },
-  status: {
-    margin: 0,
-    color: colors.textMuted,
-  },
-  error: {
-    margin: 0,
-    padding: space.lg,
-    borderRadius: radius.md,
-    backgroundColor: colors.dangerSoft,
-    color: colors.danger,
-  },
 });
 
 export function AccountPage() {
@@ -54,18 +44,14 @@ export function AccountPage() {
 
   if (loadFailed) {
     return (
-      <p role="alert" data-testid="account-error" {...stylex.props(styles.error)}>
+      <ErrorBanner testId="account-error">
         Could not load your account. Please try again.
-      </p>
+      </ErrorBanner>
     );
   }
 
   if (!account) {
-    return (
-      <p role="status" data-testid="account-loading" {...stylex.props(styles.status)}>
-        Loading your account...
-      </p>
-    );
+    return <LoadingStatus testId="account-loading">Loading your account...</LoadingStatus>;
   }
 
   const values = toValues(account);
