@@ -24,14 +24,8 @@
         },
         "coverage": {
           "files": 11,
-          "statements": [
-            239,
-            270
-          ],
-          "branches": [
-            140,
-            179
-          ]
+          "statements": [239, 270],
+          "branches": [140, 179]
         }
       },
       "after": {
@@ -55,14 +49,8 @@
         },
         "coverage": {
           "files": 11,
-          "statements": [
-            232,
-            270
-          ],
-          "branches": [
-            130,
-            180
-          ]
+          "statements": [232, 270],
+          "branches": [130, 180]
         }
       }
     },
@@ -86,14 +74,8 @@
         },
         "coverage": {
           "files": 11,
-          "statements": [
-            232,
-            270
-          ],
-          "branches": [
-            130,
-            180
-          ]
+          "statements": [232, 270],
+          "branches": [130, 180]
         }
       },
       "after": {
@@ -113,14 +95,8 @@
         },
         "coverage": {
           "files": 11,
-          "statements": [
-            235,
-            270
-          ],
-          "branches": [
-            133,
-            180
-          ]
+          "statements": [235, 270],
+          "branches": [133, 180]
         }
       }
     }

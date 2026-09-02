@@ -9,12 +9,12 @@ resolving any of this again.
 three deviations this repo makes, all deliberate and all documented in the config that makes
 them:
 
-| Slot | `dialect-web.md` says | This repo |
-| --- | --- | --- |
-| Mount | `@testing-library/react` under `environment: "jsdom"` | `vitest-browser-react`, real headless Chromium via `@vitest/browser-playwright` |
-| Actions | `userEvent` from `@testing-library/user-event` | `userEvent` from `@vitest/browser/context`, shipped with Browser Mode |
-| Seam entry | `msw/node` (`setupServer`) | `msw/browser` (`setupWorker`) — the tests run *in* the browser, so requests are intercepted by the Service Worker in `public/mockServiceWorker.js` |
-| Assertions | `expect(el).toBeVisible()`, `findBy*` | `await expect.element(locator).toBeVisible()` — locators retry, so there is no `findBy*` half |
+| Slot       | `dialect-web.md` says                                 | This repo                                                                                                                                          |
+| ---------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mount      | `@testing-library/react` under `environment: "jsdom"` | `vitest-browser-react`, real headless Chromium via `@vitest/browser-playwright`                                                                    |
+| Actions    | `userEvent` from `@testing-library/user-event`        | `userEvent` from `@vitest/browser/context`, shipped with Browser Mode                                                                              |
+| Seam entry | `msw/node` (`setupServer`)                            | `msw/browser` (`setupWorker`) — the tests run _in_ the browser, so requests are intercepted by the Service Worker in `public/mockServiceWorker.js` |
+| Assertions | `expect(el).toBeVisible()`, `findBy*`                 | `await expect.element(locator).toBeVisible()` — locators retry, so there is no `findBy*` half                                                      |
 
 The query ladder, the `renderScreen` / `renderComponent` split and every rule in
 `references/shape.md` hold unchanged.
@@ -34,25 +34,25 @@ same things anyway.
 
 Every role filled by what the repo already had. **Nothing installed.**
 
-| Role | Package |
-| --- | --- |
-| Mount | `vitest-browser-react` |
-| Actions | `@vitest/browser/context` (inside `vitest`/`@vitest/browser-playwright`) |
+| Role      | Package                                                                   |
+| --------- | ------------------------------------------------------------------------- |
+| Mount     | `vitest-browser-react`                                                    |
+| Actions   | `@vitest/browser/context` (inside `vitest`/`@vitest/browser-playwright`)  |
 | Fake data | `@faker-js/faker`, with `enforce-unique` for values that must not collide |
-| Fixtures | `fishery` |
-| API seam | `msw` |
-| Store | `@msw/data` + `zod` |
+| Fixtures  | `fishery`                                                                 |
+| API seam  | `msw`                                                                     |
+| Store     | `@msw/data` + `zod`                                                       |
 
 ## Runner
 
 **Routed.** `vitest.config.ts` already carried one project per level; this run added the
 script per level.
 
-| Level | Pattern | Command |
-| --- | --- | --- |
-| unit | `src/**/*.unit.test.{ts,tsx}`, `environment: "node"` | `yarn test:unit` |
-| integration | `src/**/*.integration.test.{ts,tsx}`, headless Chromium | `yarn test:integration` |
-| e2e | `e2e/*.spec.ts` | `yarn e2e` (Playwright, outside both Vitest projects) |
+| Level       | Pattern                                                 | Command                                               |
+| ----------- | ------------------------------------------------------- | ----------------------------------------------------- |
+| unit        | `src/**/*.unit.test.{ts,tsx}`, `environment: "node"`    | `yarn test:unit`                                      |
+| integration | `src/**/*.integration.test.{ts,tsx}`, headless Chromium | `yarn test:integration`                               |
+| e2e         | `e2e/*.spec.ts`                                         | `yarn e2e` (Playwright, outside both Vitest projects) |
 
 `yarn test` still runs unit + integration together. Coverage is a root option over both
 projects — one set of numbers over `src/`, which is the only reading that means anything.
@@ -85,7 +85,7 @@ projects — one set of numbers over `src/`, which is the only reading that mean
   over a per-mount `createQueryClient()`, and nothing else, because that is all `main.tsx`
   wraps `<App />` in.
 
-**Follow-up (drift):** `AppProviders` *mirrors* `main.tsx` rather than being imported from it —
+**Follow-up (drift):** `AppProviders` _mirrors_ `main.tsx` rather than being imported from it —
 the entry composes its providers inline, so there is nothing to import, and extracting it is
 the developer's change, not this skill's. A provider added to `main.tsx` and not to
 `app-providers.tsx` lands as a crash or a blank render in whichever test first mounts the
