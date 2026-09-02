@@ -34,3 +34,6 @@ coverage/
 .idea/
 *.swp
 .DS_Store
+
+# Local teaching workspace, not part of the app
+docs/course/
