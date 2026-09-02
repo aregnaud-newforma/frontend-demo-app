@@ -20,6 +20,8 @@ jobs:
   verify:
     name: verify (oxlint, oxfmt, tsc)
     runs-on: ubuntu-latest
+    # The whole job is a minute or two; a hang is the runner, not the code.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,6 +36,8 @@ jobs:
   test:
     name: test (unit + integration)
     runs-on: ubuntu-latest
+    # The whole job is a minute or two; a hang is the runner, not the code.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -51,6 +55,8 @@ jobs:
   e2e:
     name: e2e (playwright)
     runs-on: ubuntu-latest
+    # The whole job is a minute or two; a hang is the runner, not the code.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
