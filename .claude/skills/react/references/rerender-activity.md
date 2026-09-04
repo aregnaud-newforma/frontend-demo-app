@@ -2,6 +2,7 @@
 title: Use Activity Component for Show/Hide
 impact: MEDIUM
 impactDescription: preserves state/DOM
+requires: React >=19.2
 tags: rendering, activity, visibility, state-preservation
 ---
 

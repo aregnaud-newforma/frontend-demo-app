@@ -2,6 +2,7 @@
 title: Use Uint8Array Methods for Base64 and Hex
 impact: LOW-MEDIUM
 impactDescription: correct on non-Latin1 bytes
+requires: ES2026
 tags: modern, uint8array, base64, encoding
 ---
 

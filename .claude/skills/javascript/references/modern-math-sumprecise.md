@@ -2,6 +2,7 @@
 title: Use Math.sumPrecise for Summing Floats
 impact: MEDIUM
 impactDescription: eliminates floating-point drift
+requires: ES2026
 tags: modern, numbers, floats, precision
 ---
 

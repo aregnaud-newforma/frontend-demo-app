@@ -2,6 +2,7 @@
 title: Export a Provider and a Hook, Not the Raw Context
 impact: MEDIUM
 impactDescription: fails fast on misuse and keeps the context API sealed
+requires: React >=19
 tags: context, provider, hooks, api-design
 ---
 

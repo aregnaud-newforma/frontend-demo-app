@@ -2,6 +2,7 @@
 title: Use Iterator Helpers for Large or Infinite Sequences
 impact: LOW-MEDIUM
 impactDescription: lazy evaluation, no intermediate arrays
+requires: ES2025
 tags: modern, iterators, lazy, performance
 ---
 

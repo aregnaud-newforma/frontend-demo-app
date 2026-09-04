@@ -2,6 +2,7 @@
 title: Use Promise.try for Maybe-Sync Functions
 impact: LOW-MEDIUM
 impactDescription: one error path instead of two
+requires: ES2025
 tags: modern, promises, async, error-handling
 ---
 

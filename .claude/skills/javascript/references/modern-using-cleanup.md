@@ -2,6 +2,7 @@
 title: Use using for Resource Cleanup
 impact: MEDIUM
 impactDescription: cleanup cannot be forgotten
+requires: ES2027
 tags: modern, using, resources, cleanup
 ---
 

@@ -22,6 +22,12 @@ Reference these guidelines when:
 - Creating a context or shaping a provider
 - Chasing a re-render or considering memoization
 
+## Preconditions
+
+Some rules only hold under a given React version, or depending on whether the
+React Compiler runs. Those declare it as `requires:` in their frontmatter — check
+it against `package.json` and the build config before applying the rule.
+
 ## Rule Categories by Priority
 
 | Priority | Category | Impact | Rule prefix | Guide (read first) |

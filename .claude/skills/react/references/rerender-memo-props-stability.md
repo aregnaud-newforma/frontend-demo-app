@@ -2,6 +2,7 @@
 title: Keep Every Prop of a Memoized Component Stable
 impact: MEDIUM
 impactDescription: prevents silently broken memoization
+requires: React Compiler off
 tags: rerender, memo, useCallback, props
 ---
 

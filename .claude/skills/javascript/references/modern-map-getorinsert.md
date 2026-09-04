@@ -2,6 +2,7 @@
 title: Use Map.getOrInsert for Counting and Caching
 impact: LOW-MEDIUM
 impactDescription: removes has/set boilerplate and double lookups
+requires: ES2026
 tags: modern, map, caching, counting
 ---
 

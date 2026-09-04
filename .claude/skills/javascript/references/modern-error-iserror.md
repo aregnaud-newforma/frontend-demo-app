@@ -2,6 +2,7 @@
 title: Use Error.isError Instead of instanceof
 impact: MEDIUM
 impactDescription: reliable across realms
+requires: ES2026
 tags: modern, errors, instanceof, workers
 ---
 

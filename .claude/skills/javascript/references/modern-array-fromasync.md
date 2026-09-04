@@ -2,6 +2,7 @@
 title: Use Array.fromAsync to Collect Async Iterables
 impact: LOW
 impactDescription: removes manual accumulation loops
+requires: ES2026
 tags: modern, async, iterators, arrays
 ---
 

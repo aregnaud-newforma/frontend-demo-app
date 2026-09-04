@@ -2,6 +2,7 @@
 title: Use Native Set Operations
 impact: LOW-MEDIUM
 impactDescription: replaces manual loops and lodash
+requires: ES2025
 tags: modern, set, data-structures
 ---
 
