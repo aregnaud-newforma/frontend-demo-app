@@ -11,12 +11,14 @@ rather than a number in a terminal that scrolls away.
 ## Run it
 
 ```bash
-yarn evals                              # every task, one live trial each
+yarn evals                              # the react gate, one live trial per task
+yarn evals --gate javascript            # another gate
 yarn evals --task effects-reset-state-with-key   # one task
 yarn evals --arm without-skills         # the ablation arm
 yarn evals --reuse                      # re-score stored trials, spends nothing
 yarn evals --run-name before-skill-edit # name the run yourself
 yarn evals --max-turns 40               # raise the per-trial turn budget
+yarn evals --list-gates                 # the gates that have a task, as JSON
 ```
 
 Requires Node 22 (`.nvmrc`) and `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`,
@@ -100,17 +102,39 @@ one (`effects-dom`) where synchronising with the DOM makes it the right one. A
 suite that only ever expects zero would pass a model that had simply forgotten
 effects exist.
 
+## Gates
+
+A gate is one skill, named exactly as its directory under `.claude/skills/`, and
+one Langfuse dataset. `yarn evals --list-gates` prints the ones that carry a
+task; the rest of `GATES` in `tasks.ts` is vocabulary waiting for its first task.
+
+The name is the join CI needs. A pull request touching
+`.claude/skills/react/**` runs the react gate and nothing else, because the gate
+and the path are the same word — a rule-family name like `effects` matched no
+path, so every rule edit used to run every gate and pay for it. The workflow's
+`changes` job reads `--list-gates`, intersects it with the skill directories in
+the diff, and builds its matrix from the result. A change to `AGENTS.md`,
+`CLAUDE.md` or the harness runs all of them: those move any gate.
+
+A gate is deliberately coarser than a rule, so a `react` run averages effects and
+re-render alike. Nothing diagnostic is lost, because the per-task score is named
+after the task's `api` — `effects_gate`, `memoization_gate` — not after the gate,
+and each stays its own line in Langfuse.
+
+`intentional-tests/` is not a gate. It is not one of the five skills `AGENTS.md`
+declares, and no task gates it.
+
 ## What lands in Langfuse
 
-| Langfuse noun                | Here                          |
-| ---------------------------- | ----------------------------- |
-| Dataset `skill-effects-gate` | the suite                     |
-| Dataset item                 | one task, keyed by its id     |
-| Dataset run                  | one execution of the suite    |
-| Trace                        | one trial                     |
-| Score `effects_gate`         | 1 or 0, the grader's verdict  |
-| Score `trial_cost_usd`       | what that trial cost          |
-| Run score `pass_rate`        | the number to watch over time |
+| Langfuse noun          | Here                          |
+| ---------------------- | ----------------------------- |
+| Dataset `react`        | one gate, one skill           |
+| Dataset item           | one task, keyed by its id     |
+| Dataset run            | one execution of that gate    |
+| Trace                  | one trial                     |
+| Score `effects_gate`   | 1 or 0, the grader's verdict  |
+| Score `trial_cost_usd` | what that trial cost          |
+| Run score `pass_rate`  | the number to watch over time |
 
 Each run carries the commit SHA and branch as metadata, so a run can be traced
 back to the state of `.claude/skills/` that produced it.

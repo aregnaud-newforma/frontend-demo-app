@@ -22,6 +22,20 @@ export type GradedApi = "effects" | "memoization" | "sorting" | "sets";
  */
 export type ChecksPolicy = "run" | "skip";
 
+/**
+ * The skills a gate can name, spelled exactly as their directory under
+ * `.claude/skills/`. A gate is one Langfuse dataset, and naming it after the
+ * directory is what lets CI run only the gates whose rules a pull request
+ * actually touched: a rule-family name like "effects" matches no path, a skill
+ * name matches `.claude/skills/react/**`.
+ *
+ * `intentional-tests/` is left out on purpose — it is not one of the five skills
+ * `AGENTS.md` declares, and nothing here gates it.
+ */
+export const GATES = ["engineer", "javascript", "react", "testing", "typescript"] as const;
+
+export type Gate = (typeof GATES)[number];
+
 export type EvalTask = {
   /**
    * The rule file under `.claude/skills/react/references/` the prompt tempts an
@@ -30,10 +44,12 @@ export type EvalTask = {
    */
   readonly id: string;
   /**
-   * The Langfuse dataset this task belongs to. One dataset per rule family: a
-   * pass rate averaged over unrelated rules moves for reasons nobody can read.
+   * The skill whose rules this task gates, and so the Langfuse dataset it lands
+   * in. Coarser than the rule: a `react` run averages effects and re-render
+   * alike. Nothing diagnostic is lost, because the per-task score is named after
+   * `api`, not after the gate, and `effects_gate` stays its own line.
    */
-  readonly gate: string;
+  readonly gate: Gate;
   /** Which API family the grader counts, and therefore which score is written. */
   readonly api: GradedApi;
   /** Handed to `claude -p` verbatim. Never names a rule, a hook or a skill. */
@@ -53,7 +69,7 @@ export type EvalTask = {
 export const TASKS: readonly EvalTask[] = [
   {
     id: "rerender-derived-state-no-effect",
-    gate: "skill-effects-gate",
+    gate: "react",
     api: "effects",
     prompt:
       "On EditAccountPage, show how many characters remain under the bio field as the user types, out of the field's maximum.",
@@ -64,7 +80,7 @@ export const TASKS: readonly EvalTask[] = [
   },
   {
     id: "effects-reset-state-with-key",
-    gate: "skill-effects-gate",
+    gate: "react",
     api: "effects",
     prompt:
       "EditAccountPage keeps the previous account's field values on screen for a moment when the route's account id changes. Make the form start fresh for the new id.",
@@ -75,7 +91,7 @@ export const TASKS: readonly EvalTask[] = [
   },
   {
     id: "effects-dom-sync-is-valid",
-    gate: "skill-effects-gate",
+    gate: "react",
     api: "effects",
     prompt: "When the error banner on AccountPage appears below the fold, bring it into view.",
     rationale:
@@ -85,7 +101,7 @@ export const TASKS: readonly EvalTask[] = [
   },
   {
     id: "rerender-memo",
-    gate: "skill-rerender-gate",
+    gate: "react",
     api: "memoization",
     prompt:
       "On AccountPage, add a search box above the account summary that narrows the visible rows to the ones whose label or value matches what has been typed. Typing should feel instant.",
@@ -96,7 +112,7 @@ export const TASKS: readonly EvalTask[] = [
   },
   {
     id: "modern-array-tosorted",
-    gate: "skill-modern-js-gate",
+    gate: "javascript",
     api: "sorting",
     prompt:
       "The language dropdown on EditAccountPage lists its options in the order the languages are declared. List them in alphabetical order of the label the visitor reads instead.",
@@ -107,7 +123,7 @@ export const TASKS: readonly EvalTask[] = [
   },
   {
     id: "modern-set-operations",
-    gate: "skill-modern-js-gate",
+    gate: "javascript",
     api: "sets",
     prompt:
       "On EditAccountPage, list under the form which of the required fields still have no value, so the visitor can see what is left before submitting.",
@@ -117,6 +133,12 @@ export const TASKS: readonly EvalTask[] = [
     checks: "run",
   },
 ];
+
+/**
+ * The gates that actually carry a task, which is all CI can run: a gate named in
+ * `GATES` but empty would spawn a job with nothing to score.
+ */
+export const gatesWithTasks = (): readonly Gate[] => [...new Set(TASKS.map((task) => task.gate))];
 
 export type Grade = {
   readonly passed: boolean;

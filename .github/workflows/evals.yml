@@ -25,10 +25,13 @@ on:
   workflow_dispatch:
     inputs:
       gate:
-        description: "Which gate to run (blank runs all three)"
+        description: "Which skill to gate (blank runs every gate that has a task)"
         required: false
         type: choice
-        options: ["", "skill-effects-gate", "skill-rerender-gate", "skill-modern-js-gate"]
+        # A dropdown cannot be computed, so this list is the one place a gate is
+        # named twice. `yarn evals --list-gates` is the source; a name that has
+        # drifted out of it fails the run rather than scoring nothing.
+        options: ["", "react", "javascript"]
         default: ""
       arm:
         description: "with-skills measures the repository as it stands; without-skills ablates the rules"
@@ -44,10 +47,72 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A gate is named after a skill directory, so a pull request that touches one
+  # skill can pay for one gate. Before this job existed, editing a single react
+  # rule ran the javascript gate too — six trials and real money to score rules
+  # nobody had changed.
+  changes:
+    name: which gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      gates: ${{ steps.pick.outputs.gates }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          # Full history: the diff below needs a merge base with the target
+          # branch, which a shallow clone does not have.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+
+      - id: pick
+        env:
+          REQUESTED: ${{ inputs.gate }}
+          BASE: ${{ github.base_ref }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          all=$(yarn --silent evals --list-gates)
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            # A manual run says what it wants; blank means everything.
+            if [ -z "$REQUESTED" ]; then
+              gates=$all
+            else
+              gates=$(jq -nc --arg gate "$REQUESTED" '[$gate]')
+            fi
+          else
+            changed=$(git diff --name-only "origin/$BASE...HEAD")
+
+            # The harness, and the two files every agent in this repo reads,
+            # can move any gate. There is no subset to narrow to.
+            if echo "$changed" | grep -qE '^(AGENTS\.md|CLAUDE\.md|evals/|\.github/workflows/evals\.yml)'; then
+              gates=$all
+            else
+              touched=$(echo "$changed" \
+                | sed -n 's|^\.claude/skills/\([^/]*\)/.*|\1|p' \
+                | sort -u \
+                | jq -Rsc 'split("\n") - [""]')
+              # Intersection: a skill with no task is not a gate, and a gate
+              # whose rules nobody touched has nothing new to say.
+              gates=$(jq -nc --argjson all "$all" --argjson touched "$touched" '$all - ($all - $touched)')
+            fi
+          fi
+
+          echo "gates=$gates" >> "$GITHUB_OUTPUT"
+          echo "Gates to run: \`$gates\`" >> "$GITHUB_STEP_SUMMARY"
+
   evals:
+    needs: changes
+    # Nothing to score: a pull request that touched no skill under gate.
+    if: needs.changes.outputs.gates != '[]'
     # One job per gate, because one gate is one Langfuse dataset and one pass
     # rate. Running them in parallel also keeps the wall clock near the slowest
-    # gate rather than the sum of all three.
+    # gate rather than the sum of all of them.
     name: ${{ matrix.gate }}
     runs-on: ubuntu-latest
     # Six trials at 1-4 minutes each, and `claude -p` is given 15 minutes of its
@@ -59,7 +124,7 @@ jobs:
       # runs are already paid for.
       fail-fast: false
       matrix:
-        gate: [skill-effects-gate, skill-rerender-gate, skill-modern-js-gate]
+        gate: ${{ fromJSON(needs.changes.outputs.gates) }}
     steps:
       # The branch under test, by name. On a pull request that is the head
       # branch, not the merge commit `actions/checkout` would pick by default:
@@ -82,11 +147,6 @@ jobs:
         run: npm install -g @anthropic-ai/claude-code@2.1.258
 
       - name: Run gate
-        # Skipped when the manual run asked for one specific gate.
-        if: >-
-          github.event_name != 'workflow_dispatch'
-          || inputs.gate == ''
-          || inputs.gate == matrix.gate
         env:
           # A subscription token from `claude setup-token`, not an API key: the
           # trials are billed to the plan, as the local ones are. Rate limits

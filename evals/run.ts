@@ -3,11 +3,12 @@
  * dataset run, so the pass rate is a line over time rather than a number in a
  * terminal that scrolls away.
  *
- * Usage: yarn evals [--gate <dataset>] [--task <id>] [--arm with-skills|without-skills]
+ * Usage: yarn evals [--gate <skill>] [--task <id>] [--arm with-skills|without-skills]
  *                   [--reuse] [--run-name <name>] [--max-turns <n>] [--model <id>]
+ *                   [--list-gates]
  *
- * One gate per invocation: a gate is a Langfuse dataset, and a pass rate
- * averaged over unrelated rule families moves for reasons nobody can read.
+ * One gate per invocation: a gate is a Langfuse dataset, and two skills sharing
+ * a pass rate would move it for reasons nobody can read.
  */
 import { execFile } from "node:child_process";
 import { parseArgs, promisify } from "node:util";
@@ -16,6 +17,7 @@ import { LangfuseClient } from "@langfuse/client";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import {
   TASKS,
+  gatesWithTasks,
   gradeAdded,
   scoreName,
   type EvalTask,
@@ -26,7 +28,7 @@ import { cachedTaskIds, runTrial, DEFAULT_MODEL, type Arm, type TrialOutcome } f
 
 const run = promisify(execFile);
 
-const DEFAULT_GATE = "skill-effects-gate";
+const DEFAULT_GATE = "react";
 
 const { values } = parseArgs({
   options: {
@@ -37,8 +39,18 @@ const { values } = parseArgs({
     "run-name": { type: "string" },
     "max-turns": { type: "string", default: "25" },
     model: { type: "string", default: DEFAULT_MODEL },
+    "list-gates": { type: "boolean", default: false },
   },
 });
+
+// Printed for CI, which builds its job matrix from it. Reading the gates from
+// here rather than listing them again in the workflow keeps `tasks.ts` the one
+// place a gate is declared — the failure `alias.ts` and tsconfig `paths` warn
+// about, where half a declaration is wired and the other half rots.
+if (values["list-gates"]) {
+  console.log(JSON.stringify(gatesWithTasks()));
+  process.exit(0);
+}
 
 const requested = values.task ? TASKS.find((task) => task.id === values.task) : undefined;
 if (values.task && !requested) {
