@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { EvalTask } from "./tasks.ts";
@@ -103,6 +103,36 @@ const stripSkills = async (worktree: string): Promise<void> => {
 };
 
 /**
+ * Points a worktree at the dependencies already installed beside it rather than
+ * installing a second copy. The worktree is a checkout of `HEAD` on the same
+ * machine, so its `node_modules` would be identical to the one the suite is
+ * running from, and building it again cost about twenty seconds per trial —
+ * six times over in a CI run, in series, inside billed job time.
+ *
+ * A symlink, not a copy: `yarn verify` and `yarn test` resolve through it
+ * unchanged, and nothing in a trial writes into `node_modules`. `git worktree
+ * remove` unlinks it without touching what it points at.
+ *
+ * Falls back to a real install when the suite is somehow running without its own
+ * dependencies, so a trial cannot fail for a reason that has nothing to do with
+ * the rule it is measuring.
+ */
+const linkDependencies = async (worktree: string): Promise<void> => {
+  const shared = join(REPO_ROOT, "node_modules");
+  const installed = await access(shared).then(
+    () => true,
+    () => false,
+  );
+
+  if (!installed) {
+    await run("yarn", ["install", "--frozen-lockfile"], { cwd: worktree });
+    return;
+  }
+
+  await symlink(shared, join(worktree, "node_modules"), "dir");
+};
+
+/**
  * Runs one trial in a git worktree, which is this suite's clean environment:
  * every trial starts from HEAD and cannot read another trial's history.
  */
@@ -129,7 +159,7 @@ export const runTrial = async (options: {
 
   try {
     if (arm === "without-skills") await stripSkills(worktree);
-    await run("yarn", ["install", "--immutable"], { cwd: worktree });
+    await linkDependencies(worktree);
 
     const { stdout } = await run(
       "claude",

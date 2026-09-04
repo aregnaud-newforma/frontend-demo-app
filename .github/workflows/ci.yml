@@ -47,6 +47,18 @@ jobs:
           node-version-file: .nvmrc
           cache: yarn
       - run: yarn install --frozen-lockfile
+      # Chromium is ~150 MB fetched fresh on every job, and it cost more than the
+      # suite it exists for: 41s to install against 10s of tests here, 21s
+      # against 9s in e2e. Cached on the lockfile hash, which is coarser than the
+      # Playwright version alone — an unrelated bump re-downloads the browser —
+      # but it is the only key that cannot go stale against the installed
+      # `@playwright/test`. `browsers:install` still runs on a hit: it is
+      # idempotent, and `--with-deps` installs OS packages the cache cannot hold.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
       # The integration tier runs in a real Chromium through Vitest's
       # Playwright provider, so the browser has to exist before `yarn test`.
       - run: yarn browsers:install
@@ -66,6 +78,18 @@ jobs:
           node-version-file: .nvmrc
           cache: yarn
       - run: yarn install --frozen-lockfile
+      # Chromium is ~150 MB fetched fresh on every job, and it cost more than the
+      # suite it exists for: 41s to install against 10s of tests here, 21s
+      # against 9s in e2e. Cached on the lockfile hash, which is coarser than the
+      # Playwright version alone — an unrelated bump re-downloads the browser —
+      # but it is the only key that cannot go stale against the installed
+      # `@playwright/test`. `browsers:install` still runs on a hit: it is
+      # idempotent, and `--with-deps` installs OS packages the cache cannot hold.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
       - run: yarn browsers:install
       # playwright.config.ts starts the API and the preview build itself
       # through `webServer`; with CI set it never reuses a stale server.
