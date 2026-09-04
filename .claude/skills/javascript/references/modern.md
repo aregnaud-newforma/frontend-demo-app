@@ -1,8 +1,15 @@
-Modern JavaScript Preferences (ES2025/ES2026). When writing JavaScript, check
-every function you produce against this table before finalizing. Prefer the
-newer API unless the target runtime doesn't support it — in that case, suggest
-a polyfill. Each rule file carries the incorrect/correct example and the
-gotchas.
+Modern JavaScript Preferences. When writing JavaScript, check every function you
+produce against this table before finalizing. Each rule file carries the
+incorrect/correct example and the gotchas.
+
+**Check `requires:` first.** Every rule below declares the ECMAScript edition its
+API landed in. Read the repository's `tsconfig.json` `lib` before applying one: a
+rule whose `requires:` is above that `lib` does not apply here, and writing it
+anyway produces code that does not compile. `lib` is set to what the browsers in
+`browserslist` actually ship, so it is the floor twice over — nothing in a build
+polyfills a missing method, and a dev server running esnext will happily run code
+that throws in production. When a rule you want is out of reach, say so and offer
+the polyfill rather than reaching for the API.
 
 | Whenever you...                                   | Use                                     | Read                                                                 |
 | ------------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------- |

@@ -2,6 +2,7 @@
 title: Use import defer for Rarely-Used Heavy Modules
 impact: LOW-MEDIUM
 impactDescription: skips module evaluation until first use
+requires: module ESNext or Preserve
 tags: modern, modules, lazy, startup
 ---
 

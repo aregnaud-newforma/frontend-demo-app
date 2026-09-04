@@ -2,6 +2,7 @@
 title: Use Iterator.concat Instead of yield* Generators
 impact: LOW
 impactDescription: removes generator boilerplate
+requires: ES2026
 tags: modern, iterators, generators
 ---
 

@@ -2,6 +2,7 @@
 title: useEffectEvent for Stable Callback Refs
 impact: LOW
 impactDescription: prevents effect re-runs
+requires: React >=19.2
 tags: advanced, hooks, useEffectEvent, refs, optimization
 ---
 

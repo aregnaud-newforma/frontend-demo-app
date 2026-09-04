@@ -2,6 +2,7 @@
 title: Use Iterator.from Instead of Spreading Into an Array
 impact: LOW-MEDIUM
 impactDescription: no intermediate array allocation
+requires: ES2025
 tags: modern, iterators, nodelist, performance
 ---
 

@@ -2,6 +2,7 @@
 title: Use RegExp.escape for User-Controlled Patterns
 impact: MEDIUM
 impactDescription: removes home-grown escaping bugs
+requires: ES2025
 tags: modern, regexp, escaping, input
 ---
 

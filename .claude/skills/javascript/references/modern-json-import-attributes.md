@@ -2,6 +2,7 @@
 title: Import JSON with Import Attributes
 impact: LOW
 impactDescription: no fetch for bundle-time JSON
+requires: ES2025
 tags: modern, modules, json, imports
 ---
 

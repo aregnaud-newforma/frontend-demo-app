@@ -2,6 +2,7 @@
 title: Use Transitions for Non-Urgent Updates
 impact: MEDIUM
 impactDescription: maintains UI responsiveness
+requires: React >=19
 tags: rerender, transitions, startTransition, performance
 ---
 

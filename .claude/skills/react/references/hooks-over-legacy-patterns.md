@@ -2,6 +2,7 @@
 title: Prefer Hooks Over HOCs and Render Props
 impact: LOW-MEDIUM
 impactDescription: flattens component trees and simplifies logic reuse
+requires: React >=19
 tags: hooks, hoc, render-props, patterns
 ---
 

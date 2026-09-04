@@ -13,7 +13,9 @@
     "perf": "warn"
   },
 
-  "env": { "browser": true, "es2024": true },
+  // The same floor as tsconfig `lib` and package.json `browserslist`: es2024
+  // here told the linter globals exist that the shipped browsers do not have.
+  "env": { "browser": true, "es2023": true },
 
   "rules": {
     // The automatic JSX runtime ("jsx": "react-jsx" in tsconfig.json) means no

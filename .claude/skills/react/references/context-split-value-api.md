@@ -2,6 +2,7 @@
 title: Split Context Into Value and API Contexts
 impact: MEDIUM
 impactDescription: consumers of stable APIs stop re-rendering on value changes
+requires: React Compiler off
 tags: context, rerender, optimization
 ---
 

@@ -2,6 +2,7 @@
 title: Hoist Static JSX Elements
 impact: LOW
 impactDescription: avoids re-creation
+requires: React Compiler off
 tags: rendering, jsx, static, optimization
 ---
 
