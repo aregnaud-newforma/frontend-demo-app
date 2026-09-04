@@ -1,6 +1,6 @@
 ---
 title: "`findBy*` Waits for Arrival, `waitFor` Waits for the Rest; Nothing Sleeps"
-impact: HIGH
+impact: MEDIUM
 impactDescription: a query that retries until the screen catches up, without a timer
 tags: mount, assertions, waitFor, findBy, async, jsdom
 ---

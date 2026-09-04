@@ -1,6 +1,6 @@
 ---
 title: Mark the Legs, and Assert Intermediate States Where They Happen
-impact: MEDIUM-HIGH
+impact: LOW
 impactDescription: a loading or in-flight state costs one assertion, not one mount
 tags: shape, given-when-then, intermediate state
 ---

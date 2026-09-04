@@ -37,3 +37,6 @@ coverage/
 
 # Local teaching workspace, not part of the app
 docs/course/
+
+# Captured eval trial outcomes: large, machine-written, and re-creatable by a run.
+evals/.runs/

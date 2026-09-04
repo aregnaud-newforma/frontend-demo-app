@@ -1,0 +1,108 @@
+# The skill evals, run when the rules themselves change.
+#
+# `yarn verify && yarn test` in ci.yml checks the code. Nothing in it can check
+# whether an agent still applies the ~75 rules no linter reaches — that is what
+# this suite is for, and it only has an answer worth reading when a rule moved.
+# So: the paths below, plus a manual button.
+#
+# Informative, not blocking. `evals/run.ts` prints the pass rate and exits zero
+# whatever the score, so a red gate never stops a merge. A failing job here is a
+# broken harness — a missing secret, a CLI that would not install — not a skill
+# that regressed. Read the score in the run summary or in Langfuse.
+name: Evals
+
+on:
+  pull_request:
+    paths:
+      - ".claude/skills/**"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      # The suite is also under test when the suite itself changes.
+      - "evals/**"
+      - ".github/workflows/evals.yml"
+  # Puts a "Run workflow" button in the Actions tab. It only appears once this
+  # file is on the default branch.
+  workflow_dispatch:
+    inputs:
+      gate:
+        description: "Which gate to run (blank runs all three)"
+        required: false
+        type: choice
+        options: ["", "skill-effects-gate", "skill-rerender-gate", "skill-modern-js-gate"]
+        default: ""
+      arm:
+        description: "with-skills measures the repository as it stands; without-skills ablates the rules"
+        required: false
+        type: choice
+        options: ["with-skills", "without-skills"]
+        default: "with-skills"
+
+# A new push supersedes the run already in flight: a trial costs real money, and
+# the score of a commit that has been replaced is not worth paying for.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evals:
+    # One job per gate, because one gate is one Langfuse dataset and one pass
+    # rate. Running them in parallel also keeps the wall clock near the slowest
+    # gate rather than the sum of all three.
+    name: ${{ matrix.gate }}
+    runs-on: ubuntu-latest
+    # Six trials at 1-4 minutes each, and `claude -p` is given 15 minutes of its
+    # own per trial. The 15-minute cap the other jobs use would kill this one
+    # mid-suite.
+    timeout-minutes: 60
+    strategy:
+      # One gate's harness failure says nothing about the other two, and their
+      # runs are already paid for.
+      fail-fast: false
+      matrix:
+        gate: [skill-effects-gate, skill-rerender-gate, skill-modern-js-gate]
+    steps:
+      # The branch under test, by name. On a pull request that is the head
+      # branch, not the merge commit `actions/checkout` would pick by default:
+      # the score belongs to a commit that exists, and HEAD stays attached, so
+      # `run.ts` reads the real branch name for the run. Empty everywhere else,
+      # which leaves the default — the branch a manual run was started from.
+      # Shallow is enough: a worktree branches from HEAD with one commit.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+
+      # Pinned like the model is: `run.ts` records the CLI version with every
+      # score, and a version that moves on its own reads as a skill regression.
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.258
+
+      - name: Run gate
+        # Skipped when the manual run asked for one specific gate.
+        if: >-
+          github.event_name != 'workflow_dispatch'
+          || inputs.gate == ''
+          || inputs.gate == matrix.gate
+        env:
+          # A subscription token from `claude setup-token`, not an API key: the
+          # trials are billed to the plan, as the local ones are. Rate limits
+          # apply per five-hour window, and a trial killed by one grades zero —
+          # read a sudden drop as an exhausted limit before a skill regression.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
+          ARM: ${{ inputs.arm || 'with-skills' }}
+        # The suite's own report is the summary: it already carries the pass
+        # rate, the per-task scores, the cost and the Langfuse run URL.
+        run: |
+          {
+            echo '## `${{ matrix.gate }}`'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          yarn evals --gate '${{ matrix.gate }}' --arm "$ARM" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

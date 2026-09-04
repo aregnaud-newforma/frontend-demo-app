@@ -1,6 +1,6 @@
 ---
 title: Flat File, Inline Setup, One Journey per `it`
-impact: MEDIUM-HIGH
+impact: MEDIUM
 impactDescription: no state survives from one test to the next, and each test reads alone
 tags: shape, describe, beforeEach, isolation
 ---

@@ -1,6 +1,6 @@
 ---
 title: The Name States the Journey, Not the Assertion
-impact: MEDIUM
+impact: LOW
 impactDescription: a failure reads as what the user lost
 tags: shape, naming
 ---

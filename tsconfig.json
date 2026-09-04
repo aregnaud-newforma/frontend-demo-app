@@ -64,5 +64,14 @@
   // config is the discoverable one. tsconfig.app.json then narrows BACK DOWN
   // to the shipped app for the build (see the `build` script), which is the
   // check the old exclude list was really there to make.
-  "include": ["src", "e2e", "server", "types", "vitest.setup.ts", "alias.ts", "*.config.ts"]
+  "include": [
+    "src",
+    "e2e",
+    "evals",
+    "server",
+    "types",
+    "vitest.setup.ts",
+    "alias.ts",
+    "*.config.ts"
+  ]
 }
