@@ -23,6 +23,13 @@
     "browsers:install": "playwright install --with-deps chromium",
     "postinstall": "msw init public/ --save"
   },
+  "browserslist": [
+    "chrome >= 111",
+    "edge >= 111",
+    "firefox >= 114",
+    "safari >= 16.4",
+    "ios_saf >= 16.4"
+  ],
   "msw": {
     "workerDirectory": [
       "public"

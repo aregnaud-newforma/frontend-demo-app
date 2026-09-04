@@ -1,8 +1,16 @@
 {
   "compilerOptions": {
-    "target": "ES2021",
+    // ES2023, because that is what the browsers in package.json `browserslist`
+    // actually have - `toSorted` shipped in Chrome 110 and Safari 16, both below
+    // the floor. Anything newer is deliberately withheld: `lib` is the only
+    // thing that stops an API the floor lacks from being written, since nothing
+    // in the build polyfills one (see vite.config.ts) and `vite dev` runs
+    // esnext, so a Set method would work here and throw on Safari 16.4. Raising
+    // this means raising the floor first, in package.json and vite.config.ts.
+    // `.oxlintrc.json` `env` says the same thing for the linter's globals.
+    "target": "ES2023",
     "useDefineForClassFields": true,
-    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "Bundler",
