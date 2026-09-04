@@ -76,6 +76,10 @@ jobs:
           BASE: ${{ github.base_ref }}
           EVENT: ${{ github.event_name }}
         run: |
+          # Same reason as the gate step below: this one pipes through sed and
+          # jq, and a broken pipe here would silently pick no gates at all.
+          set -o pipefail
+
           all=$(yarn --silent evals --list-gates)
 
           if [ "$EVENT" = "workflow_dispatch" ]; then
@@ -158,8 +162,16 @@ jobs:
           LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
           ARM: ${{ inputs.arm || 'with-skills' }}
         # The suite's own report is the summary: it already carries the pass
-        # rate, the per-task scores, the cost and the Langfuse run URL.
+        # rate, the cost and the Langfuse run URL.
         run: |
+          # Without this the job is green whatever happens: `bash -e` reads a
+          # pipeline's status from its last command, which is `tee`, and `tee`
+          # always succeeds. A Langfuse 409 that killed `run.ts` before the first
+          # trial still reported success — the exact inversion of what this
+          # workflow claims, where a red job means a broken harness. A red score
+          # still exits zero, because `run.ts` decides that, not the shell.
+          set -o pipefail
+
           {
             echo '## `${{ matrix.gate }}`'
             echo '```'
