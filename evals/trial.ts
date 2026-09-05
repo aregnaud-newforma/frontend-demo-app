@@ -14,10 +14,16 @@ const CLAUDE_TIMEOUT_MS = 15 * 60 * 1000;
  * Pinned, because an unpinned model is a second thing changing under a score
  * meant to track one. The CLI's default follows the plan, the settings and the
  * account; a run from March and a run from June would then be different
- * experiments wearing the same name. This is the model the existing history was
- * produced on — change it deliberately, and expect the line to step when you do.
+ * experiments wearing the same name.
+ *
+ * Moved from `claude-fable-5-1` deliberately, and the line steps here: nothing
+ * measured from now on is comparable to the eight trials that came before. Two
+ * reasons. Opus 5 is half Fable 5.1's price ($5/$25 per MTok against $10/$50),
+ * so a trial got cheaper rather than dearer. And a skill helps a weaker model
+ * more, so the stronger model is the harder test — the one that says whether the
+ * rule still earns its place.
  */
-export const DEFAULT_MODEL = "claude-fable-5-1";
+export const DEFAULT_MODEL = "claude-opus-5";
 
 /** Only source files are graded; a change to a config or a doc is not an answer. */
 const SOURCE_PATHS = [":(glob)src/**/*.ts", ":(glob)src/**/*.tsx"];
@@ -57,9 +63,7 @@ export type TrialOutcome =
       readonly turns: number;
       readonly durationMs: number;
     }
-  | { readonly status: "failed"; readonly reason: string }
-  /** Not part of this run. Carries no score, so it cannot dent the pass rate. */
-  | { readonly status: "skipped" };
+  | { readonly status: "failed"; readonly reason: string };
 
 type ClaudeResult = {
   readonly result?: string;
@@ -73,12 +77,30 @@ const git = async (args: readonly string[], cwd = REPO_ROOT): Promise<string> =>
   return stdout;
 };
 
-/** Keyed by arm as well as task: the two arms are different measurements. */
-const cacheFile = (taskId: string, arm: Arm): string => join(RUNS_DIR, `${taskId}.${arm}.json`);
+/**
+ * Keyed by arm and model as well as task, because all three are the measurement.
+ * Two arms are two experiments; so are two models. A cache keyed on the task
+ * alone would let `--reuse` serve a Fable trial into a run whose metadata says
+ * Opus — a plausible number that is false, which is the one failure mode this
+ * suite exists to stop making.
+ *
+ * The repetition index is in the key for a smaller version of the same reason:
+ * repeated trials of one task are the samples the score averages, and a key
+ * without it would let the second overwrite the first and leave `--reuse`
+ * grading one sample as if it were several.
+ */
+const cacheFile = (taskId: string, arm: Arm, model: string, repetition: number): string =>
+  join(RUNS_DIR, `${taskId}.${arm}.${model}.r${repetition}.json`);
 
-const readCachedOutcome = async (taskId: string, arm: Arm): Promise<TrialOutcome | undefined> => {
+const readCachedOutcome = async (
+  taskId: string,
+  arm: Arm,
+  model: string,
+  repetition: number,
+): Promise<TrialOutcome | undefined> => {
   try {
-    return JSON.parse(await readFile(cacheFile(taskId, arm), "utf8")) as TrialOutcome;
+    const stored = await readFile(cacheFile(taskId, arm, model, repetition), "utf8");
+    return JSON.parse(stored) as TrialOutcome;
   } catch {
     return undefined;
   }
@@ -141,13 +163,15 @@ export const runTrial = async (options: {
   readonly arm: Arm;
   readonly model: string;
   readonly maxTurns: number;
+  /** Which sample of this task this is, counting from 1. Part of the cache key. */
+  readonly repetition: number;
   /** Reuse the stored outcome when one exists, instead of spending a trial. */
   readonly reuse: boolean;
 }): Promise<TrialOutcome> => {
-  const { task, arm, model, maxTurns, reuse } = options;
+  const { task, arm, model, maxTurns, repetition, reuse } = options;
 
   if (reuse) {
-    const cached = await readCachedOutcome(task.id, arm);
+    const cached = await readCachedOutcome(task.id, arm, model, repetition);
     if (cached) return cached;
   }
 
@@ -193,7 +217,7 @@ export const runTrial = async (options: {
     };
 
     await mkdir(RUNS_DIR, { recursive: true });
-    await writeFile(cacheFile(task.id, arm), JSON.stringify(outcome, null, 2));
+    await writeFile(cacheFile(task.id, arm, model, repetition), JSON.stringify(outcome, null, 2));
 
     return outcome;
   } catch (error) {
@@ -204,12 +228,31 @@ export const runTrial = async (options: {
   }
 };
 
-/** Task ids with a stored outcome for this arm, so `--reuse` can say what it will not re-run. */
-export const cachedTaskIds = async (arm: Arm): Promise<readonly string[]> => {
-  const suffix = `.${arm}.json`;
+/**
+ * Task ids with every repetition stored for this arm and model, so `--reuse` can
+ * say what it will not re-run. A task holding fewer stored trials than the run
+ * asks for is not listed: it still spends the trials it is missing, and grading
+ * three samples where the metadata claims five is the same false precision the
+ * cache key exists to prevent.
+ */
+export const cachedTaskIds = async (
+  arm: Arm,
+  model: string,
+  repeat: number,
+): Promise<readonly string[]> => {
+  const middle = `.${arm}.${model}.r`;
   try {
-    const files = await readdir(RUNS_DIR);
-    return files.filter((f) => f.endsWith(suffix)).map((f) => f.slice(0, -suffix.length));
+    const files = new Set(await readdir(RUNS_DIR));
+    const ids = new Set(
+      [...files]
+        .filter((file) => file.endsWith(".json") && file.includes(middle))
+        .map((file) => file.slice(0, file.lastIndexOf(middle))),
+    );
+    return [...ids].filter((id) =>
+      Array.from({ length: repeat }, (_, index) => `${id}${middle}${index + 1}.json`).every(
+        (file) => files.has(file),
+      ),
+    );
   } catch {
     return [];
   }

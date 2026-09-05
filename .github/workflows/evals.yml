@@ -31,7 +31,7 @@ on:
         # A dropdown cannot be computed, so this list is the one place a gate is
         # named twice. `yarn evals --list-gates` is the source; a name that has
         # drifted out of it fails the run rather than scoring nothing.
-        options: ["", "react", "javascript"]
+        options: ["", "react", "javascript", "typescript"]
         default: ""
       arm:
         description: "with-skills measures the repository as it stands; without-skills ablates the rules"
@@ -39,6 +39,11 @@ on:
         type: choice
         options: ["with-skills", "without-skills"]
         default: "with-skills"
+      repeat:
+        description: "Trials per task. More samples, less noise, proportionally more money."
+        required: false
+        type: string
+        default: "2"
 
 # A new push supersedes the run already in flight: a trial costs real money, and
 # the score of a commit that has been replaced is not worth paying for.
@@ -119,10 +124,10 @@ jobs:
     # gate rather than the sum of all of them.
     name: ${{ matrix.gate }}
     runs-on: ubuntu-latest
-    # Six trials at 1-4 minutes each, and `claude -p` is given 15 minutes of its
-    # own per trial. The 15-minute cap the other jobs use would kill this one
-    # mid-suite.
-    timeout-minutes: 60
+    # The largest gate is five tasks, each repeated `repeat` times, at 1-4 minutes
+    # a trial — and `claude -p` is given 15 minutes of its own per trial. The
+    # 15-minute cap the other jobs use would kill this one mid-suite.
+    timeout-minutes: 90
     strategy:
       # One gate's harness failure says nothing about the other two, and their
       # runs are already paid for.
@@ -161,6 +166,7 @@ jobs:
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
           LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
           ARM: ${{ inputs.arm || 'with-skills' }}
+          REPEAT: ${{ inputs.repeat || '2' }}
         # The suite's own report is the summary: it already carries the pass
         # rate, the cost and the Langfuse run URL.
         run: |
@@ -176,5 +182,5 @@ jobs:
             echo '## `${{ matrix.gate }}`'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          yarn evals --gate '${{ matrix.gate }}' --arm "$ARM" | tee -a "$GITHUB_STEP_SUMMARY"
+          yarn evals --gate '${{ matrix.gate }}' --arm "$ARM" --repeat "$REPEAT" | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"

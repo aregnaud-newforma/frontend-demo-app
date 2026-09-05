@@ -4,8 +4,8 @@
  * terminal that scrolls away.
  *
  * Usage: yarn evals [--gate <skill>] [--task <id>] [--arm with-skills|without-skills]
- *                   [--reuse] [--run-name <name>] [--max-turns <n>] [--model <id>]
- *                   [--list-gates]
+ *                   [--repeat <n>] [--reuse] [--run-name <name>] [--max-turns <n>]
+ *                   [--model <id>] [--judge-model <id>] [--list-gates]
  *
  * One gate per invocation: a gate is a Langfuse dataset, and two skills sharing
  * a pass rate would move it for reasons nobody can read.
@@ -21,10 +21,10 @@ import {
   gradeAdded,
   scoreName,
   type EvalTask,
-  type Expectation,
-  type GradedApi,
+  type Grader,
 } from "./tasks.ts";
 import { cachedTaskIds, runTrial, DEFAULT_MODEL, type Arm, type TrialOutcome } from "./trial.ts";
+import { judge, JUDGE_MODEL } from "./judge.ts";
 
 const run = promisify(execFile);
 
@@ -35,10 +35,12 @@ const { values } = parseArgs({
     gate: { type: "string" },
     task: { type: "string" },
     arm: { type: "string", default: "with-skills" },
+    repeat: { type: "string", default: "2" },
     reuse: { type: "boolean", default: false },
     "run-name": { type: "string" },
     "max-turns": { type: "string", default: "25" },
     model: { type: "string", default: DEFAULT_MODEL },
+    "judge-model": { type: "string", default: JUDGE_MODEL },
     "list-gates": { type: "boolean", default: false },
   },
 });
@@ -69,6 +71,23 @@ if (gateTasks.length === 0) {
 }
 
 const selected = requested ? [requested] : gateTasks;
+
+/**
+ * How many trials each task gets. One is a coin flipped once: the gate score is
+ * then 1 or 0, and a gate moving from 5/5 to 4/5 is as easily sampling noise as
+ * a skill that regressed. Repeating turns the per-task score into a mean, so the
+ * variance shows in the number instead of hiding inside it.
+ *
+ * Two by default, which is the smallest count that can disagree with itself.
+ * Raise it for the tasks whose arms sit within a point of each other — that is
+ * the question repetition answers — and lower it to one when the point of the
+ * run is to exercise the harness rather than to measure anything.
+ */
+const repeat = Number(values.repeat);
+if (!Number.isInteger(repeat) || repeat < 1) {
+  console.error(`--repeat takes a whole number of trials per task, not "${values.repeat}".`);
+  process.exit(1);
+}
 
 const ARMS: readonly Arm[] = ["with-skills", "without-skills"];
 const arm = ARMS.find((candidate) => candidate === values.arm);
@@ -129,7 +148,7 @@ await Promise.all(
       id: task.id,
       datasetName: gateName,
       input: { prompt: task.prompt },
-      expectedOutput: { api: task.api, expect: task.expect },
+      expectedOutput: task.grader,
       // The task id travels in metadata because the runner hands a task nothing
       // else it could use to find the trial it is supposed to spawn.
       metadata: { taskId: task.id, rationale: task.rationale },
@@ -144,22 +163,77 @@ const findTask = (metadata: unknown): EvalTask | undefined => {
   return typeof taskId === "string" ? taskById.get(taskId) : undefined;
 };
 
-type Expected = { readonly api: GradedApi; readonly expect: Expectation };
-
 /**
- * What the grader needs travels on the item itself, so an item this suite no
- * longer knows scores as unresolved rather than silently defaulting to "nothing
- * expected" — a default that reads as a real verdict.
+ * The grader travels on the item itself, so an item this suite no longer knows
+ * scores as unresolved rather than silently defaulting to a verdict — a default
+ * that reads as a real result.
  */
-const expectedOf = (expectedOutput: unknown): Expected | undefined => {
-  const { api, expect } = (expectedOutput ?? {}) as { api?: unknown; expect?: unknown };
-  const knownApi =
-    api === "effects" || api === "memoization" || api === "sorting" || api === "sets";
-  const knownExpect = expect === "none" || expect === "some";
-  return knownApi && knownExpect ? { api, expect } : undefined;
+const graderOf = (expectedOutput: unknown): Grader | undefined => {
+  const grader = (expectedOutput ?? {}) as Partial<Grader> & Record<string, unknown>;
+  if (typeof grader.family !== "string") return undefined;
+
+  if (grader.kind === "diff") {
+    const knownFamily =
+      grader.family === "effects" ||
+      grader.family === "memoization" ||
+      grader.family === "sorting" ||
+      grader.family === "sets";
+    const knownExpect = grader.expect === "none" || grader.expect === "some";
+    return knownFamily && knownExpect
+      ? { kind: "diff", family: grader.family, expect: grader.expect }
+      : undefined;
+  }
+
+  if (grader.kind === "judge" && typeof grader.criterion === "string") {
+    return { kind: "judge", family: grader.family, criterion: grader.criterion };
+  }
+
+  return undefined;
 };
 
-const reusable = values.reuse ? await cachedTaskIds(arm) : [];
+/**
+ * One dataset item's result: `repeat` trials of the same task. The trials are
+ * kept apart rather than reduced here, so the evaluator can grade each one and
+ * report how many of them passed.
+ */
+type ItemOutcome =
+  | { readonly status: "skipped" }
+  | { readonly status: "attempted"; readonly trials: readonly TrialOutcome[] };
+
+/**
+ * One trial's verdict. `unanswered` is not a failure of the agent: it is the
+ * judge that could not be reached, and it must stay distinguishable from a zero.
+ */
+type Verdict =
+  | { readonly kind: "graded"; readonly passed: boolean; readonly comment: string }
+  | { readonly kind: "unanswered"; readonly comment: string };
+
+const gradeTrial = async (
+  trial: TrialOutcome,
+  grader: Grader,
+  prompt: string,
+): Promise<Verdict> => {
+  if (trial.status === "failed") return { kind: "graded", passed: false, comment: trial.reason };
+
+  if (grader.kind === "diff") {
+    const grade = gradeAdded(trial.diff, grader);
+    return { kind: "graded", passed: grade.passed, comment: grade.comment };
+  }
+
+  const verdict = await judge({
+    criterion: grader.criterion,
+    prompt,
+    diff: trial.diff,
+    summary: trial.summary,
+    model: values["judge-model"],
+  });
+
+  return verdict.kind === "unavailable"
+    ? { kind: "unanswered", comment: verdict.reason }
+    : { kind: "graded", passed: verdict.passed, comment: verdict.reason };
+};
+
+const reusable = values.reuse ? await cachedTaskIds(arm, values.model, repeat) : [];
 if (reusable.length > 0) {
   console.log(`Reusing stored trials: ${reusable.join(", ")}`);
 }
@@ -178,53 +252,105 @@ const result = await dataset.runExperiment({
     arm,
     gate: gateName,
     model: values.model,
+    // How many samples every per-task score averages. A pass rate read without
+    // it says nothing about how much of its movement is noise.
+    repeat,
+    // The judge is pinned separately from the subject and recorded beside it.
+    // Two models move in this system, and a run nobody can read the judge of is
+    // a run whose verdicts cannot be compared to last month's.
+    judgeModel: values["judge-model"],
     maxTurns: Number(values["max-turns"]),
     ...env,
   },
-  task: async ({ metadata }) => {
+  task: async ({ metadata }): Promise<ItemOutcome> => {
     const evalTask = findTask(metadata);
-    if (!evalTask) return { status: "failed", reason: "unknown task" };
+    if (!evalTask) {
+      return { status: "attempted", trials: [{ status: "failed", reason: "unknown task" }] };
+    }
     if (!selected.includes(evalTask)) return { status: "skipped" };
 
-    console.log(`\n--- ${evalTask.id} [${arm}]`);
-    const outcome = await runTrial({
-      task: evalTask,
-      arm,
-      model: values.model,
-      maxTurns: Number(values["max-turns"]),
-      reuse: values.reuse,
-    });
-    if (outcome.status === "completed") {
-      console.log(`    ${outcome.changedFiles.length} file(s), $${outcome.costUsd.toFixed(2)}`);
-    } else if (outcome.status === "failed") {
-      console.log(`    failed: ${outcome.reason}`);
+    const trials: TrialOutcome[] = [];
+    // Serial, for the reason `maxConcurrency` is 1: each of these is minutes and
+    // real money, and output that interleaves is output nobody reads while it runs.
+    for (let repetition = 1; repetition <= repeat; repetition += 1) {
+      console.log(`\n--- ${evalTask.id} [${arm}] trial ${repetition}/${repeat}`);
+      // oxlint-disable-next-line no-await-in-loop -- serial on purpose, see above
+      const outcome = await runTrial({
+        task: evalTask,
+        arm,
+        model: values.model,
+        maxTurns: Number(values["max-turns"]),
+        repetition,
+        reuse: values.reuse,
+      });
+      if (outcome.status === "completed") {
+        console.log(`    ${outcome.changedFiles.length} file(s), $${outcome.costUsd.toFixed(2)}`);
+      } else {
+        console.log(`    failed: ${outcome.reason}`);
+      }
+      trials.push(outcome);
     }
-    return outcome;
+    return { status: "attempted", trials };
   },
   evaluators: [
-    async ({ output, expectedOutput }) => {
-      const outcome = output as TrialOutcome;
+    async ({ input, output, expectedOutput }) => {
+      const outcome = output as ItemOutcome;
       if (outcome.status === "skipped") return [];
 
-      const expected = expectedOf(expectedOutput);
-      if (expected === undefined) {
-        return { name: "rule_gate", value: 0, comment: "item carries no expectation" };
+      const grader = graderOf(expectedOutput);
+      if (grader === undefined) {
+        return { name: "rule_gate", value: 0, comment: "item carries no grader" };
       }
 
-      const grade =
-        outcome.status === "completed"
-          ? gradeAdded(outcome.diff, expected.api, expected.expect)
-          : { passed: false, effectCount: 0, comment: outcome.reason };
-      return {
-        name: scoreName(expected.api),
-        value: grade.passed ? 1 : 0,
-        comment: grade.comment,
-      };
+      const prompt = (input as { prompt?: string }).prompt ?? "";
+      const verdicts = await Promise.all(
+        outcome.trials.map((trial) => gradeTrial(trial, grader, prompt)),
+      );
+
+      const graded = verdicts.filter((verdict) => verdict.kind === "graded");
+      const unanswered = verdicts.filter((verdict) => verdict.kind === "unanswered");
+
+      // A judge that could not answer must not publish a zero. A failure to
+      // reach the model is indistinguishable, on the chart, from a skill that
+      // regressed — and this suite exists because unattributable numbers are
+      // what it is trying to stop producing. The count says how many of the
+      // repetitions it swallowed, so a score averaged over fewer samples than
+      // the run asked for says so.
+      const errors =
+        unanswered.length === 0
+          ? []
+          : [
+              {
+                name: "judge_error",
+                value: unanswered.length,
+                comment: unanswered.map((verdict) => verdict.comment).join(" | "),
+              },
+            ];
+
+      if (graded.length === 0) return errors;
+
+      const passed = graded.filter((verdict) => verdict.passed).length;
+      return [
+        ...errors,
+        {
+          name: scoreName(grader),
+          // The mean over the repetitions, so a task that passes once in two
+          // reads as 0.5 rather than as whichever trial happened to be graded.
+          value: passed / graded.length,
+          comment: `${passed}/${graded.length} passed. ${graded
+            .map((verdict) => verdict.comment)
+            .join(" | ")}`,
+        },
+      ];
     },
     async ({ output }) => {
-      const outcome = output as TrialOutcome;
+      const outcome = output as ItemOutcome;
       if (outcome.status === "skipped") return [];
-      const costUsd = outcome.status === "completed" ? outcome.costUsd : 0;
+      // The whole item, repetitions included: what this task cost this run.
+      const costUsd = outcome.trials.reduce(
+        (total, trial) => total + (trial.status === "completed" ? trial.costUsd : 0),
+        0,
+      );
       return { name: "trial_cost_usd", value: costUsd, comment: `$${costUsd.toFixed(2)}` };
     },
   ],
@@ -236,11 +362,13 @@ const result = await dataset.runExperiment({
         .map((evaluation) => Number(evaluation.value));
       // No score at all beats a zero: an empty run must not look like a failure.
       if (gates.length === 0) return [];
+      // The mean of means: every task weighs the same whatever happened inside
+      // its repetitions, so a task cannot count twice for having been sampled.
       const rate = gates.reduce((sum, value) => sum + value, 0) / gates.length;
       return {
         name: "pass_rate",
         value: rate,
-        comment: `${gates.filter(Boolean).length}/${gates.length} passed`,
+        comment: `${rate.toFixed(2)} over ${gates.length} task(s) × ${repeat} trial(s)`,
       };
     },
   ],
