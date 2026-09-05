@@ -16,6 +16,7 @@ yarn evals --gate javascript            # another gate
 yarn evals --task effects-reset-state-with-key   # one task
 yarn evals --arm without-skills         # the ablation arm
 yarn evals --repeat 5                   # five trials per task instead of two
+yarn evals --max-concurrency 3          # three tasks at once (CI does; local output interleaves)
 yarn evals --reuse                      # re-score stored trials, no trial spawned
 yarn evals --run-name before-skill-edit # name the run yourself
 yarn evals --max-turns 40               # raise the per-trial turn budget
@@ -180,6 +181,7 @@ declares, and no task gates it.
 | Dataset run            | one execution of that gate                          |
 | Trace                  | one trial                                           |
 | Score `effects_gate`   | the grader's verdict, meaned over the task's trials |
+| Score `trial_error`    | how many trials never ran: rate limit, timeout      |
 | Score `judge_error`    | how many trials the judge could not answer          |
 | Score `trial_cost_usd` | what that task cost, trials summed                  |
 | Run score `pass_rate`  | the number to watch over time                       |
@@ -200,6 +202,14 @@ Compare runs of the same kind. A CI baseline is not comparable to a local one.
 Items skipped by `--task` receive **no score at all** rather than a zero. A score
 of zero would be indistinguishable from a failure and would drag the pass rate
 down for a task that never ran.
+
+The same holds for a trial the harness could not run. `claude -p` killed by a
+rate limit, by the fifteen-minute timeout, or by a CLI that would not start
+writes `trial_error` and no `*_gate` score — a zero there reads, on the chart,
+exactly like a skill that regressed. Only one non-zero exit is an answer: an
+agent that ran out of `--max-turns` left a diff, and that diff is graded. In CI,
+where the token is shared and trials run three abreast, read a burst of
+`trial_error` as an exhausted five-hour window, not as a regression.
 
 ## The judge
 

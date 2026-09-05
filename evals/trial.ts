@@ -49,9 +49,12 @@ const promptFor = (task: EvalTask): string =>
   task.checks === "run" ? task.prompt : `${task.prompt}\n\n${SKIP_CHECKS}`;
 
 /**
- * The final state of the environment after one attempt. `failed` is a real
- * result, not an exception: a trial that never edited anything scores zero like
- * any other wrong answer.
+ * The final state of the environment after one attempt. There is no "failed":
+ * an agent that answered badly is `completed` with a bad diff, and the grader
+ * says so. `unavailable` is the harness, not the agent — a rate limit, a
+ * timeout, a worktree that would not add — and it must never be scored, because
+ * a zero from a trial that never ran is indistinguishable from a skill that
+ * regressed.
  */
 export type TrialOutcome =
   | {
@@ -63,13 +66,48 @@ export type TrialOutcome =
       readonly turns: number;
       readonly durationMs: number;
     }
-  | { readonly status: "failed"; readonly reason: string };
+  | { readonly status: "unavailable"; readonly reason: string };
 
 type ClaudeResult = {
+  readonly subtype?: string;
   readonly result?: string;
   readonly total_cost_usd?: number;
   readonly num_turns?: number;
   readonly duration_ms?: number;
+};
+
+/**
+ * `claude -p` exits non-zero on any failure and writes execution failures to
+ * stdout as the same JSON a success uses, so the exit code alone cannot tell an
+ * agent that ran out of turns from a token that was rate-limited. `subtype` can.
+ */
+const resultOf = (error: unknown): ClaudeResult | undefined => {
+  const stdout = (error as { stdout?: unknown } | null)?.stdout;
+  if (typeof stdout !== "string") return undefined;
+  try {
+    return JSON.parse(stdout) as ClaudeResult;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * One line naming why a process failed. `execFile`'s own message repeats the
+ * whole command line, prompt included, which is not a reason anyone reads.
+ */
+const describe = (error: unknown): string => {
+  if (!(error instanceof Error)) return String(error);
+  const { killed, code, stderr } = error as Error & {
+    killed?: boolean;
+    code?: unknown;
+    stderr?: string;
+  };
+  if (killed) return `killed after ${CLAUDE_TIMEOUT_MS / 60_000} minutes`;
+  const line = stderr?.trim().split("\n")[0];
+  if (typeof code === "number" || typeof code === "string") {
+    return line ? `exit ${code}: ${line}` : `exit ${code}`;
+  }
+  return error.message;
 };
 
 const git = async (args: readonly string[], cwd = REPO_ROOT): Promise<string> => {
@@ -185,24 +223,36 @@ export const runTrial = async (options: {
     if (arm === "without-skills") await stripSkills(worktree);
     await linkDependencies(worktree);
 
-    const { stdout } = await run(
-      "claude",
-      [
-        "-p",
-        promptFor(task),
-        "--model",
-        model,
-        "--permission-mode",
-        "acceptEdits",
-        "--max-turns",
-        String(maxTurns),
-        "--output-format",
-        "json",
-      ],
-      { cwd: worktree, timeout: CLAUDE_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 },
-    );
+    let claude: ClaudeResult;
+    try {
+      const { stdout } = await run(
+        "claude",
+        [
+          "-p",
+          promptFor(task),
+          "--model",
+          model,
+          "--permission-mode",
+          "acceptEdits",
+          "--max-turns",
+          String(maxTurns),
+          "--output-format",
+          "json",
+        ],
+        { cwd: worktree, timeout: CLAUDE_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 },
+      );
+      claude = JSON.parse(stdout) as ClaudeResult;
+    } catch (error) {
+      const result = resultOf(error);
+      // Out of turns is an answer: whatever the agent left in the worktree is
+      // what it wrote, and it is graded as such. Anything else — a rate limit,
+      // the timeout, a CLI that would not start — is no answer at all.
+      if (result?.subtype !== "error_max_turns") {
+        return { status: "unavailable", reason: result?.result ?? describe(error) };
+      }
+      claude = result;
+    }
 
-    const claude = JSON.parse(stdout) as ClaudeResult;
     const diff = await git(["diff", "HEAD", "--", ...SOURCE_PATHS], worktree);
     const names = await git(["diff", "HEAD", "--name-only", "--", ...SOURCE_PATHS], worktree);
 
@@ -221,7 +271,7 @@ export const runTrial = async (options: {
 
     return outcome;
   } catch (error) {
-    return { status: "failed", reason: error instanceof Error ? error.message : String(error) };
+    return { status: "unavailable", reason: describe(error) };
   } finally {
     await git(["worktree", "remove", "--force", worktree]).catch(() => {});
     await git(["branch", "-D", branch]).catch(() => {});

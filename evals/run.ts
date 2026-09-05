@@ -4,8 +4,8 @@
  * terminal that scrolls away.
  *
  * Usage: yarn evals [--gate <skill>] [--task <id>] [--arm with-skills|without-skills]
- *                   [--repeat <n>] [--reuse] [--run-name <name>] [--max-turns <n>]
- *                   [--model <id>] [--judge-model <id>] [--list-gates]
+ *                   [--repeat <n>] [--max-concurrency <n>] [--reuse] [--run-name <name>]
+ *                   [--max-turns <n>] [--model <id>] [--judge-model <id>] [--list-gates]
  *
  * One gate per invocation: a gate is a Langfuse dataset, and two skills sharing
  * a pass rate would move it for reasons nobody can read.
@@ -36,6 +36,7 @@ const { values } = parseArgs({
     task: { type: "string" },
     arm: { type: "string", default: "with-skills" },
     repeat: { type: "string", default: "2" },
+    "max-concurrency": { type: "string", default: "1" },
     reuse: { type: "boolean", default: false },
     "run-name": { type: "string" },
     "max-turns": { type: "string", default: "25" },
@@ -86,6 +87,23 @@ const selected = requested ? [requested] : gateTasks;
 const repeat = Number(values.repeat);
 if (!Number.isInteger(repeat) || repeat < 1) {
   console.error(`--repeat takes a whole number of trials per task, not "${values.repeat}".`);
+  process.exit(1);
+}
+
+/**
+ * How many tasks run at once. One by default, because a trial is minutes and
+ * real money and output that interleaves is output nobody reads while it runs.
+ * CI reads nothing while it runs and pays by the wall clock, so it raises this:
+ * a gate of five tasks at three abreast finishes in two waves instead of five.
+ *
+ * Tasks, not trials: a task's repetitions stay serial inside it, so the samples
+ * a score averages never compete with each other for the same rate limit.
+ */
+const concurrency = Number(values["max-concurrency"]);
+if (!Number.isInteger(concurrency) || concurrency < 1) {
+  console.error(
+    `--max-concurrency takes a whole number of tasks at once, not "${values["max-concurrency"]}".`,
+  );
   process.exit(1);
 }
 
@@ -202,18 +220,23 @@ type ItemOutcome =
 
 /**
  * One trial's verdict. `unanswered` is not a failure of the agent: it is the
- * judge that could not be reached, and it must stay distinguishable from a zero.
+ * trial that could not run or the judge that could not be reached, and it must
+ * stay distinguishable from a zero. `source` says which, because the two are
+ * fixed in different places — a rate limit on the subject's token, a model the
+ * judge could not reach.
  */
 type Verdict =
   | { readonly kind: "graded"; readonly passed: boolean; readonly comment: string }
-  | { readonly kind: "unanswered"; readonly comment: string };
+  | { readonly kind: "unanswered"; readonly source: "trial" | "judge"; readonly comment: string };
 
 const gradeTrial = async (
   trial: TrialOutcome,
   grader: Grader,
   prompt: string,
 ): Promise<Verdict> => {
-  if (trial.status === "failed") return { kind: "graded", passed: false, comment: trial.reason };
+  if (trial.status === "unavailable") {
+    return { kind: "unanswered", source: "trial", comment: trial.reason };
+  }
 
   if (grader.kind === "diff") {
     const grade = gradeAdded(trial.diff, grader);
@@ -229,7 +252,7 @@ const gradeTrial = async (
   });
 
   return verdict.kind === "unavailable"
-    ? { kind: "unanswered", comment: verdict.reason }
+    ? { kind: "unanswered", source: "judge", comment: verdict.reason }
     : { kind: "graded", passed: verdict.passed, comment: verdict.reason };
 };
 
@@ -243,9 +266,7 @@ const dataset = await langfuse.dataset.get(gateName);
 const result = await dataset.runExperiment({
   name: runName,
   description: `${gateName}, ${arm}, ${values.model}, ${selected.length} task(s), commit ${commitSha.slice(0, 7)}`,
-  // One trial at a time: each costs real tokens and minutes, and serial output
-  // stays readable while it runs.
-  maxConcurrency: 1,
+  maxConcurrency: concurrency,
   metadata: {
     "langfuse.commit": commitSha,
     "langfuse.branch": gitBranch,
@@ -255,6 +276,9 @@ const result = await dataset.runExperiment({
     // How many samples every per-task score averages. A pass rate read without
     // it says nothing about how much of its movement is noise.
     repeat,
+    // A burst of unavailable trials reads beside the concurrency that caused
+    // it: a rate limit hit at three abreast is not one hit at one.
+    maxConcurrency: concurrency,
     // The judge is pinned separately from the subject and recorded beside it.
     // Two models move in this system, and a run nobody can read the judge of is
     // a run whose verdicts cannot be compared to last month's.
@@ -265,15 +289,16 @@ const result = await dataset.runExperiment({
   task: async ({ metadata }): Promise<ItemOutcome> => {
     const evalTask = findTask(metadata);
     if (!evalTask) {
-      return { status: "attempted", trials: [{ status: "failed", reason: "unknown task" }] };
+      return { status: "attempted", trials: [{ status: "unavailable", reason: "unknown task" }] };
     }
     if (!selected.includes(evalTask)) return { status: "skipped" };
 
     const trials: TrialOutcome[] = [];
-    // Serial, for the reason `maxConcurrency` is 1: each of these is minutes and
-    // real money, and output that interleaves is output nobody reads while it runs.
+    // Serial: these are the samples one score averages, and `--max-concurrency`
+    // says why they do not race each other.
+    const label = `${evalTask.id} [${arm}]`;
     for (let repetition = 1; repetition <= repeat; repetition += 1) {
-      console.log(`\n--- ${evalTask.id} [${arm}] trial ${repetition}/${repeat}`);
+      console.log(`\n--- ${label} trial ${repetition}/${repeat}`);
       // oxlint-disable-next-line no-await-in-loop -- serial on purpose, see above
       const outcome = await runTrial({
         task: evalTask,
@@ -283,10 +308,14 @@ const result = await dataset.runExperiment({
         repetition,
         reuse: values.reuse,
       });
+      // Prefixed, because at any concurrency above one this line lands under
+      // some other task's header.
       if (outcome.status === "completed") {
-        console.log(`    ${outcome.changedFiles.length} file(s), $${outcome.costUsd.toFixed(2)}`);
+        console.log(
+          `    ${label}: ${outcome.changedFiles.length} file(s), $${outcome.costUsd.toFixed(2)}`,
+        );
       } else {
-        console.log(`    failed: ${outcome.reason}`);
+        console.log(`    ${label}: unavailable, ${outcome.reason}`);
       }
       trials.push(outcome);
     }
@@ -310,22 +339,24 @@ const result = await dataset.runExperiment({
       const graded = verdicts.filter((verdict) => verdict.kind === "graded");
       const unanswered = verdicts.filter((verdict) => verdict.kind === "unanswered");
 
-      // A judge that could not answer must not publish a zero. A failure to
-      // reach the model is indistinguishable, on the chart, from a skill that
-      // regressed — and this suite exists because unattributable numbers are
-      // what it is trying to stop producing. The count says how many of the
+      // A trial that could not run, or a judge that could not answer, must not
+      // publish a zero. Either is indistinguishable, on the chart, from a skill
+      // that regressed — and this suite exists because unattributable numbers
+      // are what it is trying to stop producing. The count says how many of the
       // repetitions it swallowed, so a score averaged over fewer samples than
       // the run asked for says so.
-      const errors =
-        unanswered.length === 0
+      const errors = (["trial", "judge"] as const).flatMap((source) => {
+        const swallowed = unanswered.filter((verdict) => verdict.source === source);
+        return swallowed.length === 0
           ? []
           : [
               {
-                name: "judge_error",
-                value: unanswered.length,
-                comment: unanswered.map((verdict) => verdict.comment).join(" | "),
+                name: `${source}_error`,
+                value: swallowed.length,
+                comment: swallowed.map((verdict) => verdict.comment).join(" | "),
               },
             ];
+      });
 
       if (graded.length === 0) return errors;
 
