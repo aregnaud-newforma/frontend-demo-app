@@ -17,8 +17,11 @@ on:
       - ".claude/skills/**"
       - "AGENTS.md"
       - "CLAUDE.md"
-      # The suite is also under test when the suite itself changes.
+      # The suite is also under test when the suite itself changes. Its prose
+      # is not: `evals/README.md` explains the harness without being able to
+      # change what it does, and a documentation edit is not worth a suite.
       - "evals/**"
+      - "!evals/README.md"
       - ".github/workflows/evals.yml"
   # Puts a "Run workflow" button in the Actions tab. It only appears once this
   # file is on the default branch.
@@ -44,7 +47,9 @@ on:
         description: "Trials per task. More samples, less noise, proportionally more money."
         required: false
         type: string
-        default: "2"
+        # One, like the automatic runs, because a manual run that wants a
+        # measurement rather than a smoke test says so by raising this.
+        default: "1"
 
 # A new push supersedes the run already in flight: a trial costs real money, and
 # the score of a commit that has been replaced is not worth paying for.
@@ -108,14 +113,29 @@ jobs:
           else
             changed=$(git diff --name-only "origin/$BASE...HEAD")
 
-            # The harness, and the two files every agent in this repo reads,
-            # can move any gate — there is no subset to narrow to — and they
-            # reach both arms: the prompts and the pinned model live in
-            # `evals/`, the CLI pin lives here, and the strip removes only the
-            # Skills section of `AGENTS.md`. The baseline moved, so re-measure it.
-            if echo "$changed" | grep -qE '^(AGENTS\.md|CLAUDE\.md|evals/|\.github/workflows/evals\.yml)'; then
+            # Whatever changes what a trial *is* moves any gate — there is no
+            # subset to narrow to — and moves both arms with it, so the
+            # ablation is no longer a constant and the baseline has to be
+            # re-measured. That is: the prompts and criteria (`tasks.ts`), the
+            # pinned model and the strip itself (`trial.ts`), the judge and its
+            # own pin (`judge.ts`), the CLI pin (here), and the two files every
+            # agent in this repo reads — the strip removes only the Skills
+            # section of `AGENTS.md`, so the rest of it reaches both arms.
+            if echo "$changed" | grep -qE '^(AGENTS\.md|CLAUDE\.md|evals/(tasks|trial|judge)\.ts|\.github/workflows/evals\.yml)$'; then
               gates=$all
               arms=$both
+            # The rest of the harness — `run.ts`, which orchestrates and scores
+            # — decides what is recorded, not what the agent is given: it
+            # cannot move one arm relative to the other, and a comparison whose
+            # two sides shifted together does not need re-measuring. One arm
+            # across every gate still exercises both grader kinds, which is what
+            # a harness edit needs proving, at half the money.
+            # `README.md` excluded as it is in `paths` above: it changes
+            # nothing the suite does, and a pull request that edits it beside a
+            # rule should still pay for that rule's gate alone.
+            elif echo "$changed" | grep -vE '^evals/README\.md$' | grep -qE '^evals/'; then
+              gates=$all
+              arms='["with-skills"]'
             else
               touched=$(echo "$changed" \
                 | sed -n 's|^\.claude/skills/\([^/]*\)/.*|\1|p' \
@@ -155,6 +175,13 @@ jobs:
       # One job's harness failure says nothing about the others, and their runs
       # are already paid for.
       fail-fast: false
+      # Every job in the matrix draws on the same subscription token, and each
+      # runs three trials abreast: six jobs is eighteen concurrent `claude -p`,
+      # which exhausts the five-hour window and returns `trial_error` — a trial
+      # that never ran, and a gate that scores nothing — rather than a score.
+      # Two jobs is six, which the window holds. It costs wall clock, and the
+      # 90-minute timeout is per job, so a queued job is not a timing out one.
+      max-parallel: 2
       matrix:
         gate: ${{ fromJSON(needs.changes.outputs.gates) }}
         arm: ${{ fromJSON(needs.changes.outputs.arms) }}
@@ -190,7 +217,14 @@ jobs:
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
           LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
-          REPEAT: ${{ inputs.repeat || '2' }}
+          # One trial per task, against the harness default of two. This tier
+          # answers "did I break something obvious", and a single trial answers
+          # it: a task that flips between runs is visible as a gate that moves,
+          # and the run that has to distinguish flake from regression is the
+          # scheduled one, where the repetitions are worth their money. Two here
+          # doubles the bill of every push that touches a rule — and an
+          # `AGENTS.md` edit, which runs every gate in both arms, most of all.
+          REPEAT: ${{ inputs.repeat || '1' }}
           # Tasks at once within this job. Nobody reads the log while it runs,
           # so the interleaving `run.ts` defaults to one to avoid costs nothing
           # here; the wall clock does. Three, not five: every job in the matrix

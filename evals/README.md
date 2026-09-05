@@ -152,6 +152,13 @@ The cost is linear, and `repeat` travels in the run metadata: a pass rate read
 without knowing how many samples it averages says nothing about how much of its
 movement is noise.
 
+CI on a pull request overrides it to **1**. That tier asks whether a rule change
+broke something obvious, and one trial answers that for a third of the money —
+a push touching `AGENTS.md` runs every gate in both arms, and the second sample
+doubles it. Repetition belongs where the question is how much of a gap is noise,
+which is the scheduled run and the manual one: `workflow_dispatch` takes
+`repeat`, so a run that wants a measurement asks for the samples.
+
 ## Gates
 
 A gate is one skill, named exactly as its directory under `.claude/skills/`, and
@@ -165,6 +172,13 @@ path, so every rule edit used to run every gate and pay for it. The workflow's
 `changes` job reads `--list-gates`, intersects it with the skill directories in
 the diff, and builds its matrix from the result. A change to `AGENTS.md`,
 `CLAUDE.md` or the harness runs all of them: those move any gate.
+
+The harness splits in two there. `tasks.ts`, `trial.ts` and `judge.ts` decide
+what a trial is — the prompt, the pinned model, the strip, the criterion — so a
+change to one runs every gate in **both** arms: the ablation stopped being a
+constant, and the baseline has to be re-measured. `run.ts` decides what is
+recorded rather than what the agent is given, so it runs every gate in
+`with-skills` alone. `README.md` changes nothing and triggers nothing.
 
 A gate is deliberately coarser than a rule, so a `react` run averages effects and
 re-render alike. Nothing diagnostic is lost, because the per-task score is named
