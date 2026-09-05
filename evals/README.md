@@ -21,7 +21,9 @@ yarn evals --reuse                      # re-score stored trials, no trial spawn
 yarn evals --run-name before-skill-edit # name the run yourself
 yarn evals --max-turns 40               # raise the per-trial turn budget
 yarn evals --model claude-opus-5        # the model under test (pinned by default)
+yarn evals --effort low                 # its effort level (pinned to high by default)
 yarn evals --judge-model claude-sonnet-5 # the model that grades judged tasks
+yarn evals --judge-effort high          # its effort level (pinned by default)
 yarn evals --list-gates                 # the gates that have a task, as JSON
 ```
 
@@ -192,7 +194,12 @@ back to the state of `.claude/skills/` that produced it.
 It also carries the conditions the score was produced under. The model is pinned
 (`--model`, default `claude-opus-5`) because the CLI's default follows the plan
 and the account, and an unpinned model makes two runs different experiments under
-one name. What cannot be pinned is recorded: `runner` (`local` or `ci`),
+one name. So is its effort (`--effort`, default `high`, Opus 5's own): unpinned,
+`claude -p` reads `effortLevel` from the settings of whichever machine runs it,
+and a laptop and a CI runner can disagree. `--effort low` is a second experiment
+worth running by hand — a rule that survives a model thinking less is a rule
+that carries the model, rather than one the model was going to find anyway. What
+cannot be pinned is recorded: `runner` (`local` or `ci`),
 `cliVersion`, and the host of `ANTHROPIC_BASE_URL`. The CLI decides when a skill
 enters the agent's context, so a CLI upgrade can move the `with-skills` arm alone
 — which without the field reads as a skill regression.
@@ -235,9 +242,11 @@ the choice was a deliberate check rather than habit".
 Three things keep it honest:
 
 - **The judge is pinned separately from the subject.** `JUDGE_MODEL` is
-  `claude-sonnet-5` and travels in the run metadata beside `model`. Two models
-  move in this system; a judge that followed the CLI default would change what
-  "pass" means without leaving a trace.
+  `claude-sonnet-5`, `JUDGE_EFFORT` is `high`, and both travel in the run
+  metadata beside `model` and `effort`. Two models move in this system; a judge
+  that followed the CLI default would change what "pass" means without leaving
+  a trace. Effort stays high because the judge costs a cent and a verdict that
+  flips on a borderline diff costs a gate score.
 - **A judge that fails does not score zero.** It writes `judge_error` instead and
   no `*_gate` score at all. A zero from an unreachable model is indistinguishable
   from a skill that regressed, and unattributable numbers are what this suite
@@ -255,13 +264,16 @@ could be right or wrong depending on why it was written.
 ## Stored trials
 
 A completed trial is written to
-`evals/.runs/<task-id>.<arm>.<model>.r<repetition>.json` (git-ignored). It holds
+`evals/.runs/<task-id>.<arm>.<model>.<effort>.r<repetition>.json` (git-ignored). It holds
 the diff, the agent's summary, and the cost. `--reuse` grades that stored outcome
 instead of spawning a new one, which makes fixing a grader — or adding one — free.
 
 The model is in the key, not only the arm. Without it, moving `DEFAULT_MODEL`
 would let `--reuse` serve a Fable trial into a run whose metadata says Opus: a
 plausible number that is false, which is the worst thing an eval can produce.
+The effort is there for the same reason. Trials stored before it entered the
+key carry no effort in their name and are not served: which level they ran at
+is not known, and a guess in a filename is the same false number.
 
 The repetition index is there for a smaller version of the same reason: the
 repeated trials of one task are the samples the score averages, and a key without

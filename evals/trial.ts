@@ -25,6 +25,25 @@ const CLAUDE_TIMEOUT_MS = 15 * 60 * 1000;
  */
 export const DEFAULT_MODEL = "claude-opus-5";
 
+/**
+ * The effort levels `claude --effort` accepts. A level a model does not support
+ * falls back to the highest one below it, which the CLI does silently — so the
+ * level recorded in a run's metadata is the one asked for, not necessarily the
+ * one used.
+ */
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+
+export type Effort = (typeof EFFORTS)[number];
+
+/**
+ * Pinned for the reason the model is. Unpinned, `claude -p` reads `effortLevel`
+ * from the settings of whichever machine runs it, and a laptop and a CI runner
+ * can disagree — a trial that thinks harder passes more often, and the
+ * difference reads as a skill regression. `high` is Opus 5's own default, so
+ * pinning it steps nothing.
+ */
+export const DEFAULT_EFFORT: Effort = "high";
+
 /** Only source files are graded; a change to a config or a doc is not an answer. */
 const SOURCE_PATHS = [":(glob)src/**/*.ts", ":(glob)src/**/*.tsx"];
 
@@ -116,28 +135,34 @@ const git = async (args: readonly string[], cwd = REPO_ROOT): Promise<string> =>
 };
 
 /**
- * Keyed by arm and model as well as task, because all three are the measurement.
- * Two arms are two experiments; so are two models. A cache keyed on the task
- * alone would let `--reuse` serve a Fable trial into a run whose metadata says
- * Opus — a plausible number that is false, which is the one failure mode this
- * suite exists to stop making.
+ * Keyed by arm, model and effort as well as task, because all four are the
+ * measurement. Two arms are two experiments; so are two models, and so are two
+ * effort levels. A cache keyed on the task alone would let `--reuse` serve a
+ * Fable trial into a run whose metadata says Opus — a plausible number that is
+ * false, which is the one failure mode this suite exists to stop making.
  *
  * The repetition index is in the key for a smaller version of the same reason:
  * repeated trials of one task are the samples the score averages, and a key
  * without it would let the second overwrite the first and leave `--reuse`
  * grading one sample as if it were several.
  */
-const cacheFile = (taskId: string, arm: Arm, model: string, repetition: number): string =>
-  join(RUNS_DIR, `${taskId}.${arm}.${model}.r${repetition}.json`);
+const cacheFile = (
+  taskId: string,
+  arm: Arm,
+  model: string,
+  effort: Effort,
+  repetition: number,
+): string => join(RUNS_DIR, `${taskId}.${arm}.${model}.${effort}.r${repetition}.json`);
 
 const readCachedOutcome = async (
   taskId: string,
   arm: Arm,
   model: string,
+  effort: Effort,
   repetition: number,
 ): Promise<TrialOutcome | undefined> => {
   try {
-    const stored = await readFile(cacheFile(taskId, arm, model, repetition), "utf8");
+    const stored = await readFile(cacheFile(taskId, arm, model, effort, repetition), "utf8");
     return JSON.parse(stored) as TrialOutcome;
   } catch {
     return undefined;
@@ -200,16 +225,17 @@ export const runTrial = async (options: {
   readonly task: EvalTask;
   readonly arm: Arm;
   readonly model: string;
+  readonly effort: Effort;
   readonly maxTurns: number;
   /** Which sample of this task this is, counting from 1. Part of the cache key. */
   readonly repetition: number;
   /** Reuse the stored outcome when one exists, instead of spending a trial. */
   readonly reuse: boolean;
 }): Promise<TrialOutcome> => {
-  const { task, arm, model, maxTurns, repetition, reuse } = options;
+  const { task, arm, model, effort, maxTurns, repetition, reuse } = options;
 
   if (reuse) {
-    const cached = await readCachedOutcome(task.id, arm, model, repetition);
+    const cached = await readCachedOutcome(task.id, arm, model, effort, repetition);
     if (cached) return cached;
   }
 
@@ -232,6 +258,8 @@ export const runTrial = async (options: {
           promptFor(task),
           "--model",
           model,
+          "--effort",
+          effort,
           "--permission-mode",
           "acceptEdits",
           "--max-turns",
@@ -267,7 +295,10 @@ export const runTrial = async (options: {
     };
 
     await mkdir(RUNS_DIR, { recursive: true });
-    await writeFile(cacheFile(task.id, arm, model, repetition), JSON.stringify(outcome, null, 2));
+    await writeFile(
+      cacheFile(task.id, arm, model, effort, repetition),
+      JSON.stringify(outcome, null, 2),
+    );
 
     return outcome;
   } catch (error) {
@@ -288,9 +319,10 @@ export const runTrial = async (options: {
 export const cachedTaskIds = async (
   arm: Arm,
   model: string,
+  effort: Effort,
   repeat: number,
 ): Promise<readonly string[]> => {
-  const middle = `.${arm}.${model}.r`;
+  const middle = `.${arm}.${model}.${effort}.r`;
   try {
     const files = new Set(await readdir(RUNS_DIR));
     const ids = new Set(

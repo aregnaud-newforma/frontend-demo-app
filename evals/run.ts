@@ -5,7 +5,8 @@
  *
  * Usage: yarn evals [--gate <skill>] [--task <id>] [--arm with-skills|without-skills]
  *                   [--repeat <n>] [--max-concurrency <n>] [--reuse] [--run-name <name>]
- *                   [--max-turns <n>] [--model <id>] [--judge-model <id>] [--list-gates]
+ *                   [--max-turns <n>] [--model <id>] [--effort <level>]
+ *                   [--judge-model <id>] [--judge-effort <level>] [--list-gates]
  *
  * One gate per invocation: a gate is a Langfuse dataset, and two skills sharing
  * a pass rate would move it for reasons nobody can read.
@@ -23,8 +24,17 @@ import {
   type EvalTask,
   type Grader,
 } from "./tasks.ts";
-import { cachedTaskIds, runTrial, DEFAULT_MODEL, type Arm, type TrialOutcome } from "./trial.ts";
-import { judge, JUDGE_MODEL } from "./judge.ts";
+import {
+  cachedTaskIds,
+  runTrial,
+  DEFAULT_EFFORT,
+  DEFAULT_MODEL,
+  EFFORTS,
+  type Arm,
+  type Effort,
+  type TrialOutcome,
+} from "./trial.ts";
+import { judge, JUDGE_EFFORT, JUDGE_MODEL } from "./judge.ts";
 
 const run = promisify(execFile);
 
@@ -41,7 +51,9 @@ const { values } = parseArgs({
     "run-name": { type: "string" },
     "max-turns": { type: "string", default: "25" },
     model: { type: "string", default: DEFAULT_MODEL },
+    effort: { type: "string", default: DEFAULT_EFFORT },
     "judge-model": { type: "string", default: JUDGE_MODEL },
+    "judge-effort": { type: "string", default: JUDGE_EFFORT },
     "list-gates": { type: "boolean", default: false },
   },
 });
@@ -113,6 +125,17 @@ if (arm === undefined) {
   console.error(`No arm named "${values.arm}". Known: ${ARMS.join(", ")}`);
   process.exit(1);
 }
+
+const effortNamed = (flag: "effort" | "judge-effort"): Effort => {
+  const effort = EFFORTS.find((candidate) => candidate === values[flag]);
+  if (effort === undefined) {
+    console.error(`--${flag} takes one of ${EFFORTS.join(", ")}, not "${values[flag]}".`);
+    process.exit(1);
+  }
+  return effort;
+};
+const effort = effortNamed("effort");
+const judgeEffort = effortNamed("judge-effort");
 
 const gitOutput = async (args: readonly string[]): Promise<string> => {
   const { stdout } = await run("git", [...args]);
@@ -249,6 +272,7 @@ const gradeTrial = async (
     diff: trial.diff,
     summary: trial.summary,
     model: values["judge-model"],
+    effort: judgeEffort,
   });
 
   return verdict.kind === "unavailable"
@@ -256,7 +280,7 @@ const gradeTrial = async (
     : { kind: "graded", passed: verdict.passed, comment: verdict.reason };
 };
 
-const reusable = values.reuse ? await cachedTaskIds(arm, values.model, repeat) : [];
+const reusable = values.reuse ? await cachedTaskIds(arm, values.model, effort, repeat) : [];
 if (reusable.length > 0) {
   console.log(`Reusing stored trials: ${reusable.join(", ")}`);
 }
@@ -265,7 +289,7 @@ const dataset = await langfuse.dataset.get(gateName);
 
 const result = await dataset.runExperiment({
   name: runName,
-  description: `${gateName}, ${arm}, ${values.model}, ${selected.length} task(s), commit ${commitSha.slice(0, 7)}`,
+  description: `${gateName}, ${arm}, ${values.model} at ${effort}, ${selected.length} task(s), commit ${commitSha.slice(0, 7)}`,
   maxConcurrency: concurrency,
   metadata: {
     "langfuse.commit": commitSha,
@@ -273,6 +297,9 @@ const result = await dataset.runExperiment({
     arm,
     gate: gateName,
     model: values.model,
+    // Beside the model because it is the same kind of variable: unrecorded, a
+    // run at `low` and a run at `high` are two experiments under one name.
+    effort,
     // How many samples every per-task score averages. A pass rate read without
     // it says nothing about how much of its movement is noise.
     repeat,
@@ -283,6 +310,7 @@ const result = await dataset.runExperiment({
     // Two models move in this system, and a run nobody can read the judge of is
     // a run whose verdicts cannot be compared to last month's.
     judgeModel: values["judge-model"],
+    judgeEffort,
     maxTurns: Number(values["max-turns"]),
     ...env,
   },
@@ -304,6 +332,7 @@ const result = await dataset.runExperiment({
         task: evalTask,
         arm,
         model: values.model,
+        effort,
         maxTurns: Number(values["max-turns"]),
         repetition,
         reuse: values.reuse,

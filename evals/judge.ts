@@ -19,6 +19,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import type { Effort } from "./trial.ts";
 
 const run = promisify(execFile);
 
@@ -36,6 +37,15 @@ const JUDGE_TIMEOUT_MS = 3 * 60 * 1000;
  * optimises the wrong line.
  */
 export const JUDGE_MODEL = "claude-sonnet-5";
+
+/**
+ * Pinned like the judge's model, and high like the subject's: the judge reads
+ * three thousand tokens and costs a cent, so thinking less saves nothing that
+ * can be measured, while a verdict that flips on a borderline diff moves a gate
+ * score in a way nobody can tell from a skill regression. Consistency is what
+ * effort buys here.
+ */
+export const JUDGE_EFFORT: Effort = "high";
 
 /**
  * What the judge is not allowed to be: an agent with a repository.
@@ -149,6 +159,7 @@ export const judge = async (input: {
   readonly diff: string;
   readonly summary: string;
   readonly model: string;
+  readonly effort: Effort;
 }): Promise<Verdict> => {
   // A scratch directory, so the CLI cannot find a CLAUDE.md above the judge and
   // hand it the very rules it is supposed to be checking from the outside.
@@ -162,6 +173,8 @@ export const judge = async (input: {
         payload(input),
         "--model",
         input.model,
+        "--effort",
+        input.effort,
         "--system-prompt",
         SYSTEM_PROMPT,
         "--output-format",
