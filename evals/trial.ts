@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
-import { access, mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describeFailure, type Agent, type AgentStop, type Effort } from "./agents.ts";
-import type { EvalTask } from "./tasks.ts";
+import type { EvalTask, Gate } from "./tasks.ts";
 
 const run = promisify(execFile);
 
@@ -14,17 +14,45 @@ const RUNS_DIR = join(REPO_ROOT, "evals", ".runs");
 const SOURCE_PATHS = [":(glob)src/**/*.ts", ":(glob)src/**/*.tsx"];
 
 /**
- * Which arm of the ablation a trial belongs to. "without-skills" answers the
- * question a pass alone cannot: whether the skill caused the pass, or the model
- * already knew the rule and the skill is decoration.
+ * Which arm a trial belongs to. "without-skills" answers the question a pass
+ * alone cannot: whether the skill caused the pass, or the model already knew the
+ * rule and the skill is decoration. "previous-skill" answers a narrower one:
+ * whether an edit to the skill moved anything, against the same code, harness,
+ * CLI and hour — the one baseline last night's run cannot be.
  *
  * Comparable within one agent only. Each agent reads its rules from a different
  * place and loads them differently — Claude pulls a skill in on demand, an agent
  * with only an `AGENTS.md` has the whole body in context from the first token —
- * so the two arms are not the same treatment across agents. The delta between
+ * so the arms are not the same treatment across agents. The delta between
  * them is the measurement that travels; the absolute pass rate is not.
  */
-export type Arm = "with-skills" | "without-skills";
+export type Arm = "with-skills" | "without-skills" | "previous-skill";
+
+/**
+ * What "previous-skill" restores: one gate's skill directory as it was at a
+ * commit, inside a worktree that is otherwise HEAD. Carries the directory's tree
+ * hash because that, not the ref, is the experiment: `main` moves while its
+ * rules stay put, so two refs holding the same text are one baseline, and a
+ * ref whose text equals HEAD's has nothing to compare.
+ */
+export type Baseline = {
+  /** As given on the command line, for the run metadata. */
+  readonly ref: string;
+  /** What it resolved to when the run started. */
+  readonly commit: string;
+  readonly gate: Gate;
+  /** `git rev-parse <commit>:.claude/skills/<gate>`. */
+  readonly tree: string;
+};
+
+/**
+ * The arm together with what it needs, so a "previous-skill" trial cannot be
+ * asked for without a baseline and a baseline cannot be handed to an arm that
+ * would ignore it.
+ */
+export type Treatment =
+  | { readonly arm: "with-skills" | "without-skills" }
+  | { readonly arm: "previous-skill"; readonly baseline: Baseline };
 
 /**
  * Appended when a task's checks policy is "skip". Harness instruction, not part
@@ -36,8 +64,10 @@ const SKIP_CHECKS = [
   "Do not run `yarn verify`, `yarn test`, `yarn e2e` or `yarn dev`.",
 ].join(" ");
 
-const promptFor = (task: EvalTask): string =>
-  task.checks === "run" ? task.prompt : `${task.prompt}\n\n${SKIP_CHECKS}`;
+const promptFor = (task: EvalTask, variant: number): string => {
+  const prompt = task.prompts[variant - 1];
+  return task.checks === "run" ? prompt : `${prompt}\n\n${SKIP_CHECKS}`;
+};
 
 /**
  * The final state of the environment after one attempt. There is no "failed":
@@ -72,6 +102,43 @@ const git = async (args: readonly string[], cwd = REPO_ROOT): Promise<string> =>
 /** A model id is free-form and ends up in a filename; a `/` in one is a lost run. */
 const slug = (value: string): string => value.replaceAll(/[^\w.-]/g, "-");
 
+const skillDir = (gate: Gate): string => join(".claude", "skills", gate);
+
+/** The hash of one gate's skill directory at a revision: the text under test. */
+export const skillTree = async (gate: Gate, revision: string): Promise<string> =>
+  (await git(["rev-parse", `${revision}:${skillDir(gate)}`])).trim();
+
+export const resolveBaseline = async (ref: string, gate: Gate): Promise<Baseline> => ({
+  ref,
+  gate,
+  commit: (await git(["rev-parse", `${ref}^{commit}`])).trim(),
+  tree: await skillTree(gate, ref),
+});
+
+/**
+ * Only the gate's directory moves. The other skills and `AGENTS.md` stay at
+ * HEAD in both arms of the comparison, which is what makes them constants.
+ * Removed first: a checkout restores what the commit had and leaves alone what
+ * it did not, and a rule file added since would otherwise survive into the
+ * baseline.
+ */
+const restoreSkill = async (worktree: string, baseline: Baseline): Promise<void> => {
+  const dir = skillDir(baseline.gate);
+  await rm(join(worktree, dir), { recursive: true, force: true });
+  await git(["checkout", baseline.commit, "--", dir], worktree);
+};
+
+/**
+ * The arm as it appears in a cache key. A "previous-skill" trial is keyed by
+ * the text it was given, not the ref that named it: `--reuse` may serve a
+ * trial of `main` to a run that said `HEAD~1` when the two hold the same rules,
+ * and must not serve one to the other once `main` has moved.
+ */
+const armKey = (treatment: Treatment): string =>
+  treatment.arm === "previous-skill"
+    ? `${treatment.arm}-${treatment.baseline.tree.slice(0, 12)}`
+    : treatment.arm;
+
 /**
  * Keyed by agent, arm, model and effort as well as task, because all of them are
  * the measurement. Two arms are two experiments; so are two agents, two models,
@@ -79,25 +146,27 @@ const slug = (value: string): string => value.replaceAll(/[^\w.-]/g, "-");
  * serve a Fable trial into a run whose metadata says Opus — a plausible number
  * that is false, which is the one failure mode this suite exists to stop making.
  *
- * The repetition index is in the key for a smaller version of the same reason:
- * repeated trials of one task are the samples the score averages, and a key
- * without it would let the second overwrite the first and leave `--reuse`
+ * The variant and the repetition are in the key for a smaller version of the
+ * same reason: the trials of one task are the samples its score averages, and a
+ * key without them would let the second overwrite the first and leave `--reuse`
  * grading one sample as if it were several.
  */
 const cacheKey = (options: {
   readonly taskId: string;
   readonly agentId: string;
-  readonly arm: Arm;
+  readonly treatment: Treatment;
   readonly model: string;
   readonly effort: Effort | undefined;
+  readonly variant: number;
   readonly repetition: number;
 }): string =>
   [
     options.taskId,
     options.agentId,
-    options.arm,
+    armKey(options.treatment),
     slug(options.model),
     options.effort ?? "no-effort",
+    `v${options.variant}`,
     `r${options.repetition}`,
   ].join(".");
 
@@ -150,24 +219,27 @@ const linkDependencies = async (worktree: string): Promise<void> => {
 export const runTrial = async (options: {
   readonly task: EvalTask;
   readonly agent: Agent;
-  readonly arm: Arm;
+  readonly treatment: Treatment;
   readonly model: string;
   readonly effort: Effort | undefined;
   /** Undefined for an agent with no turn cap; the timeout is then the budget. */
   readonly maxTurns: number | undefined;
-  /** Which sample of this task this is, counting from 1. Part of the cache key. */
+  /** Which of the task's prompts this trial is given, counting from 1. */
+  readonly variant: number;
+  /** Which pass over the prompts this is, counting from 1. Part of the cache key. */
   readonly repetition: number;
   /** Reuse the stored outcome when one exists, instead of spending a trial. */
   readonly reuse: boolean;
 }): Promise<TrialOutcome> => {
-  const { task, agent, arm, model, effort, maxTurns, repetition, reuse } = options;
+  const { task, agent, treatment, model, effort, maxTurns, variant, repetition, reuse } = options;
 
   const key = cacheKey({
     taskId: task.id,
     agentId: agent.id,
-    arm,
+    treatment,
     model,
     effort,
+    variant,
     repetition,
   });
 
@@ -183,11 +255,12 @@ export const runTrial = async (options: {
   await git(["worktree", "add", worktree, "-b", branch]);
 
   try {
-    if (arm === "without-skills") await agent.stripRules(worktree);
+    if (treatment.arm === "without-skills") await agent.stripRules(worktree);
+    if (treatment.arm === "previous-skill") await restoreSkill(worktree, treatment.baseline);
     await linkDependencies(worktree);
 
     const attempt = await agent.run({
-      prompt: promptFor(task),
+      prompt: promptFor(task, variant),
       cwd: worktree,
       model,
       effort,
@@ -223,41 +296,35 @@ export const runTrial = async (options: {
 };
 
 /**
- * Task ids with every repetition stored for this agent, arm and model, so
- * `--reuse` can say what it will not re-run. A task holding fewer stored trials
- * than the run asks for is not listed: it still spends the trials it is missing,
- * and grading three samples where the metadata claims five is the same false
- * precision the cache key exists to prevent.
+ * Task ids with every trial stored for this agent, arm and model — every prompt,
+ * every repetition — so `--reuse` can say what it will not re-run. A task
+ * holding fewer stored trials than the run asks for is not listed: it still
+ * spends the trials it is missing, and grading three samples where the metadata
+ * claims five is the same false precision the cache key exists to prevent.
  */
 export const cachedTaskIds = async (options: {
+  readonly tasks: readonly EvalTask[];
   readonly agentId: string;
-  readonly arm: Arm;
+  readonly treatment: Treatment;
   readonly model: string;
   readonly effort: Effort | undefined;
   readonly repeat: number;
 }): Promise<readonly string[]> => {
-  const { agentId, arm, model, effort, repeat } = options;
+  const { tasks, agentId, treatment, model, effort, repeat } = options;
 
-  const fileFor = (taskId: string, repetition: number): string =>
-    `${cacheKey({ taskId, agentId, arm, model, effort, repetition })}.json`;
-
-  // What every file of this run shares: the key with the task id and the
-  // repetition taken off either end.
-  const middle = fileFor("", 1).replace(/r1\.json$/, "r");
-
-  try {
-    const files = new Set(await readdir(RUNS_DIR));
-    const ids = new Set(
-      [...files]
-        .filter((file) => file.endsWith(".json") && file.includes(middle))
-        .map((file) => file.slice(0, file.lastIndexOf(middle))),
+  const stored = new Set(await readdir(RUNS_DIR).catch(() => []));
+  const isStored = (task: EvalTask, variant: number, repetition: number): boolean =>
+    stored.has(
+      `${cacheKey({ taskId: task.id, agentId, treatment, model, effort, variant, repetition })}.json`,
     );
-    return [...ids].filter((id) =>
-      Array.from({ length: repeat }, (_, index) => fileFor(id, index + 1)).every((file) =>
-        files.has(file),
+
+  return tasks
+    .filter((task) =>
+      task.prompts.every((_, index) =>
+        Array.from({ length: repeat }, (__, pass) => isStored(task, index + 1, pass + 1)).every(
+          Boolean,
+        ),
       ),
-    );
-  } catch {
-    return [];
-  }
+    )
+    .map((task) => task.id);
 };

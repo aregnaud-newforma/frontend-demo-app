@@ -3,7 +3,8 @@
  * dataset run, so the pass rate is a line over time rather than a number in a
  * terminal that scrolls away.
  *
- * Usage: yarn evals [--gate <skill>] [--task <id>] [--arm with-skills|without-skills]
+ * Usage: yarn evals [--gate <skill>] [--task <id>]
+ *                   [--arm with-skills|without-skills|previous-skill] [--baseline-ref <ref>]
  *                   [--repeat <n>] [--max-concurrency <n>] [--reuse] [--run-name <name>]
  *                   [--max-turns <n>] [--agent <id>] [--model <id>] [--effort <level>]
  *                   [--judge-model <id>] [--judge-effort <level>]
@@ -21,11 +22,21 @@ import {
   TASKS,
   gatesWithTasks,
   gradeAdded,
+  graderSchema,
   scoreName,
   type EvalTask,
   type Grader,
 } from "./tasks.ts";
-import { cachedTaskIds, runTrial, type Arm, type TrialOutcome } from "./trial.ts";
+import {
+  cachedTaskIds,
+  resolveBaseline,
+  runTrial,
+  skillTree,
+  type Arm,
+  type Baseline,
+  type Treatment,
+  type TrialOutcome,
+} from "./trial.ts";
 import { agentNamed, AGENTS, DEFAULT_AGENT, EFFORTS, type Effort } from "./agents.ts";
 import { judge, JUDGE_EFFORT, JUDGE_MODEL } from "./judge.ts";
 
@@ -38,6 +49,8 @@ const { values } = parseArgs({
     gate: { type: "string" },
     task: { type: "string" },
     arm: { type: "string", default: "with-skills" },
+    // No default: the arm that needs it is the only one that may carry it.
+    "baseline-ref": { type: "string" },
     repeat: { type: "string", default: "2" },
     "max-concurrency": { type: "string", default: "1" },
     reuse: { type: "boolean", default: false },
@@ -91,6 +104,8 @@ if (gateTasks.length === 0) {
 }
 
 const selected = requested ? [requested] : gateTasks;
+// The gate as a `Gate`, which `gateName` cannot be: it came off the command line.
+const gate = gateTasks[0].gate;
 
 /**
  * Who is under test. The suite measures whether a rule changes what an agent
@@ -159,12 +174,52 @@ if (!Number.isInteger(concurrency) || concurrency < 1) {
   process.exit(1);
 }
 
-const ARMS: readonly Arm[] = ["with-skills", "without-skills"];
+const ARMS: readonly Arm[] = ["with-skills", "without-skills", "previous-skill"];
 const arm = ARMS.find((candidate) => candidate === values.arm);
 if (arm === undefined) {
   console.error(`No arm named "${values.arm}". Known: ${ARMS.join(", ")}`);
   process.exit(1);
 }
+
+/**
+ * The text under test, and the text it is compared to. Recorded for every arm,
+ * because it is what pairs a `with-skills` run with the `previous-skill` run
+ * beside it — two runs an hour apart are otherwise told apart by the clock.
+ */
+const skillTreeAtHead = await skillTree(gate, "HEAD");
+
+// A ref on an arm that would not restore it is rejected, for the reason
+// `--effort` is: a baseline in the metadata of a run that never used one makes
+// two incomparable runs look like one experiment.
+const baselineRef = values["baseline-ref"];
+if (arm !== "previous-skill" && baselineRef !== undefined) {
+  console.error(`--baseline-ref has no meaning for the ${arm} arm.`);
+  process.exit(1);
+}
+
+const baselineAt = async (ref: string | undefined): Promise<Baseline> => {
+  if (ref === undefined) {
+    console.error(
+      "--arm previous-skill needs --baseline-ref: the commit whose skill is the baseline.",
+    );
+    process.exit(1);
+  }
+  const baseline = await resolveBaseline(ref, gate).catch(() => undefined);
+  if (baseline === undefined) {
+    console.error(`No skill directory for gate "${gate}" at "${ref}".`);
+    process.exit(1);
+  }
+  // Paying for both sides of a comparison whose sides are the same text is the
+  // one thing this arm exists to avoid.
+  if (baseline.tree === skillTreeAtHead) {
+    console.error(`Nothing to compare: .claude/skills/${gate} is identical at ${ref} and HEAD.`);
+    process.exit(1);
+  }
+  return baseline;
+};
+
+const treatment: Treatment =
+  arm === "previous-skill" ? { arm, baseline: await baselineAt(baselineRef) } : { arm };
 
 const effortNamed = (
   flag: "effort" | "judge-effort",
@@ -244,7 +299,7 @@ await Promise.all(
     langfuse.api.datasetItems.create({
       id: task.id,
       datasetName: gateName,
-      input: { prompt: task.prompt },
+      input: { prompts: task.prompts },
       expectedOutput: task.grader,
       // The task id travels in metadata because the runner hands a task nothing
       // else it could use to find the trial it is supposed to spawn.
@@ -300,36 +355,21 @@ const findTask = (metadata: unknown): EvalTask | undefined => {
  * that reads as a real result.
  */
 const graderOf = (expectedOutput: unknown): Grader | undefined => {
-  const grader = (expectedOutput ?? {}) as Partial<Grader> & Record<string, unknown>;
-  if (typeof grader.family !== "string") return undefined;
-
-  if (grader.kind === "diff") {
-    const knownFamily =
-      grader.family === "effects" ||
-      grader.family === "memoization" ||
-      grader.family === "sorting" ||
-      grader.family === "sets";
-    const knownExpect = grader.expect === "none" || grader.expect === "some";
-    return knownFamily && knownExpect
-      ? { kind: "diff", family: grader.family, expect: grader.expect }
-      : undefined;
-  }
-
-  if (grader.kind === "judge" && typeof grader.criterion === "string") {
-    return { kind: "judge", family: grader.family, criterion: grader.criterion };
-  }
-
-  return undefined;
+  const parsed = graderSchema.safeParse(expectedOutput);
+  return parsed.success ? parsed.data : undefined;
 };
 
 /**
- * One dataset item's result: `repeat` trials of the same task. The trials are
- * kept apart rather than reduced here, so the evaluator can grade each one and
- * report how many of them passed.
+ * One dataset item's result: every prompt of the task, `repeat` times over. The
+ * trials are kept apart rather than reduced here, so the evaluator can grade
+ * each one and report how many of them passed. Each carries which prompt it was
+ * given, because a judged criterion is read against that prompt.
  */
+type Trial = { readonly variant: number; readonly outcome: TrialOutcome };
+
 type ItemOutcome =
   | { readonly status: "skipped" }
-  | { readonly status: "attempted"; readonly trials: readonly TrialOutcome[] };
+  | { readonly status: "attempted"; readonly trials: readonly Trial[] };
 
 /**
  * One trial's verdict. `unanswered` is not a failure of the agent: it is the
@@ -384,7 +424,7 @@ const gradeTrial = async (
 };
 
 const reusable = values.reuse
-  ? await cachedTaskIds({ agentId: agent.id, arm, model, effort, repeat })
+  ? await cachedTaskIds({ tasks: selected, agentId: agent.id, treatment, model, effort, repeat })
   : [];
 if (reusable.length > 0) {
   console.log(`Reusing stored trials: ${reusable.join(", ")}`);
@@ -401,6 +441,12 @@ const result = await dataset.runExperiment({
     "langfuse.branch": gitBranch,
     arm,
     gate: gateName,
+    skillTree: skillTreeAtHead,
+    // "none" on the arms that restore nothing, which is not the same claim as
+    // a baseline that went unrecorded.
+    baselineRef: treatment.arm === "previous-skill" ? treatment.baseline.ref : "none",
+    baselineCommit: treatment.arm === "previous-skill" ? treatment.baseline.commit : "none",
+    baselineSkillTree: treatment.arm === "previous-skill" ? treatment.baseline.tree : "none",
     agent: agent.id,
     model,
     // Beside the model because it is the same kind of variable: unrecorded, a
@@ -408,8 +454,8 @@ const result = await dataset.runExperiment({
     // "none" is an agent with no such setting, which is not the same claim as
     // an unrecorded one.
     effort: effort ?? "none",
-    // How many samples every per-task score averages. A pass rate read without
-    // it says nothing about how much of its movement is noise.
+    // How many passes over its prompts every per-task score averages. A pass
+    // rate read without it says nothing about how much of its movement is noise.
     repeat,
     // A burst of unavailable trials reads beside the concurrency that caused
     // it: a rate limit hit at three abreast is not one hit at one.
@@ -427,37 +473,45 @@ const result = await dataset.runExperiment({
   task: async ({ metadata }): Promise<ItemOutcome> => {
     const evalTask = findTask(metadata);
     if (!evalTask) {
-      return { status: "attempted", trials: [{ status: "unavailable", reason: "unknown task" }] };
+      return {
+        status: "attempted",
+        trials: [{ variant: 1, outcome: { status: "unavailable", reason: "unknown task" } }],
+      };
     }
     if (!selected.includes(evalTask)) return { status: "skipped" };
 
-    const trials: TrialOutcome[] = [];
+    const trials: Trial[] = [];
     // Serial: these are the samples one score averages, and `--max-concurrency`
-    // says why they do not race each other.
+    // says why they do not race each other. A pass covers every prompt before
+    // the next pass starts, so a run cut short still holds whole passes.
     const label = `${evalTask.id} [${arm}]`;
+    const variants = evalTask.prompts.length;
     for (let repetition = 1; repetition <= repeat; repetition += 1) {
-      console.log(`\n--- ${label} trial ${repetition}/${repeat}`);
-      // oxlint-disable-next-line no-await-in-loop -- serial on purpose, see above
-      const outcome = await runTrial({
-        task: evalTask,
-        agent,
-        arm,
-        model,
-        effort,
-        maxTurns,
-        repetition,
-        reuse: values.reuse,
-      });
-      // Prefixed, because at any concurrency above one this line lands under
-      // some other task's header.
-      if (outcome.status === "completed") {
-        const cutOff = outcome.stop === "max-turns" ? ", out of turns" : "";
-        const cost = outcome.costUsd === undefined ? "" : `, $${outcome.costUsd.toFixed(2)}`;
-        console.log(`    ${label}: ${outcome.changedFiles.length} file(s)${cost}${cutOff}`);
-      } else {
-        console.log(`    ${label}: unavailable, ${outcome.reason}`);
+      for (let variant = 1; variant <= variants; variant += 1) {
+        console.log(`\n--- ${label} prompt ${variant}/${variants} trial ${repetition}/${repeat}`);
+        // oxlint-disable-next-line no-await-in-loop -- serial on purpose, see above
+        const outcome = await runTrial({
+          task: evalTask,
+          agent,
+          treatment,
+          model,
+          effort,
+          maxTurns,
+          variant,
+          repetition,
+          reuse: values.reuse,
+        });
+        // Prefixed, because at any concurrency above one this line lands under
+        // some other task's header.
+        if (outcome.status === "completed") {
+          const cutOff = outcome.stop === "max-turns" ? ", out of turns" : "";
+          const cost = outcome.costUsd === undefined ? "" : `, $${outcome.costUsd.toFixed(2)}`;
+          console.log(`    ${label}: ${outcome.changedFiles.length} file(s)${cost}${cutOff}`);
+        } else {
+          console.log(`    ${label}: unavailable, ${outcome.reason}`);
+        }
+        trials.push({ variant, outcome });
       }
-      trials.push(outcome);
     }
     return { status: "attempted", trials };
   },
@@ -471,9 +525,11 @@ const result = await dataset.runExperiment({
         return { name: "rule_gate", value: 0, comment: "item carries no grader" };
       }
 
-      const prompt = (input as { prompt?: string }).prompt ?? "";
+      const prompts = (input as { prompts?: readonly string[] }).prompts ?? [];
       const verdicts = await Promise.all(
-        outcome.trials.map((trial) => gradeTrial(trial, grader, prompt)),
+        outcome.trials.map(({ variant, outcome: trial }) =>
+          gradeTrial(trial, grader, prompts[variant - 1] ?? ""),
+        ),
       );
 
       const graded = verdicts.filter((verdict) => verdict.kind === "graded");
@@ -520,7 +576,7 @@ const result = await dataset.runExperiment({
       // The whole item, repetitions included: what this task cost this run. No
       // score at all when the CLI reports no price — a zero would read as a free
       // run rather than as an agent that does not say.
-      const costs = outcome.trials.flatMap((trial) =>
+      const costs = outcome.trials.flatMap(({ outcome: trial }) =>
         trial.status === "completed" && trial.costUsd !== undefined ? [trial.costUsd] : [],
       );
       if (costs.length === 0) return [];
@@ -543,7 +599,7 @@ const result = await dataset.runExperiment({
       return {
         name: "pass_rate",
         value: rate,
-        comment: `${rate.toFixed(2)} over ${gates.length} task(s) × ${repeat} trial(s)`,
+        comment: `${rate.toFixed(2)} over ${gates.length} task(s), ${repeat} pass(es) over each one's prompts`,
       };
     },
   ],

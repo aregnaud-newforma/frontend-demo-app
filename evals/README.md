@@ -15,7 +15,8 @@ yarn evals                              # the react gate, one live trial per tas
 yarn evals --gate javascript            # another gate
 yarn evals --task effects-reset-state-with-key   # one task
 yarn evals --arm without-skills         # the ablation arm
-yarn evals --repeat 5                   # five trials per task instead of two
+yarn evals --arm previous-skill --baseline-ref main   # the skill as it was on main, all else HEAD
+yarn evals --repeat 5                   # five passes over each task's prompts instead of two
 yarn evals --max-concurrency 3          # three tasks at once (CI does; local output interleaves)
 yarn evals --reuse                      # re-score stored trials, no trial spawned
 yarn evals --run-name before-skill-edit # name the run yourself
@@ -39,8 +40,8 @@ cost $2.36 over 51 turns and seven minutes on Claude Fable 5.1, nearly all of it
 `checks: "skip"` (see below) the same task runs in **8 turns for about $0.40**.
 Use `--reuse` whenever you are changing a grader rather than measuring an agent.
 
-A run costs that **times `--repeat`**, which is two by default. See below for why
-one is not enough.
+A run costs that **times the task's prompts, times `--repeat`**, which is two by
+default. See below for why one is not enough.
 
 The model under test moved from Fable 5.1 to **Opus 5**, which is half the price
 per token ($5/$25 per MTok against $10/$50) and the harder test, since a skill
@@ -78,6 +79,41 @@ outside `.claude/skills/` may restate a rule: the strip cannot chase copies.
 **Trials run from `HEAD`.** A worktree is created from the last commit, so an
 uncommitted edit to a skill or to `AGENTS.md` is invisible to a trial. Commit the
 rule change, then measure it.
+
+## The third arm
+
+`--arm previous-skill --baseline-ref <ref>` starts from `HEAD` like the others,
+then puts `.claude/skills/<gate>/` back the way it was at `<ref>`. Everything
+else — the code, the other skills, `AGENTS.md`, the harness, the CLI, the model,
+the hour — is the same in both runs, so the delta between `with-skills` and this
+arm is the effect of the edit to the skill, and nothing else.
+
+That is a different question from the ablation's. `without-skills` says what the
+skill is worth; `previous-skill` says whether the last change to it helped. A
+`with-skills` run read against last night's is the second question asked
+badly: the two runs differ by a CLI version, a day, and whatever the model
+felt like, and the score cannot say which moved it.
+
+Two guards. `--baseline-ref` is refused on any other arm, so a run's metadata
+never names a baseline the trial did not restore. And a ref whose skill
+directory is identical to `HEAD`'s is refused outright: there is nothing to
+compare, and paying for both sides of it is the one thing this arm exists to
+avoid. The check is on the directory's tree hash, which is also what the stored
+trial is keyed by — `main` moves, its rules often do not, and two refs holding
+the same text are one experiment.
+
+Every run records `skillTree`, the hash of the gate's skill directory at
+`HEAD`, and a `previous-skill` run records `baselineRef`, `baselineCommit` and
+`baselineSkillTree` beside it. That is how the two runs of a comparison are
+paired in Langfuse without reading the clock.
+
+Where it belongs: locally, `--baseline-ref HEAD~1` after committing a rule
+edit, one task, `--repeat 1`. In CI, on a pull request touching
+`.claude/skills/<gate>/**`, beside `with-skills` and with the merge base as the
+ref — it replaces nothing, it is the baseline `with-skills` never had. Not in
+the nightly, which runs `main` against `main` and would be refused. The skill
+change is the only thing this arm can see, so a pull request touching `evals/`
+or `AGENTS.md` alone still gets the two arms it always did.
 
 ## The five files
 
@@ -162,6 +198,14 @@ Prompts are **indirect**. They state a product need and never name a rule, a
 hook or a skill, because a prompt that says "do not use an effect" measures
 whether the model can follow an instruction, not whether it retrieved the rule.
 
+A task carries a **list** of prompts, one trial each, and today every list holds
+one. The list exists for the question repetition cannot ask: `--repeat` replays
+the same words, so it measures the model's dice and nothing about the phrasing.
+A second entry — the same need said casually, or at an edge of the rule — is
+what tells a rule that holds from a rule that holds only against the sentence
+it was written for. Every entry is scored into the same per-task mean, so
+adding one changes what the score averages, not what it is named.
+
 Each task declares its **grader**, and there are two.
 
 `kind: "diff"` counts calls the agent added — `useEffect` and `useLayoutEffect` on
@@ -195,7 +239,10 @@ effects exist.
 
 ## How many trials a task gets
 
-`--repeat` is the number of times each task is run, and it is **2** by default.
+`--repeat` is the number of passes over each task's prompts, and it is **2** by
+default. A task with one prompt gets two trials; one with three gets six. A pass
+covers every prompt before the next pass starts, so a run cut short still holds
+whole passes.
 
 One is a coin flipped once. The score a single trial produces is 1 or 0, and
 nothing in it says how repeatable that is: a gate that reads 5/5 one week and
@@ -354,7 +401,7 @@ could be right or wrong depending on why it was written.
 ## Stored trials
 
 A completed trial is written to
-`evals/.runs/<task-id>.<agent>.<arm>.<model>.<effort>.r<repetition>.json`
+`evals/.runs/<task-id>.<agent>.<arm>.<model>.<effort>.v<prompt>.r<repetition>.json`
 (git-ignored). It holds the diff, the agent's summary, and the cost. `--reuse`
 grades that stored outcome instead of spawning a new one, which makes fixing a
 grader — or adding one — free.
@@ -367,12 +414,12 @@ The effort is there for the same reason. Trials stored before it entered the
 key carry no effort in their name and are not served: which level they ran at
 is not known, and a guess in a filename is the same false number.
 
-The repetition index is there for a smaller version of the same reason: the
-repeated trials of one task are the samples the score averages, and a key without
-it would let the second overwrite the first. `--reuse` only counts a task as
-stored when **every** repetition the run asks for is on disk — a task missing
-some still spends the trials it lacks, rather than averaging three samples under
-metadata that claims five.
+The prompt index and the repetition are there for a smaller version of the same
+reason: the trials of one task are the samples the score averages, and a key
+without them would let the second overwrite the first. `--reuse` only counts a
+task as stored when **every** trial the run asks for is on disk, every prompt
+and every repetition — a task missing some still spends the trials it lacks,
+rather than averaging three samples under metadata that claims five.
 
 ## Adding a task
 
@@ -384,7 +431,8 @@ which is a section of `effects.md` rather than a rule of its own.
 
 That id is also the Langfuse dataset item id, and it must stay stable, because
 it is what ties this month's score to last month's. Editing a prompt under an
-existing id is deliberate: the score history continues. Renaming the id starts a
+existing id, or adding a second one to its list, is deliberate: the score history
+continues. Renaming the id starts a
 new history — so if a rule file is renamed, leave the id alone and let it drift
 rather than trade the history for a tidier name.
 

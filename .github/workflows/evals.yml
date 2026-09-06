@@ -43,11 +43,16 @@ on:
         options: ["all", "react", "javascript", "typescript"]
         default: "all"
       arm:
-        description: "with-skills measures the repository as it stands, without-skills ablates the rules, both runs one job per arm"
+        description: "with-skills measures the repository as it stands, without-skills ablates the rules, previous-skill restores the skill from `baseline`; both runs with-skills and without-skills"
         required: false
         type: choice
-        options: ["both", "with-skills", "without-skills"]
+        options: ["both", "with-skills", "without-skills", "previous-skill"]
         default: "both"
+      baseline:
+        description: "For previous-skill: the ref whose skill directory is the baseline. Refused when its rules equal the branch's."
+        required: false
+        type: string
+        default: "main"
       agent:
         description: "Which agent to measure. Only claude has ever been run — see evals/README.md before trusting a codex or copilot score."
         required: false
@@ -78,9 +83,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      gates: ${{ steps.pick.outputs.gates }}
-      arms: ${{ steps.pick.outputs.arms }}
-      agents: ${{ steps.pick.outputs.agents }}
+      jobs: ${{ steps.pick.outputs.jobs }}
+      baseline: ${{ steps.pick.outputs.baseline }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -99,6 +103,7 @@ jobs:
           REQUESTED: ${{ inputs.gate }}
           REQUESTED_ARM: ${{ inputs.arm }}
           REQUESTED_AGENT: ${{ inputs.agent }}
+          REQUESTED_BASELINE: ${{ inputs.baseline }}
           # The opt-in. Labels, not paths, because no file in this repository
           # says "measure Codex too" — that is a question somebody asks of a
           # branch, not a property of what the branch changed. Every label is
@@ -164,6 +169,25 @@ jobs:
                | if ($selected | length) > 0 then $selected else [$known.default] end')
           fi
 
+          # The gates whose skill directory the branch touched. On a pull
+          # request these get a third arm: `previous-skill`, the skill as it
+          # was at the merge base, in a worktree that is otherwise the branch.
+          # That is the only baseline measured under the same CLI, model and
+          # hour as the branch, so the delta between the two jobs is the edit's
+          # effect and nothing else — `with-skills` alone was read against a
+          # nightly run that shared none of those.
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            touched='[]'
+            baseline=$REQUESTED_BASELINE
+          else
+            changed=$(git diff --name-only "origin/$BASE...HEAD")
+            touched=$(echo "$changed" \
+              | sed -n 's|^\.claude/skills/\([^/]*\)/.*|\1|p' \
+              | sort -u \
+              | jq -Rsc 'split("\n") - [""]')
+            baseline=$(git merge-base "origin/$BASE" HEAD)
+          fi
+
           if [ "$EVENT" = "workflow_dispatch" ]; then
             # A manual run says what it wants: one gate or "all", one arm or "both".
             if [ "$REQUESTED" = "all" ]; then
@@ -177,8 +201,6 @@ jobs:
               arms=$(jq -nc --arg arm "$REQUESTED_ARM" '[$arm]')
             fi
           else
-            changed=$(git diff --name-only "origin/$BASE...HEAD")
-
             # Whatever changes what a trial *is* moves any gate — there is no
             # subset to narrow to — and moves both arms with it, so the
             # ablation is no longer a constant and the baseline has to be
@@ -204,31 +226,38 @@ jobs:
               gates=$all
               arms='["with-skills"]'
             else
-              touched=$(echo "$changed" \
-                | sed -n 's|^\.claude/skills/\([^/]*\)/.*|\1|p' \
-                | sort -u \
-                | jq -Rsc 'split("\n") - [""]')
               # Intersection: a skill with no task is not a gate, and a gate
               # whose rules nobody touched has nothing new to say.
               gates=$(jq -nc --argjson all "$all" --argjson touched "$touched" '$all - ($all - $touched)')
               # A skill edit cannot move the ablation: `without-skills` strips
               # the skill before the agent starts, so that arm would re-measure
               # a constant and pay for it. It is the nightly's job to watch the
-              # baseline drift; a pull request only asks whether the rule still
-              # holds with the skill in place.
+              # baseline drift; a pull request asks whether the rule still
+              # holds — and, through `previous-skill` below, whether the edit
+              # is why.
               arms='["with-skills"]'
             fi
           fi
 
-          echo "gates=$gates" >> "$GITHUB_OUTPUT"
-          echo "arms=$arms" >> "$GITHUB_OUTPUT"
-          echo "agents=$agents" >> "$GITHUB_OUTPUT"
-          echo "Gates to run: \`$gates\`, arms: \`$arms\`, agents: \`$agents\`" >> "$GITHUB_STEP_SUMMARY"
+          # One job per agent, gate and arm — as a list of triplets rather than
+          # three matrix axes, because `previous-skill` belongs to the touched
+          # gates alone: `run.ts` refuses it for a gate whose skill equals the
+          # baseline's, and a refused job is a red job that says nothing.
+          jobs=$(jq -nc --argjson agents "$agents" --argjson gates "$gates" \
+            --argjson arms "$arms" --argjson touched "$touched" \
+            '[ $agents[] as $agent
+               | $gates[] as $gate
+               | ($arms + (if ($touched | index($gate)) != null then ["previous-skill"] else [] end))[] as $arm
+               | { agent: $agent, gate: $gate, arm: $arm } ]')
+
+          echo "jobs=$jobs" >> "$GITHUB_OUTPUT"
+          echo "baseline=$baseline" >> "$GITHUB_OUTPUT"
+          echo "Jobs: \`$jobs\`, baseline: \`$baseline\`" >> "$GITHUB_STEP_SUMMARY"
 
   evals:
     needs: changes
     # Nothing to score: a pull request that touched no skill under gate.
-    if: needs.changes.outputs.gates != '[]'
+    if: needs.changes.outputs.jobs != '[]'
     # One job per gate and arm, because one gate in one arm is one Langfuse
     # dataset run and one pass rate. Running them in parallel also keeps the wall
     # clock near the slowest job rather than the sum of all of them.
@@ -253,23 +282,23 @@ jobs:
       # jobs draw on a different quota, but every job still runs a Claude judge.
       max-parallel: 2
       matrix:
-        gate: ${{ fromJSON(needs.changes.outputs.gates) }}
-        arm: ${{ fromJSON(needs.changes.outputs.arms) }}
-        # Usually just `claude`. An `evals:<agent>` label on a pull request, or
-        # the manual button, is what puts a second agent in here — and
-        # multiplies the matrix against the arms and the gates, so it is
+        # Usually one agent, `claude`. An `evals:<agent>` label on a pull
+        # request, or the manual button, is what puts a second one in here —
+        # and multiplies the list against the arms and the gates, so it is
         # opt-in.
-        agent: ${{ fromJSON(needs.changes.outputs.agents) }}
+        include: ${{ fromJSON(needs.changes.outputs.jobs) }}
     steps:
       # The branch under test, by name. On a pull request that is the head
       # branch, not the merge commit `actions/checkout` would pick by default:
       # the score belongs to a commit that exists, and HEAD stays attached, so
       # `run.ts` reads the real branch name for the run. Empty everywhere else,
       # which leaves the default — the branch a manual run was started from.
-      # Shallow is enough: a worktree branches from HEAD with one commit.
+      # Full history: a `previous-skill` job checks the skill out of the merge
+      # base, which a shallow clone does not hold.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -330,6 +359,9 @@ jobs:
           # draws on the same token, and this many `claude -p` across all of
           # them is already a burst.
           CONCURRENCY: "3"
+          # Passed to the `previous-skill` arm alone: `run.ts` refuses it on
+          # the others, so nothing is recorded that was not applied.
+          BASELINE: ${{ matrix.arm == 'previous-skill' && format('--baseline-ref {0}', needs.changes.outputs.baseline) || '' }}
         # The suite's own report is the summary: it already carries the pass
         # rate, the cost and the Langfuse run URL.
         run: |
@@ -345,7 +377,8 @@ jobs:
             echo '## `${{ matrix.agent }}` · `${{ matrix.gate }}` · `${{ matrix.arm }}`'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          # shellcheck disable=SC2086 -- $BASELINE is a flag and its value, or nothing.
           yarn evals --agent '${{ matrix.agent }}' --gate '${{ matrix.gate }}' --arm '${{ matrix.arm }}' \
-            --repeat "$REPEAT" --max-concurrency "$CONCURRENCY" \
+            --repeat "$REPEAT" --max-concurrency "$CONCURRENCY" $BASELINE \
             | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
