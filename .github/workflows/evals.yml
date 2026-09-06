@@ -13,6 +13,11 @@ name: Evals
 
 on:
   pull_request:
+    # `labeled` so that adding an `evals:<agent>` label re-runs a pull request
+    # that has already been scored, and `unlabeled` so that removing one does
+    # too. The path filter still applies: labelling a branch that touched no
+    # rule runs nothing, which is the right answer.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
       - ".claude/skills/**"
       - "AGENTS.md"
@@ -43,6 +48,12 @@ on:
         type: choice
         options: ["both", "with-skills", "without-skills"]
         default: "both"
+      agent:
+        description: "Which agent to measure. Only claude has ever been run — see evals/README.md before trusting a codex or copilot score."
+        required: false
+        type: choice
+        options: ["claude", "codex", "copilot", "both"]
+        default: "claude"
       repeat:
         description: "Trials per task. More samples, less noise, proportionally more money."
         required: false
@@ -69,6 +80,7 @@ jobs:
     outputs:
       gates: ${{ steps.pick.outputs.gates }}
       arms: ${{ steps.pick.outputs.arms }}
+      agents: ${{ steps.pick.outputs.agents }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -86,6 +98,13 @@ jobs:
         env:
           REQUESTED: ${{ inputs.gate }}
           REQUESTED_ARM: ${{ inputs.arm }}
+          REQUESTED_AGENT: ${{ inputs.agent }}
+          # The opt-in. Labels, not paths, because no file in this repository
+          # says "measure Codex too" — that is a question somebody asks of a
+          # branch, not a property of what the branch changed. Every label is
+          # passed and the agent names are matched below, so a repository that
+          # labels for anything else is not misread.
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
           BASE: ${{ github.base_ref }}
           EVENT: ${{ github.event_name }}
         run: |
@@ -97,6 +116,53 @@ jobs:
           # The two arm names are `ARMS` in `evals/run.ts`; one that has drifted
           # fails the run rather than scoring nothing.
           both='["with-skills","without-skills"]'
+
+          # `evals/run.ts` is the source of the agent names, as it is of the
+          # gate names: an agent named here instead would be a declaration wired
+          # into half the system, which is the failure `alias.ts` and the
+          # tsconfig `paths` warn about.
+          known=$(yarn --silent evals --list-agents)
+
+          # An `evals:<agent>` label selects that agent; no label means the
+          # default alone. A second agent multiplies the matrix against the
+          # gates and the arms, and it answers a different question — does this
+          # rule travel? — from the one a pull request touching a rule is
+          # asking, which is whether the rule still holds. So it is asked for
+          # explicitly or not at all.
+          #
+          # A run of one agent is readable on its own only as a pass rate. The
+          # with/without delta of two agents is not comparable across them, so
+          # `evals:codex` without `evals:claude` scores Codex against nothing
+          # from this commit. That is a choice the label makes deliberately, not
+          # one the workflow prevents. `evals/README.md` says why it matters.
+          case "$LABELS" in "" | null) LABELS='[]' ;; esac
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$REQUESTED_AGENT" = "both" ]; then
+              agents=$(jq -nc --argjson known "$known" '$known.agents')
+            else
+              agents=$(jq -nc --arg agent "$REQUESTED_AGENT" '[$agent]')
+            fi
+          else
+            named=$(jq -nc --argjson labels "$LABELS" \
+              '[$labels[] | select(startswith("evals:")) | ltrimstr("evals:")]')
+
+            # A misspelt label fails the run rather than quietly scoring the
+            # default, for the reason the gate dropdown does: somebody asked for
+            # a measurement and a green job saying nothing is the worst answer.
+            unknown=$(jq -nc --argjson known "$known" --argjson named "$named" \
+              '$named - $known.agents')
+            if [ "$unknown" != "[]" ]; then
+              echo "Unknown agent label(s): $unknown. Known: $(echo "$known" | jq -c .agents)" >&2
+              exit 1
+            fi
+
+            # Intersected in the registry's order, so the matrix reads the same
+            # whatever order the labels were added in.
+            agents=$(jq -nc --argjson known "$known" --argjson named "$named" \
+              '($known.agents - ($known.agents - $named)) as $selected
+               | if ($selected | length) > 0 then $selected else [$known.default] end')
+          fi
 
           if [ "$EVENT" = "workflow_dispatch" ]; then
             # A manual run says what it wants: one gate or "all", one arm or "both".
@@ -117,11 +183,12 @@ jobs:
             # subset to narrow to — and moves both arms with it, so the
             # ablation is no longer a constant and the baseline has to be
             # re-measured. That is: the prompts and criteria (`tasks.ts`), the
-            # pinned model and the strip itself (`trial.ts`), the judge and its
-            # own pin (`judge.ts`), the CLI pin (here), and the two files every
-            # agent in this repo reads — the strip removes only the Skills
-            # section of `AGENTS.md`, so the rest of it reaches both arms.
-            if echo "$changed" | grep -qE '^(AGENTS\.md|CLAUDE\.md|evals/(tasks|trial|judge)\.ts|\.github/workflows/evals\.yml)$'; then
+            # agent, its pinned model and the strip itself (`agents.ts`), the
+            # isolation around them (`trial.ts`), the judge and its own pin
+            # (`judge.ts`), the CLI pin (here), and the two files every agent in
+            # this repo reads — the strip removes only the Skills section of
+            # `AGENTS.md`, so the rest of it reaches both arms.
+            if echo "$changed" | grep -qE '^(AGENTS\.md|CLAUDE\.md|evals/(tasks|trial|judge|agents)\.ts|\.github/workflows/evals\.yml)$'; then
               gates=$all
               arms=$both
             # The rest of the harness — `run.ts`, which orchestrates and scores
@@ -155,7 +222,8 @@ jobs:
 
           echo "gates=$gates" >> "$GITHUB_OUTPUT"
           echo "arms=$arms" >> "$GITHUB_OUTPUT"
-          echo "Gates to run: \`$gates\`, arms: \`$arms\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "agents=$agents" >> "$GITHUB_OUTPUT"
+          echo "Gates to run: \`$gates\`, arms: \`$arms\`, agents: \`$agents\`" >> "$GITHUB_STEP_SUMMARY"
 
   evals:
     needs: changes
@@ -164,7 +232,7 @@ jobs:
     # One job per gate and arm, because one gate in one arm is one Langfuse
     # dataset run and one pass rate. Running them in parallel also keeps the wall
     # clock near the slowest job rather than the sum of all of them.
-    name: ${{ matrix.gate }} ${{ matrix.arm }}
+    name: ${{ matrix.agent }} ${{ matrix.gate }} ${{ matrix.arm }}
     runs-on: ubuntu-latest
     # The largest gate is five tasks, each repeated `repeat` times, at 1-4 minutes
     # a trial and three tasks abreast — and `claude -p` is given 15 minutes of
@@ -175,16 +243,23 @@ jobs:
       # One job's harness failure says nothing about the others, and their runs
       # are already paid for.
       fail-fast: false
-      # Every job in the matrix draws on the same subscription token, and each
-      # runs three trials abreast: six jobs is eighteen concurrent `claude -p`,
-      # which exhausts the five-hour window and returns `trial_error` — a trial
-      # that never ran, and a gate that scores nothing — rather than a score.
-      # Two jobs is six, which the window holds. It costs wall clock, and the
-      # 90-minute timeout is per job, so a queued job is not a timing out one.
+      # Every Claude job in the matrix draws on the same subscription token, and
+      # each runs three trials abreast: six jobs is eighteen concurrent
+      # `claude -p`, which exhausts the five-hour window and returns
+      # `trial_error` — a trial that never ran, and a gate that scores nothing —
+      # rather than a score. Two jobs is six, which the window holds. It costs
+      # wall clock, and the 90-minute timeout is per job, so a queued job is not
+      # a timing out one. Kept at two with a Codex agent in the matrix: those
+      # jobs draw on a different quota, but every job still runs a Claude judge.
       max-parallel: 2
       matrix:
         gate: ${{ fromJSON(needs.changes.outputs.gates) }}
         arm: ${{ fromJSON(needs.changes.outputs.arms) }}
+        # Usually just `claude`. An `evals:<agent>` label on a pull request, or
+        # the manual button, is what puts a second agent in here — and
+        # multiplies the matrix against the arms and the gates, so it is
+        # opt-in.
+        agent: ${{ fromJSON(needs.changes.outputs.agents) }}
     steps:
       # The branch under test, by name. On a pull request that is the head
       # branch, not the merge commit `actions/checkout` would pick by default:
@@ -203,8 +278,24 @@ jobs:
 
       # Pinned like the model is: `run.ts` records the CLI version with every
       # score, and a version that moves on its own reads as a skill regression.
+      #
+      # Installed in every job, whichever agent is under test: `judge.ts` shells
+      # out to `claude` for the judged tasks, and the judge stays Claude because
+      # it is the instrument, not the subject.
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code@2.1.258
+
+      # Pinned for the same reason, and never yet run by this workflow. A wrong
+      # pin fails the job rather than scoring something else, and only a job
+      # that asked for Codex can hit it.
+      - name: Install Codex
+        if: matrix.agent == 'codex'
+        run: npm install -g @openai/codex@0.153.4
+
+      # Same pin, same standing: written from the docs, never run here.
+      - name: Install Copilot
+        if: matrix.agent == 'copilot'
+        run: npm install -g @github/copilot@1.0.83
 
       - name: Run gate
         env:
@@ -214,6 +305,14 @@ jobs:
           # `trial_error` rather than a score — read a burst of those as an
           # exhausted limit, not as a skill regression.
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Codex bills per token against an API key rather than a plan, so a
+          # `codex` job spends money the Claude jobs do not. Absent, the trials
+          # return `trial_error` — the harness saying it could not run, which is
+          # what it should say, rather than a zero.
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Copilot bills against a Copilot subscription and reads its token from
+          # here. Absent, its trials are `trial_error` for the same reason.
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
           LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
@@ -243,9 +342,10 @@ jobs:
           set -o pipefail
 
           {
-            echo '## `${{ matrix.gate }}` · `${{ matrix.arm }}`'
+            echo '## `${{ matrix.agent }}` · `${{ matrix.gate }}` · `${{ matrix.arm }}`'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          yarn evals --gate '${{ matrix.gate }}' --arm '${{ matrix.arm }}' --repeat "$REPEAT" --max-concurrency "$CONCURRENCY" \
+          yarn evals --agent '${{ matrix.agent }}' --gate '${{ matrix.gate }}' --arm '${{ matrix.arm }}' \
+            --repeat "$REPEAT" --max-concurrency "$CONCURRENCY" \
             | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"

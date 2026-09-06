@@ -1,48 +1,14 @@
 import { execFile } from "node:child_process";
-import { access, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { describeFailure, type Agent, type AgentStop, type Effort } from "./agents.ts";
 import type { EvalTask } from "./tasks.ts";
 
 const run = promisify(execFile);
 
 const REPO_ROOT = new URL("..", import.meta.url).pathname;
 const RUNS_DIR = join(REPO_ROOT, "evals", ".runs");
-const CLAUDE_TIMEOUT_MS = 15 * 60 * 1000;
-
-/**
- * Pinned, because an unpinned model is a second thing changing under a score
- * meant to track one. The CLI's default follows the plan, the settings and the
- * account; a run from March and a run from June would then be different
- * experiments wearing the same name.
- *
- * Moved from `claude-fable-5-1` deliberately, and the line steps here: nothing
- * measured from now on is comparable to the eight trials that came before. Two
- * reasons. Opus 5 is half Fable 5.1's price ($5/$25 per MTok against $10/$50),
- * so a trial got cheaper rather than dearer. And a skill helps a weaker model
- * more, so the stronger model is the harder test — the one that says whether the
- * rule still earns its place.
- */
-export const DEFAULT_MODEL = "claude-opus-5";
-
-/**
- * The effort levels `claude --effort` accepts. A level a model does not support
- * falls back to the highest one below it, which the CLI does silently — so the
- * level recorded in a run's metadata is the one asked for, not necessarily the
- * one used.
- */
-export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
-
-export type Effort = (typeof EFFORTS)[number];
-
-/**
- * Pinned for the reason the model is. Unpinned, `claude -p` reads `effortLevel`
- * from the settings of whichever machine runs it, and a laptop and a CI runner
- * can disagree — a trial that thinks harder passes more often, and the
- * difference reads as a skill regression. `high` is Opus 5's own default, so
- * pinning it steps nothing.
- */
-export const DEFAULT_EFFORT: Effort = "high";
 
 /** Only source files are graded; a change to a config or a doc is not an answer. */
 const SOURCE_PATHS = [":(glob)src/**/*.ts", ":(glob)src/**/*.tsx"];
@@ -51,6 +17,12 @@ const SOURCE_PATHS = [":(glob)src/**/*.ts", ":(glob)src/**/*.tsx"];
  * Which arm of the ablation a trial belongs to. "without-skills" answers the
  * question a pass alone cannot: whether the skill caused the pass, or the model
  * already knew the rule and the skill is decoration.
+ *
+ * Comparable within one agent only. Each agent reads its rules from a different
+ * place and loads them differently — Claude pulls a skill in on demand, an agent
+ * with only an `AGENTS.md` has the whole body in context from the first token —
+ * so the two arms are not the same treatment across agents. The delta between
+ * them is the measurement that travels; the absolute pass rate is not.
  */
 export type Arm = "with-skills" | "without-skills";
 
@@ -74,6 +46,10 @@ const promptFor = (task: EvalTask): string =>
  * timeout, a worktree that would not add — and it must never be scored, because
  * a zero from a trial that never ran is indistinguishable from a skill that
  * regressed.
+ *
+ * The telemetry is `| undefined` because it is the agent's to report and not
+ * every CLI reports it. Zero would read as a free trial, which is a claim the
+ * harness has no evidence for.
  */
 export type TrialOutcome =
   | {
@@ -81,110 +57,58 @@ export type TrialOutcome =
       readonly diff: string;
       readonly changedFiles: readonly string[];
       readonly summary: string;
-      readonly costUsd: number;
-      readonly turns: number;
-      readonly durationMs: number;
+      readonly stop: AgentStop;
+      readonly costUsd: number | undefined;
+      readonly turns: number | undefined;
+      readonly durationMs: number | undefined;
     }
   | { readonly status: "unavailable"; readonly reason: string };
-
-type ClaudeResult = {
-  readonly subtype?: string;
-  readonly result?: string;
-  readonly total_cost_usd?: number;
-  readonly num_turns?: number;
-  readonly duration_ms?: number;
-};
-
-/**
- * `claude -p` exits non-zero on any failure and writes execution failures to
- * stdout as the same JSON a success uses, so the exit code alone cannot tell an
- * agent that ran out of turns from a token that was rate-limited. `subtype` can.
- */
-const resultOf = (error: unknown): ClaudeResult | undefined => {
-  const stdout = (error as { stdout?: unknown } | null)?.stdout;
-  if (typeof stdout !== "string") return undefined;
-  try {
-    return JSON.parse(stdout) as ClaudeResult;
-  } catch {
-    return undefined;
-  }
-};
-
-/**
- * One line naming why a process failed. `execFile`'s own message repeats the
- * whole command line, prompt included, which is not a reason anyone reads.
- */
-const describe = (error: unknown): string => {
-  if (!(error instanceof Error)) return String(error);
-  const { killed, code, stderr } = error as Error & {
-    killed?: boolean;
-    code?: unknown;
-    stderr?: string;
-  };
-  if (killed) return `killed after ${CLAUDE_TIMEOUT_MS / 60_000} minutes`;
-  const line = stderr?.trim().split("\n")[0];
-  if (typeof code === "number" || typeof code === "string") {
-    return line ? `exit ${code}: ${line}` : `exit ${code}`;
-  }
-  return error.message;
-};
 
 const git = async (args: readonly string[], cwd = REPO_ROOT): Promise<string> => {
   const { stdout } = await run("git", [...args], { cwd, maxBuffer: 64 * 1024 * 1024 });
   return stdout;
 };
 
+/** A model id is free-form and ends up in a filename; a `/` in one is a lost run. */
+const slug = (value: string): string => value.replaceAll(/[^\w.-]/g, "-");
+
 /**
- * Keyed by arm, model and effort as well as task, because all four are the
- * measurement. Two arms are two experiments; so are two models, and so are two
- * effort levels. A cache keyed on the task alone would let `--reuse` serve a
- * Fable trial into a run whose metadata says Opus — a plausible number that is
- * false, which is the one failure mode this suite exists to stop making.
+ * Keyed by agent, arm, model and effort as well as task, because all of them are
+ * the measurement. Two arms are two experiments; so are two agents, two models,
+ * and two effort levels. A cache keyed on the task alone would let `--reuse`
+ * serve a Fable trial into a run whose metadata says Opus — a plausible number
+ * that is false, which is the one failure mode this suite exists to stop making.
  *
  * The repetition index is in the key for a smaller version of the same reason:
  * repeated trials of one task are the samples the score averages, and a key
  * without it would let the second overwrite the first and leave `--reuse`
  * grading one sample as if it were several.
  */
-const cacheFile = (
-  taskId: string,
-  arm: Arm,
-  model: string,
-  effort: Effort,
-  repetition: number,
-): string => join(RUNS_DIR, `${taskId}.${arm}.${model}.${effort}.r${repetition}.json`);
+const cacheKey = (options: {
+  readonly taskId: string;
+  readonly agentId: string;
+  readonly arm: Arm;
+  readonly model: string;
+  readonly effort: Effort | undefined;
+  readonly repetition: number;
+}): string =>
+  [
+    options.taskId,
+    options.agentId,
+    options.arm,
+    slug(options.model),
+    options.effort ?? "no-effort",
+    `r${options.repetition}`,
+  ].join(".");
 
-const readCachedOutcome = async (
-  taskId: string,
-  arm: Arm,
-  model: string,
-  effort: Effort,
-  repetition: number,
-): Promise<TrialOutcome | undefined> => {
+const cacheFile = (key: string): string => join(RUNS_DIR, `${key}.json`);
+
+const readCachedOutcome = async (key: string): Promise<TrialOutcome | undefined> => {
   try {
-    const stored = await readFile(cacheFile(taskId, arm, model, effort, repetition), "utf8");
-    return JSON.parse(stored) as TrialOutcome;
+    return JSON.parse(await readFile(cacheFile(key), "utf8")) as TrialOutcome;
   } catch {
     return undefined;
   }
-};
-
-/**
- * Removes the rules under test from the worktree for the "without-skills" arm.
- *
- * `AGENTS.md`'s Skills section goes with the directory on purpose. Leaving it
- * would point the agent at files that no longer exist, and an agent that notices
- * a missing skill behaves differently from one that was never told skills exist
- * — two variables instead of one. For the same reason only `.claude/skills` is
- * removed: `.claude/settings.json` is empty today, but the day it holds a hook,
- * deleting it would change a second thing.
- */
-const stripSkills = async (worktree: string): Promise<void> => {
-  await rm(join(worktree, ".claude", "skills"), { recursive: true, force: true });
-
-  const agentsPath = join(worktree, "AGENTS.md");
-  const agents = await readFile(agentsPath, "utf8");
-  await writeFile(agentsPath, agents.replace(/^## Skills\n[\s\S]*?(?=^## )/m, ""));
 };
 
 /**
@@ -219,23 +143,36 @@ const linkDependencies = async (worktree: string): Promise<void> => {
 
 /**
  * Runs one trial in a git worktree, which is this suite's clean environment:
- * every trial starts from HEAD and cannot read another trial's history.
+ * every trial starts from HEAD and cannot read another trial's history. What
+ * runs inside it is the agent's business; everything around it is the same
+ * whoever the agent is.
  */
 export const runTrial = async (options: {
   readonly task: EvalTask;
+  readonly agent: Agent;
   readonly arm: Arm;
   readonly model: string;
-  readonly effort: Effort;
-  readonly maxTurns: number;
+  readonly effort: Effort | undefined;
+  /** Undefined for an agent with no turn cap; the timeout is then the budget. */
+  readonly maxTurns: number | undefined;
   /** Which sample of this task this is, counting from 1. Part of the cache key. */
   readonly repetition: number;
   /** Reuse the stored outcome when one exists, instead of spending a trial. */
   readonly reuse: boolean;
 }): Promise<TrialOutcome> => {
-  const { task, arm, model, effort, maxTurns, repetition, reuse } = options;
+  const { task, agent, arm, model, effort, maxTurns, repetition, reuse } = options;
+
+  const key = cacheKey({
+    taskId: task.id,
+    agentId: agent.id,
+    arm,
+    model,
+    effort,
+    repetition,
+  });
 
   if (reuse) {
-    const cached = await readCachedOutcome(task.id, arm, model, effort, repetition);
+    const cached = await readCachedOutcome(key);
     if (cached) return cached;
   }
 
@@ -246,40 +183,18 @@ export const runTrial = async (options: {
   await git(["worktree", "add", worktree, "-b", branch]);
 
   try {
-    if (arm === "without-skills") await stripSkills(worktree);
+    if (arm === "without-skills") await agent.stripRules(worktree);
     await linkDependencies(worktree);
 
-    let claude: ClaudeResult;
-    try {
-      const { stdout } = await run(
-        "claude",
-        [
-          "-p",
-          promptFor(task),
-          "--model",
-          model,
-          "--effort",
-          effort,
-          "--permission-mode",
-          "acceptEdits",
-          "--max-turns",
-          String(maxTurns),
-          "--output-format",
-          "json",
-        ],
-        { cwd: worktree, timeout: CLAUDE_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 },
-      );
-      claude = JSON.parse(stdout) as ClaudeResult;
-    } catch (error) {
-      const result = resultOf(error);
-      // Out of turns is an answer: whatever the agent left in the worktree is
-      // what it wrote, and it is graded as such. Anything else — a rate limit,
-      // the timeout, a CLI that would not start — is no answer at all.
-      if (result?.subtype !== "error_max_turns") {
-        return { status: "unavailable", reason: result?.result ?? describe(error) };
-      }
-      claude = result;
-    }
+    const attempt = await agent.run({
+      prompt: promptFor(task),
+      cwd: worktree,
+      model,
+      effort,
+      maxTurns,
+    });
+
+    if (attempt.status === "unavailable") return attempt;
 
     const diff = await git(["diff", "HEAD", "--", ...SOURCE_PATHS], worktree);
     const names = await git(["diff", "HEAD", "--name-only", "--", ...SOURCE_PATHS], worktree);
@@ -288,21 +203,19 @@ export const runTrial = async (options: {
       status: "completed",
       diff,
       changedFiles: names.split("\n").filter((line) => line !== ""),
-      summary: claude.result ?? "",
-      costUsd: claude.total_cost_usd ?? 0,
-      turns: claude.num_turns ?? 0,
-      durationMs: claude.duration_ms ?? 0,
+      summary: attempt.summary,
+      stop: attempt.stop,
+      costUsd: attempt.costUsd,
+      turns: attempt.turns,
+      durationMs: attempt.durationMs,
     };
 
     await mkdir(RUNS_DIR, { recursive: true });
-    await writeFile(
-      cacheFile(task.id, arm, model, effort, repetition),
-      JSON.stringify(outcome, null, 2),
-    );
+    await writeFile(cacheFile(key), JSON.stringify(outcome, null, 2));
 
     return outcome;
   } catch (error) {
-    return { status: "unavailable", reason: describe(error) };
+    return { status: "unavailable", reason: describeFailure(error, undefined) };
   } finally {
     await git(["worktree", "remove", "--force", worktree]).catch(() => {});
     await git(["branch", "-D", branch]).catch(() => {});
@@ -310,19 +223,28 @@ export const runTrial = async (options: {
 };
 
 /**
- * Task ids with every repetition stored for this arm and model, so `--reuse` can
- * say what it will not re-run. A task holding fewer stored trials than the run
- * asks for is not listed: it still spends the trials it is missing, and grading
- * three samples where the metadata claims five is the same false precision the
- * cache key exists to prevent.
+ * Task ids with every repetition stored for this agent, arm and model, so
+ * `--reuse` can say what it will not re-run. A task holding fewer stored trials
+ * than the run asks for is not listed: it still spends the trials it is missing,
+ * and grading three samples where the metadata claims five is the same false
+ * precision the cache key exists to prevent.
  */
-export const cachedTaskIds = async (
-  arm: Arm,
-  model: string,
-  effort: Effort,
-  repeat: number,
-): Promise<readonly string[]> => {
-  const middle = `.${arm}.${model}.${effort}.r`;
+export const cachedTaskIds = async (options: {
+  readonly agentId: string;
+  readonly arm: Arm;
+  readonly model: string;
+  readonly effort: Effort | undefined;
+  readonly repeat: number;
+}): Promise<readonly string[]> => {
+  const { agentId, arm, model, effort, repeat } = options;
+
+  const fileFor = (taskId: string, repetition: number): string =>
+    `${cacheKey({ taskId, agentId, arm, model, effort, repetition })}.json`;
+
+  // What every file of this run shares: the key with the task id and the
+  // repetition taken off either end.
+  const middle = fileFor("", 1).replace(/r1\.json$/, "r");
+
   try {
     const files = new Set(await readdir(RUNS_DIR));
     const ids = new Set(
@@ -331,8 +253,8 @@ export const cachedTaskIds = async (
         .map((file) => file.slice(0, file.lastIndexOf(middle))),
     );
     return [...ids].filter((id) =>
-      Array.from({ length: repeat }, (_, index) => `${id}${middle}${index + 1}.json`).every(
-        (file) => files.has(file),
+      Array.from({ length: repeat }, (_, index) => fileFor(id, index + 1)).every((file) =>
+        files.has(file),
       ),
     );
   } catch {

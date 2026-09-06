@@ -19,17 +19,21 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { Effort } from "./trial.ts";
+import type { Effort } from "./agents.ts";
 
 const run = promisify(execFile);
 
 const JUDGE_TIMEOUT_MS = 3 * 60 * 1000;
 
 /**
- * Pinned for the same reason `DEFAULT_MODEL` is, and separately from it: the
+ * Pinned for the same reason the subject's model is, and separately from it: the
  * judge is the instrument, not the subject. A judge that follows the CLI's
  * default would silently change what "pass" means, and the change would read as
  * a skill regression on the chart.
+ *
+ * It stays Claude whichever agent is under test, for that same reason. Grading
+ * Codex's diff with Codex would change the ruler and the thing being measured at
+ * once, and no two runs of this suite would be comparable again.
  *
  * Sonnet rather than Haiku: the verdicts here turn on *why* the agent wrote what
  * it wrote, which is reading, not pattern matching. Sonnet rather than Opus: the

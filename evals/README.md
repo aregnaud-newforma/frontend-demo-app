@@ -19,12 +19,14 @@ yarn evals --repeat 5                   # five trials per task instead of two
 yarn evals --max-concurrency 3          # three tasks at once (CI does; local output interleaves)
 yarn evals --reuse                      # re-score stored trials, no trial spawned
 yarn evals --run-name before-skill-edit # name the run yourself
-yarn evals --max-turns 40               # raise the per-trial turn budget
-yarn evals --model claude-opus-5        # the model under test (pinned by default)
-yarn evals --effort low                 # its effort level (pinned to high by default)
+yarn evals --agent codex                # the agent under test (`claude` by default)
+yarn evals --model claude-opus-5        # the model under test (the agent's own, by default)
+yarn evals --effort low                 # its effort level (the agent's own, by default)
+yarn evals --max-turns 120              # the per-trial turn budget, for an agent that takes one
 yarn evals --judge-model claude-sonnet-5 # the model that grades judged tasks
 yarn evals --judge-effort high          # its effort level (pinned by default)
 yarn evals --list-gates                 # the gates that have a task, as JSON
+yarn evals --list-agents                # the agents and the default one, as JSON
 ```
 
 Requires Node 22 (`.nvmrc`) and `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`,
@@ -77,14 +79,82 @@ outside `.claude/skills/` may restate a rule: the strip cannot chase copies.
 uncommitted edit to a skill or to `AGENTS.md` is invisible to a trial. Commit the
 rule change, then measure it.
 
-## The four files
+## The five files
 
-| File       | Owns                                                 |
-| ---------- | ---------------------------------------------------- |
-| `tasks.ts` | the prompts, what each one expects, and the grader   |
-| `trial.ts` | isolation: worktree, `claude -p`, the resulting diff |
-| `judge.ts` | the LLM grader, for rules a diff cannot separate     |
-| `run.ts`   | Langfuse: dataset, run, scores, and the command line |
+| File        | Owns                                                                  |
+| ----------- | --------------------------------------------------------------------- |
+| `tasks.ts`  | the prompts, what each one expects, and the grader                    |
+| `agents.ts` | the agent under test: its CLI, its result shape, where its rules live |
+| `trial.ts`  | isolation: worktree, the resulting diff, the stored outcome           |
+| `judge.ts`  | the LLM grader, for rules a diff cannot separate                      |
+| `run.ts`    | Langfuse: dataset, run, scores, and the command line                  |
+
+## Another agent
+
+`--agent` names who is under test. `agents.ts` is the seam, and deliberately the
+only file that knows a CLI exists: the worktree, the diff, the graders and the
+Langfuse reporting never ask who wrote the change. An `Agent` declares what its
+CLI takes, and `run.ts` refuses anything it does not — **nothing is recorded that
+was not applied**, which is the same rule the model and effort pins already obey.
+
+`claude`, `codex` and `copilot` are wired. Only the Claude adapter has ever
+been run: the other two were written against the documented flags, so check
+`codex exec --help` or `copilot help` before trusting a score, and expect the
+model id to need pinning to whatever your account actually serves.
+
+Four things do not port, and the shape of the code says so:
+
+- **Where the rules live.** Claude pulls a skill in on demand; an agent reading
+  only `AGENTS.md` has whatever it is pointed at in context from the first token.
+  The two arms are therefore not the same treatment across agents. **The
+  with/without delta is what travels; the absolute pass rate is not**, and two
+  agents on one chart are two experiments. `stripRules` is nonetheless shared:
+  this repository keeps its rules in one place, so the arm that removes them
+  removes the same files whoever was reading them.
+- **Effort and turns.** `--effort` is a flag on Claude, a config override on
+  Codex, and on Copilot a settings-file key that cannot be set for one run
+  without also supplying that CLI's model and MCP config — so Copilot declares
+  no efforts at all. Neither Codex nor Copilot has a turn cap. Each agent
+  declares its `efforts` and its `defaultMaxTurns`, and a level or a budget
+  outside them is a command-line error rather than a flag quietly dropped.
+  Trials on both are therefore bounded only by the timeout — which stops a loop
+  after the money is spent, not before.
+- **Cost.** Claude reports dollars; `codex exec --json` reports tokens and no
+  price; `copilot -p -s` reports nothing, the flag that leaves the final message
+  alone on stdout being the same one that strips the stats. An agent that reports
+  no cost publishes no `trial_cost_usd` score at all, because a zero reads as a
+  free run.
+- **Saying it failed.** Claude answers with a `subtype`, Codex with a
+  `turn.failed` event: both can tell a trial the harness could not obtain from an
+  agent that answered badly, which is the difference between `unavailable` and a
+  zero. Copilot offers only an exit code, so a run that fails partway and still
+  exits zero is scored as an answer. That is the known hole in that adapter, and
+  it needs a structured output mode to close.
+
+**Before a Codex or Copilot run means anything**, the rules have to reach them.
+The Skills section of `AGENTS.md` names Claude's Skill tool, which Codex has not;
+Copilot does not read `.claude/skills` at all, looking instead in `AGENTS.md`,
+`.github/copilot-instructions.md`, `.github/instructions/**` and its own skills
+location. Either way the `with-skills` arm hands over a pointer that cannot be
+followed, scores near-identically to `without-skills`, and reads as a skill with
+no effect where there is one.
+
+The judge stays Claude whichever agent is under test. It is the instrument, not
+the subject: grading Codex's diff with Codex would move the ruler and the thing
+measured at once. In CI that means every job installs the Claude CLI, including
+the Codex ones.
+
+CI runs Claude alone unless asked. An `evals:<agent>` label on a pull request
+selects who runs — `evals:claude`, `evals:codex`, `evals:copilot`, or any
+combination — and no label at all means the default alone. A label naming an
+agent that does not exist fails the run rather than quietly scoring the default.
+The manual button takes one agent name or `both` instead.
+
+It is opt-in because the agent axis multiplies against the gates and the arms:
+an `AGENTS.md` edit already runs every gate in both arms, and a second agent
+doubles that. And `evals:codex` on its own scores Codex against nothing from the
+same commit — legitimate when the port is what you are debugging, useless when
+the rule is.
 
 ## How a task is written
 
@@ -190,17 +260,17 @@ declares, and no task gates it.
 
 ## What lands in Langfuse
 
-| Langfuse noun          | Here                                                |
-| ---------------------- | --------------------------------------------------- |
-| Dataset `react`        | one gate, one skill                                 |
-| Dataset item           | one task, keyed by its id                           |
-| Dataset run            | one execution of that gate                          |
-| Trace                  | one trial                                           |
-| Score `effects_gate`   | the grader's verdict, meaned over the task's trials |
-| Score `trial_error`    | how many trials never ran: rate limit, timeout      |
-| Score `judge_error`    | how many trials the judge could not answer          |
-| Score `trial_cost_usd` | what that task cost, trials summed                  |
-| Run score `pass_rate`  | the number to watch over time                       |
+| Langfuse noun          | Here                                                          |
+| ---------------------- | ------------------------------------------------------------- |
+| Dataset `react`        | one gate, one skill                                           |
+| Dataset item           | one task, keyed by its id                                     |
+| Dataset run            | one execution of that gate                                    |
+| Trace                  | one trial                                                     |
+| Score `effects_gate`   | the grader's verdict, meaned over the task's trials           |
+| Score `trial_error`    | no answer: rate limit, timeout, out of turns on a judged task |
+| Score `judge_error`    | how many trials the judge could not answer                    |
+| Score `trial_cost_usd` | what that task cost, trials summed                            |
+| Run score `pass_rate`  | the number to watch over time                                 |
 
 Each run carries the commit SHA and branch as metadata, so a run can be traced
 back to the state of `.claude/skills/` that produced it.
@@ -227,10 +297,16 @@ down for a task that never ran.
 The same holds for a trial the harness could not run. `claude -p` killed by a
 rate limit, by the fifteen-minute timeout, or by a CLI that would not start
 writes `trial_error` and no `*_gate` score — a zero there reads, on the chart,
-exactly like a skill that regressed. Only one non-zero exit is an answer: an
-agent that ran out of `--max-turns` left a diff, and that diff is graded. In CI,
-where the token is shared and trials run three abreast, read a burst of
-`trial_error` as an exhausted five-hour window, not as a regression.
+exactly like a skill that regressed. Only one non-zero exit is an answer, and
+only half of one: an agent that ran out of `--max-turns` left a diff, and a diff
+grader reads it. It never wrote its closing summary, because the CLI kills it
+before that message, so a judged task writes `trial_error` for that trial rather
+than let the judge fail the silence — a criterion about _why_ is answered from
+the summary, and an empty one would score the budget, not the agent. The trial
+line in the log says `out of turns` when this happens; a task that hits it on
+every run needs a larger `--max-turns`, not a better skill. In CI, where the
+token is shared and trials run three abreast, read a burst of `trial_error` as
+an exhausted five-hour window, not as a regression.
 
 ## The judge
 
@@ -278,12 +354,14 @@ could be right or wrong depending on why it was written.
 ## Stored trials
 
 A completed trial is written to
-`evals/.runs/<task-id>.<arm>.<model>.<effort>.r<repetition>.json` (git-ignored). It holds
-the diff, the agent's summary, and the cost. `--reuse` grades that stored outcome
-instead of spawning a new one, which makes fixing a grader — or adding one — free.
+`evals/.runs/<task-id>.<agent>.<arm>.<model>.<effort>.r<repetition>.json`
+(git-ignored). It holds the diff, the agent's summary, and the cost. `--reuse`
+grades that stored outcome instead of spawning a new one, which makes fixing a
+grader — or adding one — free.
 
-The model is in the key, not only the arm. Without it, moving `DEFAULT_MODEL`
-would let `--reuse` serve a Fable trial into a run whose metadata says Opus: a
+The agent and the model are in the key, not only the arm. Without them, moving
+the pinned model would let `--reuse` serve a Fable trial into a run whose
+metadata says Opus: a
 plausible number that is false, which is the worst thing an eval can produce.
 The effort is there for the same reason. Trials stored before it entered the
 key carry no effort in their name and are not served: which level they ran at
@@ -299,7 +377,7 @@ metadata that claims five.
 ## Adding a task
 
 Append to `TASKS` in `tasks.ts`. The `id` is the rule file the prompt tempts an
-agent to break, taken from `.claude/skills/react/references/` without its
+agent to break, taken from `.claude/skills/<gate>/references/` without its
 extension, so an item in Langfuse names the rule it gates. `effects-dom-sync-is-valid`
 is the exception and reads as one: it guards the case where an effect is right,
 which is a section of `effects.md` rather than a rule of its own.
@@ -310,6 +388,7 @@ existing id is deliberate: the score history continues. Renaming the id starts a
 new history — so if a rule file is renamed, leave the id alone and let it drift
 rather than trade the history for a tidier name.
 
-Retire a task by archiving its item in Langfuse, not by deleting it. Archived
-items drop out of future runs while their history survives; an item merely
-removed from `TASKS` stays live in the dataset and reappears unscored.
+Retiring a task is deleting it from `TASKS`: the next run of its gate archives
+the item it left behind, so it drops out of future runs while its score history
+survives. Archiving rather than deleting is the point — a deleted item takes the
+runs it already scored with it.

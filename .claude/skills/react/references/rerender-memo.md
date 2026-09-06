@@ -2,7 +2,7 @@
 title: Extract to Memoized Components
 impact: MEDIUM
 impactDescription: enables early returns
-requires: React Compiler on
+requires: React Compiler off
 tags: rerender, memo, useMemo, optimization
 ---
 

@@ -5,8 +5,9 @@
  *
  * Usage: yarn evals [--gate <skill>] [--task <id>] [--arm with-skills|without-skills]
  *                   [--repeat <n>] [--max-concurrency <n>] [--reuse] [--run-name <name>]
- *                   [--max-turns <n>] [--model <id>] [--effort <level>]
- *                   [--judge-model <id>] [--judge-effort <level>] [--list-gates]
+ *                   [--max-turns <n>] [--agent <id>] [--model <id>] [--effort <level>]
+ *                   [--judge-model <id>] [--judge-effort <level>]
+ *                   [--list-gates] [--list-agents]
  *
  * One gate per invocation: a gate is a Langfuse dataset, and two skills sharing
  * a pass rate would move it for reasons nobody can read.
@@ -24,16 +25,8 @@ import {
   type EvalTask,
   type Grader,
 } from "./tasks.ts";
-import {
-  cachedTaskIds,
-  runTrial,
-  DEFAULT_EFFORT,
-  DEFAULT_MODEL,
-  EFFORTS,
-  type Arm,
-  type Effort,
-  type TrialOutcome,
-} from "./trial.ts";
+import { cachedTaskIds, runTrial, type Arm, type TrialOutcome } from "./trial.ts";
+import { agentNamed, AGENTS, DEFAULT_AGENT, EFFORTS, type Effort } from "./agents.ts";
 import { judge, JUDGE_EFFORT, JUDGE_MODEL } from "./judge.ts";
 
 const run = promisify(execFile);
@@ -49,12 +42,16 @@ const { values } = parseArgs({
     "max-concurrency": { type: "string", default: "1" },
     reuse: { type: "boolean", default: false },
     "run-name": { type: "string" },
-    "max-turns": { type: "string", default: "25" },
-    model: { type: "string", default: DEFAULT_MODEL },
-    effort: { type: "string", default: DEFAULT_EFFORT },
+    agent: { type: "string", default: DEFAULT_AGENT.id },
+    // No defaults: all three belong to the agent, and a model id pinned here
+    // would be handed to a CLI that has never heard of it.
+    "max-turns": { type: "string" },
+    model: { type: "string" },
+    effort: { type: "string" },
     "judge-model": { type: "string", default: JUDGE_MODEL },
     "judge-effort": { type: "string", default: JUDGE_EFFORT },
     "list-gates": { type: "boolean", default: false },
+    "list-agents": { type: "boolean", default: false },
   },
 });
 
@@ -64,6 +61,16 @@ const { values } = parseArgs({
 // about, where half a declaration is wired and the other half rots.
 if (values["list-gates"]) {
   console.log(JSON.stringify(gatesWithTasks()));
+  process.exit(0);
+}
+
+// Printed for the same reason and read the same way: CI turns a pull request's
+// `evals:<agent>` labels into the agent axis of its matrix, and an agent named
+// in the workflow instead of here would be a declaration wired into half the
+// system. The default travels with the list because the workflow needs it when
+// a pull request carries no label at all.
+if (values["list-agents"]) {
+  console.log(JSON.stringify({ agents: AGENTS.map(({ id }) => id), default: DEFAULT_AGENT.id }));
   process.exit(0);
 }
 
@@ -84,6 +91,39 @@ if (gateTasks.length === 0) {
 }
 
 const selected = requested ? [requested] : gateTasks;
+
+/**
+ * Who is under test. The suite measures whether a rule changes what an agent
+ * writes, and that question is asked of one agent at a time: the arms, the
+ * model and the effort all mean something different per CLI, and a run mixing
+ * two of them would average scores that were never the same experiment.
+ */
+const agent = agentNamed(values.agent);
+if (agent === undefined) {
+  console.error(
+    `No agent named "${values.agent}". Known: ${AGENTS.map(({ id }) => id).join(", ")}`,
+  );
+  process.exit(1);
+}
+
+const model = values.model ?? agent.defaultModel;
+
+/**
+ * The turn budget, when the agent has one. Rejected rather than dropped for the
+ * same reason `--effort` is: a cap recorded in the metadata of a run that never
+ * received it makes two incomparable runs look like one experiment.
+ */
+if (values["max-turns"] !== undefined && agent.defaultMaxTurns === undefined) {
+  console.error(`--max-turns has no meaning for ${agent.id}, which has no turn cap.`);
+  process.exit(1);
+}
+
+const maxTurns =
+  values["max-turns"] === undefined ? agent.defaultMaxTurns : Number(values["max-turns"]);
+if (maxTurns !== undefined && (!Number.isInteger(maxTurns) || maxTurns < 1)) {
+  console.error(`--max-turns takes a whole number of turns, not "${values["max-turns"]}".`);
+  process.exit(1);
+}
 
 /**
  * How many trials each task gets. One is a coin flipped once: the gate score is
@@ -126,16 +166,34 @@ if (arm === undefined) {
   process.exit(1);
 }
 
-const effortNamed = (flag: "effort" | "judge-effort"): Effort => {
-  const effort = EFFORTS.find((candidate) => candidate === values[flag]);
+const effortNamed = (
+  flag: "effort" | "judge-effort",
+  value: string,
+  allowed: readonly Effort[],
+): Effort => {
+  const effort = allowed.find((candidate) => candidate === value);
   if (effort === undefined) {
-    console.error(`--${flag} takes one of ${EFFORTS.join(", ")}, not "${values[flag]}".`);
+    console.error(`--${flag} takes one of ${allowed.join(", ")}, not "${value}".`);
     process.exit(1);
   }
   return effort;
 };
-const effort = effortNamed("effort");
-const judgeEffort = effortNamed("judge-effort");
+
+// Rejected rather than dropped: an effort the CLI never received, recorded in
+// the run metadata as though it had been, is a run that cannot be compared to
+// any other. The levels differ per agent, so the list is the agent's.
+if (values.effort !== undefined && agent.efforts.length === 0) {
+  console.error(`--effort has no meaning for ${agent.id}, which takes no reasoning effort.`);
+  process.exit(1);
+}
+
+const effort =
+  values.effort === undefined
+    ? agent.defaultEffort
+    : effortNamed("effort", values.effort, agent.efforts);
+// Always a level, out of all of them: the judge is Claude whichever agent is
+// under test.
+const judgeEffort = effortNamed("judge-effort", values["judge-effort"], EFFORTS);
 
 const gitOutput = async (args: readonly string[]): Promise<string> => {
   const { stdout } = await run("git", [...args]);
@@ -149,11 +207,9 @@ const gitOutput = async (args: readonly string[]): Promise<string> => {
  * reads as a skill regression.
  */
 const environment = async (): Promise<Record<string, string>> => {
-  const cliVersion = await run("claude", ["--version"])
-    .then(({ stdout }) => stdout.trim())
-    .catch(() => "unknown");
+  const cliVersion = await agent.version();
 
-  const baseUrl = process.env.ANTHROPIC_BASE_URL;
+  const baseUrl = agent.apiBaseUrlEnv === undefined ? undefined : process.env[agent.apiBaseUrlEnv];
 
   return {
     runner: process.env.CI ? "ci" : "local",
@@ -199,6 +255,40 @@ await Promise.all(
 
 const taskById = new Map(gateTasks.map((task) => [task.id, task]));
 
+// Upsert never deletes, and the experiment iterates the dataset rather than
+// `tasks.ts`: a task renamed or dropped leaves an item behind that the run still
+// picks up, spawns nothing for, and reports as `unknown task` — a trial error
+// standing in for a task that no longer exists. Archiving is what the list
+// endpoint filters on, and unlike a delete it keeps the runs that item already
+// scored: the line over time this suite draws is made of those.
+const { data: liveItems } = await langfuse.api.datasetItems.list({
+  datasetName: gateName,
+  // One page, because a gate is a handful of rules and archived items stop
+  // coming back — the list this filters can only be that handful plus whatever
+  // one edit of `tasks.ts` just orphaned.
+  limit: 100,
+});
+
+const orphans = liveItems.filter((item) => !taskById.has(item.id));
+if (orphans.length > 0) {
+  await Promise.all(
+    orphans.map((item) =>
+      langfuse.api.datasetItems.create({
+        id: item.id,
+        datasetName: gateName,
+        // Resent because the upsert writes the whole item: omitting these
+        // archives the item and empties it, and an emptied item is a past run
+        // nobody can read the prompt of.
+        input: item.input,
+        expectedOutput: item.expectedOutput,
+        metadata: item.metadata,
+        status: "ARCHIVED",
+      }),
+    ),
+  );
+  console.log(`Archived, no longer in tasks.ts: ${orphans.map((item) => item.id).join(", ")}`);
+}
+
 const findTask = (metadata: unknown): EvalTask | undefined => {
   const taskId = (metadata as { taskId?: unknown } | undefined)?.taskId;
   return typeof taskId === "string" ? taskById.get(taskId) : undefined;
@@ -243,10 +333,11 @@ type ItemOutcome =
 
 /**
  * One trial's verdict. `unanswered` is not a failure of the agent: it is the
- * trial that could not run or the judge that could not be reached, and it must
- * stay distinguishable from a zero. `source` says which, because the two are
- * fixed in different places — a rate limit on the subject's token, a model the
- * judge could not reach.
+ * trial that could not run, the agent `--max-turns` cut off before the summary
+ * a judge reads, or the judge that could not be reached, and it must stay
+ * distinguishable from a zero. `source` says which side, because they are fixed
+ * in different places — a rate limit or a turn budget on the subject, a model
+ * the judge could not reach.
  */
 type Verdict =
   | { readonly kind: "graded"; readonly passed: boolean; readonly comment: string }
@@ -266,6 +357,18 @@ const gradeTrial = async (
     return { kind: "graded", passed: grade.passed, comment: grade.comment };
   }
 
+  // The judge is told that silence is failure, which is right when the agent
+  // chose to say nothing and wrong when the CLI cut it off first. A criterion
+  // about *why* cannot be answered from a diff alone, so this trial has no
+  // verdict — not a failed one.
+  if (trial.stop === "max-turns") {
+    return {
+      kind: "unanswered",
+      source: "trial",
+      comment: `out of turns after ${trial.turns ?? maxTurns}, no summary for the judge to read`,
+    };
+  }
+
   const verdict = await judge({
     criterion: grader.criterion,
     prompt,
@@ -280,7 +383,9 @@ const gradeTrial = async (
     : { kind: "graded", passed: verdict.passed, comment: verdict.reason };
 };
 
-const reusable = values.reuse ? await cachedTaskIds(arm, values.model, effort, repeat) : [];
+const reusable = values.reuse
+  ? await cachedTaskIds({ agentId: agent.id, arm, model, effort, repeat })
+  : [];
 if (reusable.length > 0) {
   console.log(`Reusing stored trials: ${reusable.join(", ")}`);
 }
@@ -289,17 +394,20 @@ const dataset = await langfuse.dataset.get(gateName);
 
 const result = await dataset.runExperiment({
   name: runName,
-  description: `${gateName}, ${arm}, ${values.model} at ${effort}, ${selected.length} task(s), commit ${commitSha.slice(0, 7)}`,
+  description: `${gateName}, ${arm}, ${agent.id} ${model}${effort === undefined ? "" : ` at ${effort}`}, ${selected.length} task(s), commit ${commitSha.slice(0, 7)}`,
   maxConcurrency: concurrency,
   metadata: {
     "langfuse.commit": commitSha,
     "langfuse.branch": gitBranch,
     arm,
     gate: gateName,
-    model: values.model,
+    agent: agent.id,
+    model,
     // Beside the model because it is the same kind of variable: unrecorded, a
     // run at `low` and a run at `high` are two experiments under one name.
-    effort,
+    // "none" is an agent with no such setting, which is not the same claim as
+    // an unrecorded one.
+    effort: effort ?? "none",
     // How many samples every per-task score averages. A pass rate read without
     // it says nothing about how much of its movement is noise.
     repeat,
@@ -311,7 +419,9 @@ const result = await dataset.runExperiment({
     // a run whose verdicts cannot be compared to last month's.
     judgeModel: values["judge-model"],
     judgeEffort,
-    maxTurns: Number(values["max-turns"]),
+    // "none" is an agent with no turn cap, which is not the same claim as a cap
+    // that went unrecorded.
+    maxTurns: maxTurns ?? "none",
     ...env,
   },
   task: async ({ metadata }): Promise<ItemOutcome> => {
@@ -330,19 +440,20 @@ const result = await dataset.runExperiment({
       // oxlint-disable-next-line no-await-in-loop -- serial on purpose, see above
       const outcome = await runTrial({
         task: evalTask,
+        agent,
         arm,
-        model: values.model,
+        model,
         effort,
-        maxTurns: Number(values["max-turns"]),
+        maxTurns,
         repetition,
         reuse: values.reuse,
       });
       // Prefixed, because at any concurrency above one this line lands under
       // some other task's header.
       if (outcome.status === "completed") {
-        console.log(
-          `    ${label}: ${outcome.changedFiles.length} file(s), $${outcome.costUsd.toFixed(2)}`,
-        );
+        const cutOff = outcome.stop === "max-turns" ? ", out of turns" : "";
+        const cost = outcome.costUsd === undefined ? "" : `, $${outcome.costUsd.toFixed(2)}`;
+        console.log(`    ${label}: ${outcome.changedFiles.length} file(s)${cost}${cutOff}`);
       } else {
         console.log(`    ${label}: unavailable, ${outcome.reason}`);
       }
@@ -406,11 +517,15 @@ const result = await dataset.runExperiment({
     async ({ output }) => {
       const outcome = output as ItemOutcome;
       if (outcome.status === "skipped") return [];
-      // The whole item, repetitions included: what this task cost this run.
-      const costUsd = outcome.trials.reduce(
-        (total, trial) => total + (trial.status === "completed" ? trial.costUsd : 0),
-        0,
+      // The whole item, repetitions included: what this task cost this run. No
+      // score at all when the CLI reports no price — a zero would read as a free
+      // run rather than as an agent that does not say.
+      const costs = outcome.trials.flatMap((trial) =>
+        trial.status === "completed" && trial.costUsd !== undefined ? [trial.costUsd] : [],
       );
+      if (costs.length === 0) return [];
+
+      const costUsd = costs.reduce((total, cost) => total + cost, 0);
       return { name: "trial_cost_usd", value: costUsd, comment: `$${costUsd.toFixed(2)}` };
     },
   ],
