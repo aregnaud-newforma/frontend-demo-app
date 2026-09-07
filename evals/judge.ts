@@ -2,7 +2,7 @@
  * The LLM judge: the grader for rules whose right answer leaves no signature a
  * regex can key on.
  *
- * `gradeAdded` in `tasks.ts` reads the diff and counts calls. That works while a
+ * `gradeAdded` in `grading.ts` reads the diff and counts calls. That works while a
  * rule is about an API. It runs out of road the moment two agents write the same
  * code for opposite reasons — which is exactly what `modern-set-operations`
  * produced: one agent checked the rule's `requires: ES2025` against this repo's

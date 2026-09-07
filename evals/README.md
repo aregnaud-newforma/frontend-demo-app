@@ -11,7 +11,7 @@ rather than a number in a terminal that scrolls away.
 ## Run it
 
 ```bash
-yarn evals                              # the react gate, one live trial per task
+yarn evals --gate react                 # one gate, one live trial per task
 yarn evals --gate javascript            # another gate
 yarn evals --task effects-reset-state-with-key   # one task
 yarn evals --arm without-skills         # the ablation arm
@@ -115,15 +115,35 @@ the nightly, which runs `main` against `main` and would be refused. The skill
 change is the only thing this arm can see, so a pull request touching `evals/`
 or `AGENTS.md` alone still gets the two arms it always did.
 
-## The five files
+## The files
 
-| File        | Owns                                                                  |
-| ----------- | --------------------------------------------------------------------- |
-| `tasks.ts`  | the prompts, what each one expects, and the grader                    |
-| `agents.ts` | the agent under test: its CLI, its result shape, where its rules live |
-| `trial.ts`  | isolation: worktree, the resulting diff, the stored outcome           |
-| `judge.ts`  | the LLM grader, for rules a diff cannot separate                      |
-| `run.ts`    | Langfuse: dataset, run, scores, and the command line                  |
+| File                 | Owns                                                                   |
+| -------------------- | ---------------------------------------------------------------------- |
+| `../evals.config.ts` | what this repository asks to be measured, and what counts as an answer |
+| `tasks.ts`           | the prompts, what each one expects, and the grader                     |
+| `config.ts`          | the config's shape, and the one place it is loaded and checked         |
+| `grading.ts`         | what a task is, and how a diff-counted answer is scored                |
+| `agents.ts`          | the agent under test: its CLI, its result shape, where its rules live  |
+| `trial.ts`           | isolation: worktree, the resulting diff, the stored outcome            |
+| `judge.ts`           | the LLM grader, for rules a diff cannot separate                       |
+| `run.ts`             | Langfuse: dataset, run, scores, and the command line                   |
+
+The split is down the middle of `evals.config.ts`: everything above it is this
+repository's, everything below knows nothing about it. `tasks.ts` is on the
+repository's side and sits in this directory only because 300 lines of prompt
+prose do not belong in a config file.
+
+The config holds two keys — `tasks` and `sourcePaths` — and the shortness is the
+point. Arms, agents, models, effort, repetition and concurrency are flags with a
+default in `run.ts`, and a key beside a flag would be a second place a run's
+conditions get decided. There is no `--config` either: a suite that can be
+pointed at two of them is a suite whose scores were produced under conditions
+nobody can read off the run.
+
+`sourcePaths` has no default on purpose. A default that missed this repository's
+sources would leave every diff empty, and an empty diff scores 0 on every task —
+a plausible, false number, which is the one thing this suite exists not to
+produce.
 
 ## Another agent
 
@@ -208,10 +228,16 @@ adding one changes what the score averages, not what it is named.
 
 Each task declares its **grader**, and there are two.
 
-`kind: "diff"` counts calls the agent added — `useEffect` and `useLayoutEffect` on
-_added_ lines only, so a task that touches a component with a pre-existing
-legitimate effect cannot fail for code the agent never wrote. Prefer it whenever
-a rule has an API signature: it is cheap, deterministic and hard to argue with.
+`kind: "diff"` counts calls the agent added. The task supplies the call as a
+pattern — `added: String.raw`\buse(Layout)?Effect\s*\(`` — and the harness
+anchors it to _added_ lines, so a task that touches a component with a
+pre-existing legitimate effect cannot fail for code the agent never wrote, and
+no task has to remember to write that anchor. Prefer it whenever a rule has an
+API signature: it is cheap, deterministic and hard to argue with.
+
+The pattern is on the task and not in a fixed list of families, because a rule
+family is this repository's business: the list this replaced had four entries
+and two of them were dead, left over from tasks that had since become judged.
 
 `kind: "judge"` exists for the rules where that is not enough. See below.
 
@@ -220,7 +246,8 @@ repo to finish with `yarn verify && yarn test`, and that is where most of a
 trial's turns go. Nothing in either can catch a misplaced effect — the absence of
 such a check is the reason this suite exists — so every effects task sets
 `checks: "skip"` and the harness appends one line telling the agent to make the
-change and stop.
+change and stop. The line names no command: what a project's checks are called
+is in its `AGENTS.md`, which the agent has already read.
 
 Two things make that safe. The line is a harness instruction appended to every
 arm of a comparison, so it cannot explain a difference between two runs. And the
@@ -280,7 +307,14 @@ which is the scheduled run and the manual one: `workflow_dispatch` takes
 
 A gate is one skill, named exactly as its directory under `.claude/skills/`, and
 one Langfuse dataset. `yarn evals --list-gates` prints the ones that carry a
-task; the rest of `GATES` in `tasks.ts` is vocabulary waiting for its first task.
+task, which is every gate there is: a gate is declared by a task naming it, and
+a skill nobody wrote a task for is not one.
+
+`--gate` is required whenever more than one exists, and has no default. A
+default would run a single skill and report its pass rate as the suite's, which
+reads as five skills passing when four were never asked. A named `--task`
+settles the gate on its own, and a repository with one gate has nothing to
+choose.
 
 The name is the join CI needs. A pull request touching
 `.claude/skills/react/**` runs the react gate and nothing else, because the gate
@@ -290,7 +324,8 @@ path, so every rule edit used to run every gate and pay for it. The workflow's
 the diff, and builds its matrix from the result. A change to `AGENTS.md`,
 `CLAUDE.md` or the harness runs all of them: those move any gate.
 
-The harness splits in two there. `tasks.ts`, `trial.ts` and `judge.ts` decide
+The harness splits in two there. `evals.config.ts`, `tasks.ts`, `trial.ts` and
+`judge.ts` decide
 what a trial is — the prompt, the pinned model, the strip, the criterion — so a
 change to one runs every gate in **both** arms: the ablation stopped being a
 constant, and the baseline has to be re-measured. `run.ts` decides what is
@@ -316,6 +351,7 @@ declares, and no task gates it.
 | Score `effects_gate`   | the grader's verdict, meaned over the task's trials           |
 | Score `trial_error`    | no answer: rate limit, timeout, out of turns on a judged task |
 | Score `judge_error`    | how many trials the judge could not answer                    |
+| Score `skill_invoked`  | whether the gate's skill was loaded, meaned over its trials   |
 | Score `trial_cost_usd` | what that task cost, trials summed                            |
 | Run score `pass_rate`  | the number to watch over time                                 |
 
@@ -423,7 +459,7 @@ rather than averaging three samples under metadata that claims five.
 
 ## Adding a task
 
-Append to `TASKS` in `tasks.ts`. The `id` is the rule file the prompt tempts an
+Append to `TASKS` in `tasks.ts`, which `evals.config.ts` hands to the harness. The `id` is the rule file the prompt tempts an
 agent to break, taken from `.claude/skills/<gate>/references/` without its
 extension, so an item in Langfuse names the rule it gates. `effects-dom-sync-is-valid`
 is the exception and reads as one: it guards the case where an effect is right,

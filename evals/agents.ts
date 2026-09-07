@@ -4,9 +4,10 @@
  *
  * Everything below the CLI call is already agent-agnostic: the worktree, the
  * diff, the graders and the Langfuse reporting never ask who wrote the change.
- * Only three things do — the command and its result shape, where the agent
- * reads the rules from, and whether it takes a reasoning effort — and those are
- * what an `Agent` carries.
+ * Only two things do — the command and its result shape, and whether it takes a
+ * reasoning effort — and those are what an `Agent` carries. Removing the rules
+ * is not one of them: every agent discovers skills from a directory, so the
+ * "without-skills" arm removes directories and never asks who is reading.
  *
  * The judge is deliberately not one of these. It is the instrument, not the
  * subject: a grader that changed with the agent would make no two runs
@@ -17,7 +18,7 @@
  * of three files around a single adapter would be layering ahead of the need.
  */
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -75,6 +76,14 @@ export type AgentRun =
       readonly costUsd: number | undefined;
       readonly turns: number | undefined;
       readonly durationMs: number | undefined;
+      /**
+       * The skills the agent loaded, by the name the tool takes — so a gate can
+       * ask whether its own rules were read at all. Undefined for a CLI that
+       * reports no tool calls, and undefined rather than empty for the reason
+       * the telemetry above is: "it loaded none" and "this agent cannot say"
+       * are different claims, and only one of them is evidence.
+       */
+      readonly skillsInvoked: readonly string[] | undefined;
     }
   | { readonly status: "unavailable"; readonly reason: string };
 
@@ -107,16 +116,12 @@ export type Agent = {
    * return the URL itself is one adapter away from publishing a credential.
    */
   readonly apiBaseUrlEnv: string | undefined;
-  /**
-   * Removes the rules under test from the worktree, for the "without-skills"
-   * arm. Each agent reads them from somewhere else, so each removes its own.
-   */
-  readonly stripRules: (worktree: string) => Promise<void>;
   readonly run: (request: AgentRequest) => Promise<AgentRun>;
 };
 
 const CLAUDE_TIMEOUT_MS = 15 * 60 * 1000;
 
+/** The final `result` event: what `--output-format json` returns whole. */
 type ClaudeResult = {
   readonly subtype?: string;
   readonly result?: string;
@@ -125,19 +130,81 @@ type ClaudeResult = {
   readonly duration_ms?: number;
 };
 
+/** One block of an assistant message. Only `tool_use` is read. */
+type ClaudeBlock = {
+  readonly type?: string;
+  readonly name?: string;
+  readonly input?: { readonly skill?: unknown };
+};
+
+/** One line of the stream: the events above arrive tagged, one per line. */
+type ClaudeEvent = ClaudeResult & {
+  readonly type?: string;
+  readonly message?: { readonly content?: readonly ClaudeBlock[] };
+};
+
+/**
+ * The tool that loads a skill. Its `skill` argument is the directory name under
+ * `.claude/skills`, which is also what a task calls its `gate` — so an
+ * invocation is comparable to a gate with nothing translating between the two.
+ */
+const SKILL_TOOL = "Skill";
+
+/**
+ * What one run left on stdout: the summary and the telemetry, and which skills
+ * the agent reached for on its way there.
+ *
+ * The second is why this adapter reads a stream rather than the single JSON
+ * object `--output-format json` returns. A gate score that moves is otherwise
+ * two hypotheses in one number — the rule stopped working, or the agent never
+ * loaded it — and the evidence sat in tool calls nobody was reading. It costs
+ * no tokens: the format decides what the CLI prints locally, not what is sent.
+ */
+type ClaudeTranscript = {
+  readonly result: ClaudeResult | undefined;
+  /** Deduplicated: a skill loaded twice is one skill loaded. */
+  readonly skillsInvoked: readonly string[];
+};
+
+const parseTranscript = (stdout: string): ClaudeTranscript => {
+  const skills: string[] = [];
+  let result: ClaudeResult | undefined;
+
+  for (const line of stdout.split("\n")) {
+    if (line.trim() === "") continue;
+
+    let event: ClaudeEvent;
+    try {
+      event = JSON.parse(line) as ClaudeEvent;
+    } catch {
+      // A line the CLI wrote that is not an event is not a reason to lose the
+      // trial: the diff is already on disk and the rest of the stream still
+      // holds the summary.
+      continue;
+    }
+
+    if (event.type === "result") result = event;
+    if (event.type !== "assistant") continue;
+
+    for (const block of event.message?.content ?? []) {
+      if (block.type !== "tool_use" || block.name !== SKILL_TOOL) continue;
+      if (typeof block.input?.skill === "string") skills.push(block.input.skill);
+    }
+  }
+
+  return { result, skillsInvoked: [...new Set(skills)] };
+};
+
 /**
  * `claude -p` exits non-zero on any failure and writes execution failures to
- * stdout as the same JSON a success uses, so the exit code alone cannot tell an
- * agent that ran out of turns from a token that was rate-limited. `subtype` can.
+ * stdout as the same events a success uses, so the exit code alone cannot tell
+ * an agent that ran out of turns from a token that was rate-limited. The
+ * `result` event's `subtype` can — and the stream up to it still names the
+ * skills a cut-off agent had already loaded.
  */
-const resultOf = (error: unknown): ClaudeResult | undefined => {
+const transcriptOf = (error: unknown): ClaudeTranscript | undefined => {
   const stdout = (error as { stdout?: unknown } | null)?.stdout;
-  if (typeof stdout !== "string") return undefined;
-  try {
-    return JSON.parse(stdout) as ClaudeResult;
-  } catch {
-    return undefined;
-  }
+  return typeof stdout === "string" ? parseTranscript(stdout) : undefined;
 };
 
 /**
@@ -159,25 +226,6 @@ export const describeFailure = (error: unknown, timeoutMs: number | undefined): 
     return line ? `exit ${code}: ${line}` : `exit ${code}`;
   }
   return error.message;
-};
-
-/**
- * Shared by every agent: this repository keeps its rules in one place, so the
- * arm that removes them removes the same files whoever is reading them.
- *
- * `AGENTS.md`'s Skills section goes with the directory on purpose. Leaving it
- * would point the agent at files that no longer exist, and an agent that notices
- * a missing skill behaves differently from one that was never told skills exist
- * — two variables instead of one. For the same reason only `.claude/skills` is
- * removed: `.claude/settings.json` is empty today, but the day it holds a hook,
- * deleting it would change a second thing.
- */
-const stripSkills = async (worktree: string): Promise<void> => {
-  await rm(join(worktree, ".claude", "skills"), { recursive: true, force: true });
-
-  const agentsPath = join(worktree, "AGENTS.md");
-  const agents = await readFile(agentsPath, "utf8");
-  await writeFile(agentsPath, agents.replace(/^## Skills\n[\s\S]*?(?=^## )/m, ""));
 };
 
 /**
@@ -226,10 +274,8 @@ const CLAUDE: Agent = {
 
   apiBaseUrlEnv: "ANTHROPIC_BASE_URL",
 
-  stripRules: stripSkills,
-
   run: async ({ prompt, cwd, model, effort, maxTurns }): Promise<AgentRun> => {
-    let result: ClaudeResult;
+    let transcript: ClaudeTranscript;
     let stop: AgentStop = "finished";
 
     try {
@@ -244,35 +290,40 @@ const CLAUDE: Agent = {
           "--permission-mode",
           "acceptEdits",
           ...(maxTurns === undefined ? [] : ["--max-turns", String(maxTurns)]),
+          // The stream, not the single object: it carries the same `result` at
+          // the end and the tool calls before it. `--verbose` is not optional —
+          // `-p` refuses `stream-json` without it.
           "--output-format",
-          "json",
+          "stream-json",
+          "--verbose",
         ],
         { cwd, timeout: CLAUDE_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 },
       );
-      result = JSON.parse(stdout) as ClaudeResult;
+      transcript = parseTranscript(stdout);
     } catch (error) {
-      const failure = resultOf(error);
+      const failure = transcriptOf(error);
       // Out of turns is still a diff: whatever the agent left in the worktree
       // is what it wrote, and the diff graders read it as such. Anything else —
       // a rate limit, the timeout, a CLI that would not start — is no answer at
       // all.
-      if (failure?.subtype !== "error_max_turns") {
+      if (failure?.result?.subtype !== "error_max_turns") {
         return {
           status: "unavailable",
-          reason: failure?.result ?? describeFailure(error, CLAUDE_TIMEOUT_MS),
+          reason: failure?.result?.result ?? describeFailure(error, CLAUDE_TIMEOUT_MS),
         };
       }
-      result = failure;
+      transcript = failure;
       stop = "max-turns";
     }
 
     return {
       status: "ran",
-      summary: result.result ?? "",
+      summary: transcript.result?.result ?? "",
       stop,
-      costUsd: result.total_cost_usd,
-      turns: result.num_turns,
-      durationMs: result.duration_ms,
+      costUsd: transcript.result?.total_cost_usd,
+      turns: transcript.result?.num_turns,
+      durationMs: transcript.result?.duration_ms,
+      skillsInvoked: transcript.skillsInvoked,
     };
   },
 };
@@ -327,8 +378,6 @@ const CODEX: Agent = {
       .then(({ stdout }) => stdout.trim())
       .catch(() => "unknown"),
 
-  stripRules: stripSkills,
-
   run: async ({ prompt, cwd, model, effort }): Promise<AgentRun> => {
     // The final message goes to a file rather than being dug out of the event
     // stream: with `--json` the stream is JSONL, and the assistant's last
@@ -382,6 +431,14 @@ const CODEX: Agent = {
         costUsd: undefined,
         turns: undefined,
         durationMs: undefined,
+        // Not read from the stream yet. Codex does load skills on demand, so
+        // the question Claude's `Skill` calls answer can be asked of it — but
+        // it scans `.agents/skills`, and this repository keeps its rules in
+        // `.claude/skills`, which Codex never looks at. Until a worktree links
+        // one at the other, both arms of a Codex run are without-skills runs
+        // that differ only by the Skills section of `AGENTS.md`, and a delta
+        // from this agent measures that section alone.
+        skillsInvoked: undefined,
       };
     } catch (error) {
       return { status: "unavailable", reason: describeFailure(error, CODEX_TIMEOUT_MS) };
@@ -396,13 +453,12 @@ const CODEX: Agent = {
  * documented flags and never run on the machine that added it: check
  * `copilot help` before trusting a score from it.
  *
- * The caveat that matters is not a flag. Copilot does not read `.claude/skills`
- * — it reads `AGENTS.md`, `.github/copilot-instructions.md`,
- * `.github/instructions/**` and its own skills location — so `stripSkills`
- * removes files this agent was never reading, and the two arms differ today
- * only by the Skills section of `AGENTS.md`. A near-zero delta from this agent
- * is that gap, not a rule that fails to earn its place. Delivering the skills
- * where Copilot looks for them is what would make it measurable.
+ * Copilot scans `.github/skills`, `.claude/skills` and `.agents/skills`, so
+ * this repository's rules reach it where they already sit and both arms are a
+ * real comparison. What it will not report is which of them it loaded: the
+ * choice is description-driven as Claude's is, but `-s` leaves only the final
+ * message on stdout and there is no structured mode to ask the tool calls back
+ * from.
  */
 const COPILOT_TIMEOUT_MS = 15 * 60 * 1000;
 
@@ -443,8 +499,6 @@ const COPILOT: Agent = {
     run("copilot", ["--version"])
       .then(({ stdout }) => stdout.trim())
       .catch(() => "unknown"),
-
-  stripRules: stripSkills,
 
   run: async ({ prompt, cwd, model }): Promise<AgentRun> => {
     try {
@@ -487,6 +541,10 @@ const COPILOT: Agent = {
         costUsd: undefined,
         turns: undefined,
         durationMs: undefined,
+        // Blocked on the same thing the failure signal above is: `-s` leaves
+        // the final message alone on stdout, and there is no structured mode
+        // to ask the tool calls back from.
+        skillsInvoked: undefined,
       };
     } catch (error) {
       return { status: "unavailable", reason: describeFailure(error, COPILOT_TIMEOUT_MS) };

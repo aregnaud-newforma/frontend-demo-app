@@ -3,7 +3,7 @@
  * dataset run, so the pass rate is a line over time rather than a number in a
  * terminal that scrolls away.
  *
- * Usage: yarn evals [--gate <skill>] [--task <id>]
+ * Usage: yarn evals --gate <skill> [--task <id>]
  *                   [--arm with-skills|without-skills|previous-skill] [--baseline-ref <ref>]
  *                   [--repeat <n>] [--max-concurrency <n>] [--reuse] [--run-name <name>]
  *                   [--max-turns <n>] [--agent <id>] [--model <id>] [--effort <level>]
@@ -18,15 +18,15 @@ import { parseArgs, promisify } from "node:util";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { LangfuseClient } from "@langfuse/client";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
+import { config } from "./config.ts";
 import {
-  TASKS,
   gatesWithTasks,
   gradeAdded,
   graderSchema,
   scoreName,
   type EvalTask,
   type Grader,
-} from "./tasks.ts";
+} from "./grading.ts";
 import {
   cachedTaskIds,
   resolveBaseline,
@@ -42,7 +42,8 @@ import { judge, JUDGE_EFFORT, JUDGE_MODEL } from "./judge.ts";
 
 const run = promisify(execFile);
 
-const DEFAULT_GATE = "react";
+/** This repository's rules, from `evals.config.ts`. */
+const { tasks: TASKS } = config;
 
 const { values } = parseArgs({
   options: {
@@ -73,7 +74,7 @@ const { values } = parseArgs({
 // place a gate is declared — the failure `alias.ts` and tsconfig `paths` warn
 // about, where half a declaration is wired and the other half rots.
 if (values["list-gates"]) {
-  console.log(JSON.stringify(gatesWithTasks()));
+  console.log(JSON.stringify(gatesWithTasks(TASKS)));
   process.exit(0);
 }
 
@@ -93,19 +94,29 @@ if (values.task && !requested) {
   process.exit(1);
 }
 
-// A named task settles the gate on its own; asking for both is a way to get a
-// run that silently scores nothing.
-const gateName = requested?.gate ?? values.gate ?? DEFAULT_GATE;
-const gateTasks = TASKS.filter((task) => task.gate === gateName);
+const knownGates = gatesWithTasks(TASKS);
+
+/**
+ * Which gate this run measures. A named task settles it on its own — asking for
+ * both is a way to get a run that silently scores nothing — and a repository
+ * with one gate has nothing to choose. Anything else has to be asked for: a
+ * default would quietly measure one skill out of five and report the number as
+ * the suite's.
+ */
+const gate =
+  requested?.gate ?? values.gate ?? (knownGates.length === 1 ? knownGates[0] : undefined);
+if (gate === undefined) {
+  console.error(`--gate is required. Known: ${knownGates.join(", ")}`);
+  process.exit(1);
+}
+
+const gateTasks = TASKS.filter((task) => task.gate === gate);
 if (gateTasks.length === 0) {
-  const known = [...new Set(TASKS.map((task) => task.gate))].join(", ");
-  console.error(`No gate named "${gateName}". Known: ${known}`);
+  console.error(`No gate named "${gate}". Known: ${knownGates.join(", ")}`);
   process.exit(1);
 }
 
 const selected = requested ? [requested] : gateTasks;
-// The gate as a `Gate`, which `gateName` cannot be: it came off the command line.
-const gate = gateTasks[0].gate;
 
 /**
  * Who is under test. The suite measures whether a rule changes what an agent
@@ -186,7 +197,10 @@ if (arm === undefined) {
  * because it is what pairs a `with-skills` run with the `previous-skill` run
  * beside it — two runs an hour apart are otherwise told apart by the clock.
  */
-const skillTreeAtHead = await skillTree(gate, "HEAD");
+const skillTreeAtHead = await skillTree(gate, "HEAD").catch((): never => {
+  console.error(`No skill directory at .claude/skills/${gate}: a gate is one, named after it.`);
+  process.exit(1);
+});
 
 // A ref on an arm that would not restore it is rejected, for the reason
 // `--effort` is: a baseline in the metadata of a run that never used one makes
@@ -289,8 +303,8 @@ const langfuse = new LangfuseClient();
 // Both calls upsert, so syncing an edited prompt is the same command as the first run.
 await langfuse.api.datasets
   .create({
-    name: gateName,
-    description: `Does an agent apply the rules in .claude/skills? One item per rule, gate ${gateName}.`,
+    name: gate,
+    description: `Does an agent apply the rules in .claude/skills? One item per rule, gate ${gate}.`,
   })
   .catch(() => {});
 
@@ -298,7 +312,7 @@ await Promise.all(
   gateTasks.map((task) =>
     langfuse.api.datasetItems.create({
       id: task.id,
-      datasetName: gateName,
+      datasetName: gate,
       input: { prompts: task.prompts },
       expectedOutput: task.grader,
       // The task id travels in metadata because the runner hands a task nothing
@@ -317,7 +331,7 @@ const taskById = new Map(gateTasks.map((task) => [task.id, task]));
 // endpoint filters on, and unlike a delete it keeps the runs that item already
 // scored: the line over time this suite draws is made of those.
 const { data: liveItems } = await langfuse.api.datasetItems.list({
-  datasetName: gateName,
+  datasetName: gate,
   // One page, because a gate is a handful of rules and archived items stop
   // coming back — the list this filters can only be that handful plus whatever
   // one edit of `tasks.ts` just orphaned.
@@ -330,7 +344,7 @@ if (orphans.length > 0) {
     orphans.map((item) =>
       langfuse.api.datasetItems.create({
         id: item.id,
-        datasetName: gateName,
+        datasetName: gate,
         // Resent because the upsert writes the whole item: omitting these
         // archives the item and empties it, and an emptied item is a past run
         // nobody can read the prompt of.
@@ -430,17 +444,17 @@ if (reusable.length > 0) {
   console.log(`Reusing stored trials: ${reusable.join(", ")}`);
 }
 
-const dataset = await langfuse.dataset.get(gateName);
+const dataset = await langfuse.dataset.get(gate);
 
 const result = await dataset.runExperiment({
   name: runName,
-  description: `${gateName}, ${arm}, ${agent.id} ${model}${effort === undefined ? "" : ` at ${effort}`}, ${selected.length} task(s), commit ${commitSha.slice(0, 7)}`,
+  description: `${gate}, ${arm}, ${agent.id} ${model}${effort === undefined ? "" : ` at ${effort}`}, ${selected.length} task(s), commit ${commitSha.slice(0, 7)}`,
   maxConcurrency: concurrency,
   metadata: {
     "langfuse.commit": commitSha,
     "langfuse.branch": gitBranch,
     arm,
-    gate: gateName,
+    gate: gate,
     skillTree: skillTreeAtHead,
     // "none" on the arms that restore nothing, which is not the same claim as
     // a baseline that went unrecorded.
@@ -569,6 +583,47 @@ const result = await dataset.runExperiment({
             .join(" | ")}`,
         },
       ];
+    },
+    /**
+     * Whether the gate's own skill was loaded at all. A `*_gate` score that
+     * moves is otherwise two hypotheses in one number — the rule stopped
+     * working, or the agent never reached for it — and until now the evidence
+     * sat unread in the agent's tool calls.
+     *
+     * On the `without-skills` arm it is the strip verifying itself. The score
+     * belongs at 0 there; anything above it means `stripSkills` left the skill
+     * somewhere the agent could still find, and the two arms of that comparison
+     * were never the two treatments the run says they were.
+     */
+    async ({ output }) => {
+      const outcome = output as ItemOutcome;
+      if (outcome.status === "skipped") return [];
+
+      // Only the trials whose agent can answer. An agent that reports no tool
+      // calls is not an agent that loaded nothing, and a zero standing in for
+      // the difference reads as a skill that never fires.
+      const answered = outcome.trials.flatMap(({ outcome: trial }) =>
+        trial.status === "completed" && trial.skillsInvoked !== undefined
+          ? [trial.skillsInvoked]
+          : [],
+      );
+      if (answered.length === 0) return [];
+
+      // A plugin's skill is invoked as `plugin:skill`, so the gate is the tail
+      // of the name rather than the whole of it.
+      const isGate = (skill: string): boolean => skill === gate || skill.endsWith(`:${gate}`);
+
+      const loaded = answered.filter((skills) => skills.some(isGate)).length;
+      // Every skill any trial reached for, named in the comment: a gate that
+      // never loads while a neighbour always does is the diagnosis, and it is
+      // invisible in the number alone.
+      const named = [...new Set(answered.flat())];
+
+      return {
+        name: "skill_invoked",
+        value: loaded / answered.length,
+        comment: `${gate} loaded in ${loaded}/${answered.length} trial(s). Invoked: ${named.length === 0 ? "none" : named.join(", ")}`,
+      };
     },
     async ({ output }) => {
       const outcome = output as ItemOutcome;

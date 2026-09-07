@@ -1,137 +1,25 @@
 /**
- * The eval suite: one task per rule an agent working in this repo is meant to
- * apply and no linter can check.
+ * The eval suite of this repository: one task per rule an agent working here is
+ * meant to apply and no linter can check. Read through `evals.config.ts`, which
+ * is what the harness loads; the shape of a task and the grading of its answer
+ * are in `./grading.ts` and are not this repository's business.
  *
  * Prompts are deliberately indirect. Naming the rule ("do not use an effect")
  * would measure instruction-following instead of whether the agent retrieved
  * the skill, so each prompt states only the product need.
  */
-import { z } from "zod";
-
-/** What the rule says a correct answer looks like. */
-export const EXPECTATIONS = ["none", "some"] as const;
-
-export type Expectation = (typeof EXPECTATIONS)[number];
-
-/**
- * The API family a diff-graded task is counted on. It also names the score, so
- * `effects` keeps scoring as `effects_gate` and the history from the first runs
- * continues.
- */
-export const DIFF_FAMILIES = ["effects", "memoization", "sorting", "sets"] as const;
-
-export type DiffFamily = (typeof DIFF_FAMILIES)[number];
-
-/**
- * How a task's answer is scored.
- *
- * `diff` counts calls the agent added and is the cheaper, harder-to-argue-with
- * grader: prefer it whenever a rule has an API signature. `judge` exists for the
- * rules that do not — where the same code can be right or wrong depending on why
- * it was written, and the reason is in the agent's summary rather than the diff.
- *
- * Both name their score `${family}_gate`, so a judged task is a line on the same
- * chart as a counted one and neither is privileged.
- */
-export type Grader =
-  | { readonly kind: "diff"; readonly family: DiffFamily; readonly expect: Expectation }
-  | {
-      readonly kind: "judge";
-      /**
-       * Names the score, exactly as a diff grader's family does. A task whose
-       * grader was converted from one kind to the other keeps the family it had
-       * — `effects-reset-state-with-key` and `modern-set-operations` were both
-       * counted before they were judged — so the score stays one line on a chart
-       * instead of starting a second under a new name.
-       */
-      readonly family: string;
-      /**
-       * The question, in prose, that the judge answers about the diff and the
-       * agent's summary. It lives here rather than in a Langfuse form because a
-       * criterion is the definition of the score: it has to be reviewable in a
-       * pull request and changeable in the same commit as the rule it measures.
-       */
-      readonly criterion: string;
-    };
-
-/**
- * Whether the trial lets the agent finish with `yarn verify && yarn test`, as
- * `AGENTS.md` asks of every agent in this repo.
- */
-export type ChecksPolicy = "run" | "skip";
-
-/**
- * The skills a gate can name, spelled exactly as their directory under
- * `.claude/skills/`. A gate is one Langfuse dataset, and naming it after the
- * directory is what lets CI run only the gates whose rules a pull request
- * actually touched: a rule-family name like "effects" matches no path, a skill
- * name matches `.claude/skills/react/**`.
- *
- * `intentional-tests/` is left out on purpose — it is not one of the five skills
- * `AGENTS.md` declares, and nothing here gates it.
- */
-export const GATES = ["engineer", "javascript", "react", "testing", "typescript"] as const;
-
-export type Gate = (typeof GATES)[number];
-
-export type EvalTask = {
-  /**
-   * The rule file under `.claude/skills/<gate>/references/` the prompt tempts an
-   * agent to break, minus the extension — so the dataset item id names what is
-   * being gated. The positive control has no rule to point at and says so.
-   */
-  readonly id: string;
-  /**
-   * The skill whose rules this task gates, and so the Langfuse dataset it lands
-   * in. Coarser than the rule: a `react` run averages effects and re-render
-   * alike. Nothing diagnostic is lost, because the per-task score is named after
-   * the grader's family, not after the gate, and `effects_gate` stays its own
-   * line.
-   */
-  readonly gate: Gate;
-  /** How the answer is scored, and what a correct one looks like. */
-  readonly grader: Grader;
-  /**
-   * Handed to the agent verbatim, one trial per entry. Never names a rule, a
-   * hook or a skill. Several entries are one need in several voices — precise,
-   * casual, an edge case — so a rule that survives only the phrasing it was
-   * written against shows as a lower score rather than a pass. `--repeat` runs
-   * every entry that many times, and the per-task score averages them all.
-   */
-  readonly prompts: readonly [string, ...string[]];
-  /** The rule the prompt tests, stated as a rule. Read by humans in Langfuse. */
-  readonly rationale: string;
-  /**
-   * "skip" roughly halves a trial: the checks are most of the turns. Nothing in
-   * `yarn verify` or the test suite can catch a misplaced effect — that absence
-   * is why this suite exists — so for an effects task they are cost without
-   * signal. A task whose rule a check *could* catch must say "run".
-   */
-  readonly checks: ChecksPolicy;
-};
-
-/**
- * The grader as it travels to Langfuse and back: `run.ts` reads one off a
- * dataset item it did not write in this process — an item a previous run stored,
- * possibly under an older shape — and that is untrusted input, not a literal
- * `tsc` has already checked. A schema says what is acceptable once; the
- * hand-rolled field-by-field check it replaced said it a second time, and only
- * one of the two was ever going to be updated.
- */
-export const graderSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("diff"),
-    family: z.enum(DIFF_FAMILIES),
-    expect: z.enum(EXPECTATIONS),
-  }),
-  z.object({ kind: z.literal("judge"), family: z.string(), criterion: z.string() }),
-]) satisfies z.ZodType<Grader>;
+import type { EvalTask } from "./grading.ts";
 
 export const TASKS: readonly EvalTask[] = [
   {
     id: "rerender-derived-state-no-effect",
     gate: "react",
-    grader: { kind: "diff", family: "effects", expect: "none" },
+    grader: {
+      kind: "diff",
+      family: "effects",
+      expect: "none",
+      added: String.raw`\buse(Layout)?Effect\s*\(`,
+    },
     prompts: [
       "On EditAccountPage, show how many characters remain under the bio field as the user types, out of the field's maximum.",
     ],
@@ -207,7 +95,12 @@ export const TASKS: readonly EvalTask[] = [
   {
     id: "modern-array-tosorted",
     gate: "javascript",
-    grader: { kind: "diff", family: "sorting", expect: "some" },
+    grader: {
+      kind: "diff",
+      family: "sorting",
+      expect: "some",
+      added: String.raw`\.(toSorted|toReversed|toSpliced)\s*\(`,
+    },
     prompts: [
       "The language dropdown on EditAccountPage lists its options in the order the languages are declared. List them in alphabetical order of the label the visitor reads instead.",
     ],
@@ -278,48 +171,3 @@ export const TASKS: readonly EvalTask[] = [
     checks: "run",
   },
 ];
-
-/**
- * The gates that actually carry a task, which is all CI can run: a gate named in
- * `GATES` but empty would spawn a job with nothing to score.
- */
-export const gatesWithTasks = (): readonly Gate[] => [...new Set(TASKS.map((task) => task.gate))];
-
-export type Grade = {
-  readonly passed: boolean;
-  readonly addedCount: number;
-  readonly comment: string;
-};
-
-/**
- * Counts calls the agent *added*, not calls the file already had, so a task that
- * touches a component with a pre-existing legitimate effect cannot fail for
- * someone else's code.
- */
-const ADDED_CALL: Record<DiffFamily, RegExp> = {
-  effects: /^\+.*\buse(Layout)?Effect\s*\(/gm,
-  memoization: /^\+.*\b(useMemo|useCallback|memo)\s*\(/gm,
-  sorting: /^\+.*\.(toSorted|toReversed|toSpliced)\s*\(/gm,
-  sets: /^\+.*\.(union|intersection|difference|symmetricDifference|isSubsetOf|isSupersetOf|isDisjointFrom)\s*\(/gm,
-};
-
-/**
- * One rule for both graders, so `effects_gate` keeps its history and a judged
- * task cannot quietly land on a differently-shaped name.
- */
-export const scoreName = (grader: Grader): string => `${grader.family}_gate`;
-
-export const gradeAdded = (diff: string, grader: Extract<Grader, { kind: "diff" }>): Grade => {
-  if (diff.trim() === "") {
-    return { passed: false, addedCount: 0, comment: "no source change" };
-  }
-
-  const addedCount = [...diff.matchAll(ADDED_CALL[grader.family])].length;
-  const passed = grader.expect === "none" ? addedCount === 0 : addedCount > 0;
-
-  return {
-    passed,
-    addedCount,
-    comment: `expected ${grader.expect}, added ${addedCount} ${grader.family} call(s)`,
-  };
-};

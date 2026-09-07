@@ -27,6 +27,8 @@ on:
       # change what it does, and a documentation edit is not worth a suite.
       - "evals/**"
       - "!evals/README.md"
+      # What this repository asks the suite to measure, and so also a trial.
+      - "evals.config.ts"
       - ".github/workflows/evals.yml"
   # Puts a "Run workflow" button in the Actions tab. It only appears once this
   # file is on the default branch.
@@ -204,13 +206,15 @@ jobs:
             # Whatever changes what a trial *is* moves any gate — there is no
             # subset to narrow to — and moves both arms with it, so the
             # ablation is no longer a constant and the baseline has to be
-            # re-measured. That is: the prompts and criteria (`tasks.ts`), the
-            # agent, its pinned model and the strip itself (`agents.ts`), the
-            # isolation around them (`trial.ts`), the judge and its own pin
-            # (`judge.ts`), the CLI pin (here), and the two files every agent in
-            # this repo reads — the strip removes only the Skills section of
-            # `AGENTS.md`, so the rest of it reaches both arms.
-            if echo "$changed" | grep -qE '^(AGENTS\.md|CLAUDE\.md|evals/(tasks|trial|judge|agents)\.ts|\.github/workflows/evals\.yml)$'; then
+            # re-measured. That is: what this repository asks to be measured
+            # and what counts as an answer (`evals.config.ts`), the prompts and
+            # criteria it points at (`tasks.ts`), the agent, its pinned model
+            # and the strip itself (`agents.ts`), the isolation around them
+            # (`trial.ts`), the judge and its own pin (`judge.ts`), the CLI pin
+            # (here), and the two files every agent in this repo reads — the
+            # strip removes only the Skills section of `AGENTS.md`, so the rest
+            # of it reaches both arms.
+            if echo "$changed" | grep -qE '^(AGENTS\.md|CLAUDE\.md|evals\.config\.ts|evals/(tasks|trial|judge|agents)\.ts|\.github/workflows/evals\.yml)$'; then
               gates=$all
               arms=$both
             # The rest of the harness — `run.ts`, which orchestrates and scores

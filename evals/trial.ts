@@ -3,15 +3,20 @@ import { access, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:f
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describeFailure, type Agent, type AgentStop, type Effort } from "./agents.ts";
-import type { EvalTask, Gate } from "./tasks.ts";
+import { config, repoRoot } from "./config.ts";
+import type { EvalTask } from "./grading.ts";
 
 const run = promisify(execFile);
 
-const REPO_ROOT = new URL("..", import.meta.url).pathname;
-const RUNS_DIR = join(REPO_ROOT, "evals", ".runs");
+const RUNS_DIR = join(repoRoot, "evals", ".runs");
 
-/** Only source files are graded; a change to a config or a doc is not an answer. */
-const SOURCE_PATHS = [":(glob)src/**/*.ts", ":(glob)src/**/*.tsx"];
+/**
+ * What the repository counts as an answer, as git pathspecs. Prefixed with
+ * `:(glob)` because a bare pathspec reads a double star as a single one, so a
+ * glob written to cross directories would match only one level down and quietly
+ * grade a fraction of the change.
+ */
+const SOURCE_PATHS = config.sourcePaths.map((glob) => `:(glob)${glob}`);
 
 /**
  * Which arm a trial belongs to. "without-skills" answers the question a pass
@@ -20,11 +25,12 @@ const SOURCE_PATHS = [":(glob)src/**/*.ts", ":(glob)src/**/*.tsx"];
  * whether an edit to the skill moved anything, against the same code, harness,
  * CLI and hour — the one baseline last night's run cannot be.
  *
- * Comparable within one agent only. Each agent reads its rules from a different
- * place and loads them differently — Claude pulls a skill in on demand, an agent
- * with only an `AGENTS.md` has the whole body in context from the first token —
- * so the arms are not the same treatment across agents. The delta between
- * them is the measurement that travels; the absolute pass rate is not.
+ * Comparable within one agent only. All three discover a skill the same way —
+ * by its description, pulling the body in only once they commit to it — but
+ * each scans directories it names itself, and the ones this repository fills
+ * are Claude's, so what "with-skills" delivers is not the same treatment across
+ * agents. The delta between the arms is the measurement that travels; the
+ * absolute pass rate is not.
  */
 export type Arm = "with-skills" | "without-skills" | "previous-skill";
 
@@ -40,7 +46,7 @@ export type Baseline = {
   readonly ref: string;
   /** What it resolved to when the run started. */
   readonly commit: string;
-  readonly gate: Gate;
+  readonly gate: string;
   /** `git rev-parse <commit>:.claude/skills/<gate>`. */
   readonly tree: string;
 };
@@ -61,7 +67,7 @@ export type Treatment =
  */
 const SKIP_CHECKS = [
   "Scoped exercise: make the change and stop.",
-  "Do not run `yarn verify`, `yarn test`, `yarn e2e` or `yarn dev`.",
+  "Do not run this project's build, test, lint, end-to-end or dev-server commands.",
 ].join(" ");
 
 const promptFor = (task: EvalTask, variant: number): string => {
@@ -91,10 +97,12 @@ export type TrialOutcome =
       readonly costUsd: number | undefined;
       readonly turns: number | undefined;
       readonly durationMs: number | undefined;
+      /** See `Agent`: undefined is a CLI that cannot say, not a skill unused. */
+      readonly skillsInvoked: readonly string[] | undefined;
     }
   | { readonly status: "unavailable"; readonly reason: string };
 
-const git = async (args: readonly string[], cwd = REPO_ROOT): Promise<string> => {
+const git = async (args: readonly string[], cwd = repoRoot): Promise<string> => {
   const { stdout } = await run("git", [...args], { cwd, maxBuffer: 64 * 1024 * 1024 });
   return stdout;
 };
@@ -102,18 +110,48 @@ const git = async (args: readonly string[], cwd = REPO_ROOT): Promise<string> =>
 /** A model id is free-form and ends up in a filename; a `/` in one is a lost run. */
 const slug = (value: string): string => value.replaceAll(/[^\w.-]/g, "-");
 
-const skillDir = (gate: Gate): string => join(".claude", "skills", gate);
+const skillDir = (gate: string): string => join(".claude", "skills", gate);
 
 /** The hash of one gate's skill directory at a revision: the text under test. */
-export const skillTree = async (gate: Gate, revision: string): Promise<string> =>
+export const skillTree = async (gate: string, revision: string): Promise<string> =>
   (await git(["rev-parse", `${revision}:${skillDir(gate)}`])).trim();
 
-export const resolveBaseline = async (ref: string, gate: Gate): Promise<Baseline> => ({
+export const resolveBaseline = async (ref: string, gate: string): Promise<Baseline> => ({
   ref,
   gate,
   commit: (await git(["rev-parse", `${ref}^{commit}`])).trim(),
   tree: await skillTree(gate, ref),
 });
+
+/**
+ * Where a coding agent looks for skills, across the three CLIs this suite runs:
+ * `.claude/skills` is Claude's and Copilot's, `.agents/skills` is Codex's and
+ * Copilot's, `.github/skills` is Copilot's alone.
+ */
+const SKILL_DIRS = [".claude/skills", ".github/skills", ".agents/skills"] as const;
+
+/**
+ * The rules under test, removed wherever any agent would have found them —
+ * which is why this takes no agent. Emptying a directory this repository never
+ * filled costs nothing, and it means a skill later dropped into one nobody
+ * thought to strip cannot leak into the arm that is meant to be without them.
+ *
+ * `AGENTS.md`'s Skills section goes with the directories on purpose. Leaving it
+ * would point the agent at files that no longer exist, and an agent that notices
+ * a missing skill behaves differently from one that was never told skills exist
+ * — two variables instead of one. For the same reason only the skill
+ * directories are removed: `.claude/settings.json` is empty today, but the day
+ * it holds a hook, deleting it would change a second thing.
+ */
+const stripSkills = async (worktree: string): Promise<void> => {
+  await Promise.all(
+    SKILL_DIRS.map((dir) => rm(join(worktree, dir), { recursive: true, force: true })),
+  );
+
+  const agentsPath = join(worktree, "AGENTS.md");
+  const agents = await readFile(agentsPath, "utf8");
+  await writeFile(agentsPath, agents.replace(/^## Skills\n[\s\S]*?(?=^## )/m, ""));
+};
 
 /**
  * Only the gate's directory moves. The other skills and `AGENTS.md` stay at
@@ -196,7 +234,7 @@ const readCachedOutcome = async (key: string): Promise<TrialOutcome | undefined>
  * the rule it is measuring.
  */
 const linkDependencies = async (worktree: string): Promise<void> => {
-  const shared = join(REPO_ROOT, "node_modules");
+  const shared = join(repoRoot, "node_modules");
   const installed = await access(shared).then(
     () => true,
     () => false,
@@ -255,7 +293,7 @@ export const runTrial = async (options: {
   await git(["worktree", "add", worktree, "-b", branch]);
 
   try {
-    if (treatment.arm === "without-skills") await agent.stripRules(worktree);
+    if (treatment.arm === "without-skills") await stripSkills(worktree);
     if (treatment.arm === "previous-skill") await restoreSkill(worktree, treatment.baseline);
     await linkDependencies(worktree);
 
@@ -281,6 +319,7 @@ export const runTrial = async (options: {
       costUsd: attempt.costUsd,
       turns: attempt.turns,
       durationMs: attempt.durationMs,
+      skillsInvoked: attempt.skillsInvoked,
     };
 
     await mkdir(RUNS_DIR, { recursive: true });
