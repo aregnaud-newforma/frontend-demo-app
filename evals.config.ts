@@ -15,5 +15,8 @@ export default {
   // Wider than the file types that exist today on purpose. This is a whitelist,
   // and a whitelist that misses a real answer scores it 0 rather than showing
   // nothing — the one number this suite must not invent.
-  sourcePaths: ["src/**"],
+  //
+  // server/ too: the API process is where an API-route rule can be broken, and
+  // the javascript gate carries three tasks that ask for a change there.
+  sourcePaths: ["src/**", "server/**"],
 } satisfies EvalsConfig;

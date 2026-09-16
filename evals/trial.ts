@@ -307,6 +307,11 @@ export const runTrial = async (options: {
 
     if (attempt.status === "unavailable") return attempt;
 
+    // A file the agent created is untracked, and `git diff HEAD` does not list
+    // untracked files: a new component, a new locale module or a new test would
+    // grade as if it had never been written. Intent-to-add puts an empty entry
+    // in the index so the diff shows the file whole, without staging content.
+    await git(["add", "--intent-to-add", "--", ...SOURCE_PATHS], worktree);
     const diff = await git(["diff", "HEAD", "--", ...SOURCE_PATHS], worktree);
     const names = await git(["diff", "HEAD", "--name-only", "--", ...SOURCE_PATHS], worktree);
 
