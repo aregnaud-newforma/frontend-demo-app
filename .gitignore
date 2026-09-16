@@ -41,6 +41,11 @@ docs/course/
 # Captured eval trial outcomes: large, machine-written, and re-creatable by a run.
 evals/.runs/
 
+# The suite's clone of the repository that holds the rules under test, named by
+# `evals/skills.pin.json`. A checkout of somebody else's repository is build
+# output: re-creatable, and not this repository's to version.
+evals/.skills/
+
 # The eval suite's answer key. It maps each rule to what checks it, which states
 # in one line what a task is graded on — no hand-written `useMemo`, `Set` methods
 # need ES2025. A trial's worktree is a checkout of HEAD, so a tracked copy would

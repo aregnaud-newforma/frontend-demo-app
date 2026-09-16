@@ -1,0 +1,5 @@
+{
+  "url": "git@ssh.dev.azure.com:v3/BIMOneOnline/BIMOne/NKCopilotCustomAgents",
+  "ref": "feature/agent-agnostic-plugin-layout-on-master",
+  "path": "plugins/frontend-skills/skills"
+}

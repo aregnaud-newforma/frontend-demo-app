@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { describeFailure, type Agent, type AgentStop, type Effort } from "./agents.ts";
 import { config, repoRoot } from "./config.ts";
-import type { EvalTask } from "./grading.ts";
+import { gatesWithTasks, type EvalTask } from "./grading.ts";
+import { installGate, installSkills, resolveSkills, type SkillSet } from "./skills.ts";
 
 const run = promisify(execFile);
 
@@ -17,6 +18,17 @@ const RUNS_DIR = join(repoRoot, "evals", ".runs");
  * grade a fraction of the change.
  */
 const SOURCE_PATHS = config.sourcePaths.map((glob) => `:(glob)${glob}`);
+
+/**
+ * Every gate this suite measures, installed into every worktree whatever the
+ * trial is about. The set is constant on purpose: a task about `react` running
+ * beside the other rules and one running alone are two environments, and the
+ * difference would land inside the score of whichever ran second.
+ *
+ * The gates and no more, though the plugin ships other skills. An extra one is
+ * not neutral — see `installSkills`.
+ */
+const GATES = gatesWithTasks(config.tasks);
 
 /**
  * Which arm a trial belongs to. "without-skills" answers the question a pass
@@ -35,11 +47,12 @@ const SOURCE_PATHS = config.sourcePaths.map((glob) => `:(glob)${glob}`);
 export type Arm = "with-skills" | "without-skills" | "previous-skill";
 
 /**
- * What "previous-skill" restores: one gate's skill directory as it was at a
- * commit, inside a worktree that is otherwise HEAD. Carries the directory's tree
- * hash because that, not the ref, is the experiment: `main` moves while its
- * rules stay put, so two refs holding the same text are one baseline, and a
- * ref whose text equals HEAD's has nothing to compare.
+ * What "previous-skill" restores: one gate's rules as they were at a commit of
+ * the skills repository, inside a worktree otherwise filled from the pin.
+ * Carries the directory's tree hash because that, not the ref, is the
+ * experiment: a branch moves while its rules stay put, so two refs holding the
+ * same text are one baseline, and a ref whose text equals the pin's has nothing
+ * to compare.
  */
 export type Baseline = {
   /** As given on the command line, for the run metadata. */
@@ -47,18 +60,22 @@ export type Baseline = {
   /** What it resolved to when the run started. */
   readonly commit: string;
   readonly gate: string;
-  /** `git rev-parse <commit>:.claude/skills/<gate>`. */
+  /** `git rev-parse <commit>:<pin.path>/<gate>`, in the skills repository. */
   readonly tree: string;
 };
 
 /**
- * The arm together with what it needs, so a "previous-skill" trial cannot be
- * asked for without a baseline and a baseline cannot be handed to an arm that
- * would ignore it.
+ * The arm together with what it needs: the rules a trial is given, so no trial
+ * has to resolve them for itself, and a baseline that "previous-skill" cannot be
+ * asked for without and no other arm can be handed.
+ *
+ * `skills` rides here rather than being read inside `runTrial` because the cache
+ * key is built before the worktree exists. A revision resolved later than that
+ * would key a trial by rules it had not been given yet.
  */
 export type Treatment =
-  | { readonly arm: "with-skills" | "without-skills" }
-  | { readonly arm: "previous-skill"; readonly baseline: Baseline };
+  | { readonly arm: "with-skills" | "without-skills"; readonly skills: SkillSet }
+  | { readonly arm: "previous-skill"; readonly skills: SkillSet; readonly baseline: Baseline };
 
 /**
  * Appended when a task's checks policy is "skip". Harness instruction, not part
@@ -110,18 +127,16 @@ const git = async (args: readonly string[], cwd = repoRoot): Promise<string> => 
 /** A model id is free-form and ends up in a filename; a `/` in one is a lost run. */
 const slug = (value: string): string => value.replaceAll(/[^\w.-]/g, "-");
 
-const skillDir = (gate: string): string => join(".claude", "skills", gate);
-
-/** The hash of one gate's skill directory at a revision: the text under test. */
-export const skillTree = async (gate: string, revision: string): Promise<string> =>
-  (await git(["rev-parse", `${revision}:${skillDir(gate)}`])).trim();
-
-export const resolveBaseline = async (ref: string, gate: string): Promise<Baseline> => ({
-  ref,
-  gate,
-  commit: (await git(["rev-parse", `${ref}^{commit}`])).trim(),
-  tree: await skillTree(gate, ref),
-});
+/**
+ * A baseline names a ref of the **skills** repository, not of this one. Both
+ * halves of it are resolved there: a `--baseline-ref main` answered by this
+ * repository's `main` would be a commit with no rules in it, resolved without
+ * complaint.
+ */
+export const resolveBaseline = async (ref: string, gate: string): Promise<Baseline> => {
+  const resolved = await resolveSkills([gate], ref);
+  return { ref, gate, commit: resolved.commit, tree: resolved.tree };
+};
 
 /**
  * Where a coding agent looks for skills, across the three CLIs this suite runs:
@@ -131,17 +146,19 @@ export const resolveBaseline = async (ref: string, gate: string): Promise<Baseli
 const SKILL_DIRS = [".claude/skills", ".github/skills", ".agents/skills"] as const;
 
 /**
- * The rules under test, removed wherever any agent would have found them —
- * which is why this takes no agent. Emptying a directory this repository never
- * filled costs nothing, and it means a skill later dropped into one nobody
- * thought to strip cannot leak into the arm that is meant to be without them.
+ * The arm that gets no rules. Nothing is installed into the worktree, so there
+ * is in principle nothing to remove — the directories are emptied anyway,
+ * because this repository does not own what an agent might find there and a
+ * skill dropped into one of them by some other hand must not leak into the arm
+ * that is meant to be without them. It costs nothing on a directory that is
+ * already absent.
  *
- * `AGENTS.md`'s Skills section goes with the directories on purpose. Leaving it
- * would point the agent at files that no longer exist, and an agent that notices
- * a missing skill behaves differently from one that was never told skills exist
- * — two variables instead of one. For the same reason only the skill
- * directories are removed: `.claude/settings.json` is empty today, but the day
- * it holds a hook, deleting it would change a second thing.
+ * `AGENTS.md`'s Skills section goes with them on purpose. Leaving it would point
+ * the agent at files that do not exist, and an agent that notices a missing
+ * skill behaves differently from one that was never told skills exist — two
+ * variables instead of one. For the same reason only the skill directories go:
+ * `.claude/settings.json` is empty at HEAD, but the day it holds a hook,
+ * deleting it would change a second thing.
  */
 const stripSkills = async (worktree: string): Promise<void> => {
   await Promise.all(
@@ -154,16 +171,12 @@ const stripSkills = async (worktree: string): Promise<void> => {
 };
 
 /**
- * Only the gate's directory moves. The other skills and `AGENTS.md` stay at
- * HEAD in both arms of the comparison, which is what makes them constants.
- * Removed first: a checkout restores what the commit had and leaves alone what
- * it did not, and a rule file added since would otherwise survive into the
- * baseline.
+ * Only the gate's directory moves. The other skills and `AGENTS.md` stay at the
+ * pinned revision in both arms of the comparison, which is what makes them
+ * constants.
  */
 const restoreSkill = async (worktree: string, baseline: Baseline): Promise<void> => {
-  const dir = skillDir(baseline.gate);
-  await rm(join(worktree, dir), { recursive: true, force: true });
-  await git(["checkout", baseline.commit, "--", dir], worktree);
+  await installGate(worktree, baseline.gate, baseline.commit);
 };
 
 /**
@@ -172,10 +185,21 @@ const restoreSkill = async (worktree: string, baseline: Baseline): Promise<void>
  * trial of `main` to a run that said `HEAD~1` when the two hold the same rules,
  * and must not serve one to the other once `main` has moved.
  */
-const armKey = (treatment: Treatment): string =>
-  treatment.arm === "previous-skill"
-    ? `${treatment.arm}-${treatment.baseline.tree.slice(0, 12)}`
-    : treatment.arm;
+const armKey = (treatment: Treatment): string => {
+  const rules = treatment.skills.tree.slice(0, 12);
+  // "without-skills" carries no rule hash, and not as an oversight: no rules are
+  // installed in that arm, so the revision is not one of its inputs. Keying it
+  // by the pin would throw away the one arm worth caching — the control never
+  // changes — every time a rule nobody ablated moved.
+  switch (treatment.arm) {
+    case "without-skills":
+      return treatment.arm;
+    case "with-skills":
+      return `${treatment.arm}-${rules}`;
+    case "previous-skill":
+      return `${treatment.arm}-${rules}-${treatment.baseline.tree.slice(0, 12)}`;
+  }
+};
 
 /**
  * Keyed by agent, arm, model and effort as well as task, because all of them are
@@ -293,7 +317,11 @@ export const runTrial = async (options: {
   await git(["worktree", "add", worktree, "-b", branch]);
 
   try {
+    // The rules go in before anything else reads the worktree, and the order
+    // within is the experiment: every gate at the pin, then the one gate under
+    // test moved back to its baseline.
     if (treatment.arm === "without-skills") await stripSkills(worktree);
+    else await installSkills(worktree, GATES, treatment.skills.commit);
     if (treatment.arm === "previous-skill") await restoreSkill(worktree, treatment.baseline);
     await linkDependencies(worktree);
 

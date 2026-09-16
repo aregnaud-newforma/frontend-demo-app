@@ -31,7 +31,6 @@ import {
   cachedTaskIds,
   resolveBaseline,
   runTrial,
-  skillTree,
   type Arm,
   type Baseline,
   type Treatment,
@@ -39,6 +38,8 @@ import {
 } from "./trial.ts";
 import { agentNamed, AGENTS, DEFAULT_AGENT, type Effort } from "./agents.ts";
 import { judge, judgeNamed, DEFAULT_JUDGE, JUDGES } from "./judge.ts";
+import { resolveSkills } from "./skills.ts";
+import { pin } from "./pin.ts";
 
 const run = promisify(execFile);
 
@@ -261,12 +262,20 @@ if (arm === undefined) {
 }
 
 /**
- * The text under test, and the text it is compared to. Recorded for every arm,
- * because it is what pairs a `with-skills` run with the `previous-skill` run
- * beside it — two runs an hour apart are otherwise told apart by the clock.
+ * The rules this run installs, resolved once before any trial and handed to all
+ * of them. Recorded for every arm, because it is what pairs a `with-skills` run
+ * with the `previous-skill` run beside it — two runs an hour apart are otherwise
+ * told apart by the clock.
+ *
+ * Resolved here rather than inside a trial because the cache key is built before
+ * the worktree exists: rules resolved any later would key a trial by text it had
+ * not been given.
  */
-const skillTreeAtHead = await skillTree(gate, "HEAD").catch((): never => {
-  console.error(`No skill directory at .claude/skills/${gate}: a gate is one, named after it.`);
+const skills = await resolveSkills(knownGates).catch((error: unknown): never => {
+  console.error(
+    `Could not read the rules for gate "${gate}" at ${pin.ref} of ${pin.url}: ${String(error)}`,
+  );
+  console.error("They live in evals/skills.pin.json. Check the ref, the path, and your access.");
   process.exit(1);
 });
 
@@ -288,20 +297,22 @@ const baselineAt = async (ref: string | undefined): Promise<Baseline> => {
   }
   const baseline = await resolveBaseline(ref, gate).catch(() => undefined);
   if (baseline === undefined) {
-    console.error(`No skill directory for gate "${gate}" at "${ref}".`);
+    console.error(`No rules for gate "${gate}" at "${ref}" of the skills repository.`);
     process.exit(1);
   }
   // Paying for both sides of a comparison whose sides are the same text is the
   // one thing this arm exists to avoid.
-  if (baseline.tree === skillTreeAtHead) {
-    console.error(`Nothing to compare: .claude/skills/${gate} is identical at ${ref} and HEAD.`);
+  if (baseline.tree === (await resolveSkills([gate])).tree) {
+    console.error(`Nothing to compare: the ${gate} rules are identical at ${ref} and ${pin.ref}.`);
     process.exit(1);
   }
   return baseline;
 };
 
 const treatment: Treatment =
-  arm === "previous-skill" ? { arm, baseline: await baselineAt(baselineRef) } : { arm };
+  arm === "previous-skill"
+    ? { arm, skills, baseline: await baselineAt(baselineRef) }
+    : { arm, skills };
 
 const effortNamed = (
   flag: "effort" | "judge-effort",
@@ -535,7 +546,14 @@ const result = await dataset.runExperiment({
     "langfuse.branch": gitBranch,
     arm,
     gate: gate,
-    skillTree: skillTreeAtHead,
+    // Which rules, from which repository, at which revision. `skillTree` is the
+    // text itself and `skillsCommit` the commit that carried it: a branch moves
+    // while its rules stay put, and only the first can say two runs measured one
+    // thing.
+    skillTree: skills.tree,
+    skillsRef: skills.ref,
+    skillsCommit: skills.commit,
+    skillsRepo: pin.url,
     // "none" on the arms that restore nothing, which is not the same claim as
     // a baseline that went unrecorded.
     baselineRef: treatment.arm === "previous-skill" ? treatment.baseline.ref : "none",

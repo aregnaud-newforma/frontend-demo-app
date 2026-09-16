@@ -19,7 +19,11 @@ on:
     # rule runs nothing, which is the right answer.
     types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
-      - ".claude/skills/**"
+      # The rules themselves live in another repository now. What reaches this
+      # one is the pin naming the revision under test, so bumping it is how a
+      # rule change arrives here — and the only path filter that still stands in
+      # for "a rule moved".
+      - "evals/skills.pin.json"
       - "AGENTS.md"
       - "CLAUDE.md"
       # The suite is also under test when the suite itself changes. Its prose
@@ -42,7 +46,7 @@ on:
         # named twice. `yarn evals --list-gates` is the source; a name that has
         # drifted out of it fails the run rather than scoring nothing. "all" is
         # every gate that has a task.
-        options: ["all", "react", "javascript", "typescript"]
+        options: ["all", "react", "javascript", "typescript", "testing", "engineer"]
         default: "all"
       arm:
         description: "with-skills measures the repository as it stands, without-skills ablates the rules, previous-skill restores the skill from `baseline`; both runs with-skills and without-skills"
@@ -51,12 +55,12 @@ on:
         options: ["both", "with-skills", "without-skills", "previous-skill"]
         default: "both"
       baseline:
-        description: "For previous-skill: the ref whose skill directory is the baseline. Refused when its rules equal the branch's."
+        description: "For previous-skill: a ref of the SKILLS repository whose rules are the baseline, not of this one. Refused when they equal the pinned revision's."
         required: false
         type: string
-        default: "main"
+        default: ""
       agent:
-        description: "Which agent to measure. Only claude has ever been run — see evals/README.md before trusting a codex or copilot score."
+        description: "Which agent to measure. Codex has never been run — see evals/README.md before trusting a score from it."
         required: false
         type: choice
         options: ["claude", "codex", "copilot", "both"]
@@ -183,11 +187,16 @@ jobs:
             baseline=$REQUESTED_BASELINE
           else
             changed=$(git diff --name-only "origin/$BASE...HEAD")
-            touched=$(echo "$changed" \
-              | sed -n 's|^\.claude/skills/\([^/]*\)/.*|\1|p' \
-              | sort -u \
-              | jq -Rsc 'split("\n") - [""]')
-            baseline=$(git merge-base "origin/$BASE" HEAD)
+            # Nothing here names a gate any more: the rules are another
+            # repository's, and this diff can only show that the pin moved, not
+            # which rule moved with it. `touched` therefore stays empty and the
+            # pin branch below carries what it used to.
+            touched='[]'
+            # The baseline was this repository's merge base, which named a
+            # commit of this repository's skills. There is no such thing now —
+            # `--baseline-ref` takes a ref of the skills repository, which only
+            # a person or that repository's own pipeline can supply.
+            baseline=''
           fi
 
           if [ "$EVENT" = "workflow_dispatch" ]; then
@@ -214,9 +223,17 @@ jobs:
             # (here), and the two files every agent in this repo reads — the
             # strip removes only the Skills section of `AGENTS.md`, so the rest
             # of it reaches both arms.
-            if echo "$changed" | grep -qE '^(AGENTS\.md|CLAUDE\.md|evals\.config\.ts|evals/(tasks|trial|judge|agents)\.ts|\.github/workflows/evals\.yml)$'; then
+            if echo "$changed" | grep -qE '^(AGENTS\.md|CLAUDE\.md|evals\.config\.ts|evals/(tasks|trial|judge|agents|skills|pin)\.ts|\.github/workflows/evals\.yml)$'; then
               gates=$all
               arms=$both
+            # A pin bump is a rule edit arriving from the other repository, and
+            # it moves one arm only: `without-skills` installs nothing, so its
+            # score cannot follow a rule it never received. Running it here
+            # would be paying to re-measure a constant — the same reasoning the
+            # gate-level branch below applies to a local skill edit.
+            elif echo "$changed" | grep -qE '^evals/skills\.pin\.json$'; then
+              gates=$all
+              arms='["with-skills"]'
             # The rest of the harness — `run.ts`, which orchestrates and scores
             # — decides what is recorded, not what the agent is given: it
             # cannot move one arm relative to the other, and a comparison whose
@@ -332,6 +349,38 @@ jobs:
         if: matrix.agent == 'codex'
         run: npm install -g @openai/codex@0.153.4
 
+      # The rules under test, which this repository does not hold: they live in
+      # the repository `evals/skills.pin.json` names, and a job without them
+      # would fill no worktree, score 0 on every task, and read as a skill that
+      # stopped working. `skills.ts` refuses to run rather than let that happen,
+      # so a missing key fails the job loudly.
+      #
+      # Cloned here rather than left to the harness because the harness has no
+      # credentials: `EVALS_SKILLS_DIR` is how a checkout made with them is
+      # handed over. Full history, because `--baseline-ref` reaches for a commit
+      # older than the pin.
+      - name: Clone the rules under test
+        env:
+          SKILLS_SSH_KEY: ${{ secrets.SKILLS_SSH_KEY }}
+        run: |
+          if [ -z "$SKILLS_SSH_KEY" ]; then
+            echo "::error::SKILLS_SSH_KEY is not set. It is a read-only deploy key for the repository named in evals/skills.pin.json, without which no job can read the rules under test." >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SKILLS_SSH_KEY" > ~/.ssh/skills
+          chmod 600 ~/.ssh/skills
+          # The host is whatever the pin names, so its key is taken on first
+          # contact rather than pinned here — a second place to keep in step.
+          url=$(jq -r .url evals/skills.pin.json)
+          host=$(echo "$url" | sed -n 's|^[^@]*@\([^:/]*\).*|\1|p')
+          ssh-keyscan -H "$host" >> ~/.ssh/known_hosts 2>/dev/null
+
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/skills -o IdentitiesOnly=yes" \
+            git clone "$url" "$RUNNER_TEMP/skills"
+          echo "EVALS_SKILLS_DIR=$RUNNER_TEMP/skills" >> "$GITHUB_ENV"
+
       - name: Run gate
         env:
           # A subscription token from `claude setup-token`, not an API key: the
@@ -367,7 +416,7 @@ jobs:
           CONCURRENCY: "3"
           # Passed to the `previous-skill` arm alone: `run.ts` refuses it on
           # the others, so nothing is recorded that was not applied.
-          BASELINE: ${{ matrix.arm == 'previous-skill' && format('--baseline-ref {0}', needs.changes.outputs.baseline) || '' }}
+          BASELINE: ${{ (matrix.arm == 'previous-skill' && needs.changes.outputs.baseline != '') && format('--baseline-ref {0}', needs.changes.outputs.baseline) || '' }}
         # The suite's own report is the summary: it already carries the pass
         # rate, the cost and the Langfuse run URL.
         run: |

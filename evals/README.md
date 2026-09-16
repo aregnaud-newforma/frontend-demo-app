@@ -5,6 +5,12 @@ Does an agent working in this repo actually apply the rules in `.claude/skills/`
 answers it for the ones no linter can reach, starting with the effects decision
 tree in `.claude/skills/react/references/effects.md`.
 
+Those rules are not this repository's any more — they are published as a Claude
+plugin from the repository `evals/skills.pin.json` names. A trial does not
+inherit them from whatever the machine has installed; it installs them itself,
+at the pinned revision, into the worktree it is about to measure. See
+[Where the rules come from](#where-the-rules-come-from).
+
 One suite run is a Langfuse **dataset run**, so the pass rate is a line over time
 rather than a number in a terminal that scrolls away.
 
@@ -15,7 +21,7 @@ yarn evals --gate react                 # one gate, one live trial per task
 yarn evals --gate javascript            # another gate
 yarn evals --task effects-reset-state-with-key   # one task
 yarn evals --arm without-skills         # the ablation arm
-yarn evals --arm previous-skill --baseline-ref main   # the skill as it was on main, all else HEAD
+yarn evals --arm previous-skill --baseline-ref <sha>  # the skill as it was at a commit of the SKILLS repo
 yarn evals --repeat 5                   # five passes over each task's prompts instead of one
 yarn evals --max-concurrency 3          # three tasks at once (CI does; local output interleaves)
 yarn evals --reuse                      # re-score stored trials, no trial spawned
@@ -50,10 +56,49 @@ helps a weaker model more. The line steps there: trials measured before the move
 are a different experiment, and stored trials are keyed by model so `--reuse`
 cannot serve one as the other.
 
+## Where the rules come from
+
+The rules used to be `.claude/skills/<gate>` of this repository, and a trial got
+them for free: the worktree was a checkout of `HEAD`, so the rules came with the
+code. They are a Claude plugin published from another repository now, and a
+worktree cut from this one holds none of them.
+
+Nothing about that is visible from inside a trial, which is what made it
+dangerous rather than merely broken. The plugin is installed against a project
+path and enabled by that project's settings, so an agent running in `/tmp/eval-…`
+silently has no rules — and a `with-skills` arm measuring an agent with no rules
+scores like the arm that removed them. The gate would read _"this skill does
+nothing"_, which is the plausible, false number this whole suite exists to
+refuse.
+
+So the harness stops inheriting the rules and installs them. `evals/skills.pin.json`
+names the repository, the ref and the directory inside it; `evals/skills.ts`
+clones it once into gitignored `evals/.skills/`, resolves the ref to a commit,
+and fills each worktree's `.claude/skills/` from that commit with `git archive`.
+The commit travels in the run metadata, so a score says which text produced it.
+
+Three choices in there are load-bearing:
+
+- **Not the clone `claude plugin` leaves in `~/.claude/plugins`.** It is shallow
+  — one commit — so it can serve neither a pin other than its tip nor any
+  baseline; the CLI fetches and moves it, so it can change under a ninety-minute
+  run; and it is where a rule is authored, so it may hold uncommitted edits.
+- **`git archive`, not a copy.** It reads a revision without touching the clone's
+  working tree, so nothing uncommitted can reach a measurement. Use the tree-ish
+  form `<rev>:<path>` — the two-argument form emits entries under the full path,
+  and extracting that would bury every rule three directories deep where no agent
+  looks and no error is raised.
+- **The gates and no more, though the plugin ships eleven skills.** An extra one
+  is not neutral: `react-native` describes itself in terms of re-renders and
+  performance, which is what three of the `react` gate's tasks are about, and an
+  agent that reaches for it instead scores the gate at zero while behaving
+  sensibly.
+
 ## The two arms
 
-`--arm without-skills` removes `.claude/skills` from the worktree, and the Skills
-section of `AGENTS.md` with it, before the agent starts. It answers the question a
+`--arm without-skills` installs nothing into the worktree, empties the three
+skill directories anyway, and removes the Skills section of `AGENTS.md`, before
+the agent starts. It answers the question a
 green run cannot: whether the skill caused the pass, or the model already knew the
 rule and the skill is decoration.
 
@@ -61,14 +106,22 @@ The `AGENTS.md` edit is part of the arm on purpose. A pointer to files that no
 longer exist is itself a signal, and an agent that notices a missing skill is not
 the same as one that was never told skills exist — that would be two variables.
 Only `.claude/skills` is removed, not `.claude/`, so an empty `settings.json`
-today cannot silently become a second variable tomorrow.
+today cannot silently become a second variable tomorrow. The directories are
+emptied even though this arm installed nothing into them, because what an agent
+might find there is not this repository's to know.
 
-One confound stays: user-level skills in `~/.claude/skills` are outside the
-worktree. They are identical in both arms, so they cannot explain a difference,
-but the arm is _without this repo's skills_, not without any skill.
+One confound stays, and it is now the sharper one: a skill enabled at **user**
+scope — a personal directory, or the plugin itself enabled outside a project —
+is outside the worktree and outside the strip. It is identical in both arms, so
+it cannot explain a difference, but the arm is _without the rules this suite
+installed_, not without any rule.
 
-Stored trials are keyed by arm, so `--reuse` cannot grade one arm's outcome as
-the other's.
+Stored trials are keyed by arm, and a `with-skills` key carries a hash of the
+rules it was given, so `--reuse` can serve neither one arm's outcome as the
+other's nor a trial run against rules that have since changed. A
+`without-skills` key carries no such hash on purpose: that arm installs nothing,
+so the revision is not one of its inputs, and keying it would discard the one
+arm worth caching every time a rule moved.
 
 **The arm is only as good as the strip.** A rule stated somewhere the strip does
 not reach stays in both arms, and the comparison measures nothing — this happened
@@ -84,7 +137,8 @@ rule change, then measure it.
 ## The third arm
 
 `--arm previous-skill --baseline-ref <ref>` starts from `HEAD` like the others,
-then puts `.claude/skills/<gate>/` back the way it was at `<ref>`. Everything
+installs every gate at the pinned revision, then puts `<gate>` back the way it
+was at `<ref>` — **a ref of the skills repository, not of this one**. Everything
 else — the code, the other skills, `AGENTS.md`, the harness, the CLI, the model,
 the hour — is the same in both runs, so the delta between `with-skills` and this
 arm is the effect of the edit to the skill, and nothing else.
@@ -96,25 +150,25 @@ badly: the two runs differ by a CLI version, a day, and whatever the model
 felt like, and the score cannot say which moved it.
 
 Two guards. `--baseline-ref` is refused on any other arm, so a run's metadata
-never names a baseline the trial did not restore. And a ref whose skill
-directory is identical to `HEAD`'s is refused outright: there is nothing to
+never names a baseline the trial did not restore. And a ref whose rules are
+identical to the pinned revision's is refused outright: there is nothing to
 compare, and paying for both sides of it is the one thing this arm exists to
 avoid. The check is on the directory's tree hash, which is also what the stored
 trial is keyed by — `main` moves, its rules often do not, and two refs holding
 the same text are one experiment.
 
-Every run records `skillTree`, the hash of the gate's skill directory at
-`HEAD`, and a `previous-skill` run records `baselineRef`, `baselineCommit` and
-`baselineSkillTree` beside it. That is how the two runs of a comparison are
+Every run records `skillTree` — a hash over the text of every gate installed —
+beside `skillsRef`, `skillsCommit` and `skillsRepo`, and a `previous-skill` run
+records `baselineRef`, `baselineCommit` and `baselineSkillTree` too. That is how the two runs of a comparison are
 paired in Langfuse without reading the clock.
 
-Where it belongs: locally, `--baseline-ref HEAD~1` after committing a rule
-edit, one task, `--repeat 1`. In CI, on a pull request touching
-`.claude/skills/<gate>/**`, beside `with-skills` and with the merge base as the
-ref — it replaces nothing, it is the baseline `with-skills` never had. Not in
-the nightly, which runs `main` against `main` and would be refused. The skill
-change is the only thing this arm can see, so a pull request touching `evals/`
-or `AGENTS.md` alone still gets the two arms it always did.
+Where it belongs: locally, `--baseline-ref <the commit the pin held before>`
+after bumping `evals/skills.pin.json`, one task, `--repeat 1`. It is **not** in
+the CI matrix any more, and the reason is worth stating: this repository's diff
+can show that the pin moved but not which rule moved with it, and only the
+skills repository's own history can say. Until its pipeline drives this workflow,
+`previous-skill` is a manual arm. Not in the nightly either, which would compare
+the pin against itself and be refused.
 
 ## The files
 
