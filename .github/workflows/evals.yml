@@ -282,8 +282,9 @@ jobs:
       # `trial_error` — a trial that never ran, and a gate that scores nothing —
       # rather than a score. Two jobs is six, which the window holds. It costs
       # wall clock, and the 90-minute timeout is per job, so a queued job is not
-      # a timing out one. Kept at two with a Codex agent in the matrix: those
-      # jobs draw on a different quota, but every job still runs a Claude judge.
+      # a timing out one. Kept at two whatever the agent axis holds: the other
+      # CLIs draw on their own quotas, but every job runs the same Copilot judge
+      # against one Copilot subscription.
       max-parallel: 2
       matrix:
         # Usually one agent, `claude`. An `evals:<agent>` label on a pull
@@ -312,23 +313,24 @@ jobs:
       # Pinned like the model is: `run.ts` records the CLI version with every
       # score, and a version that moves on its own reads as a skill regression.
       #
-      # Installed in every job, whichever agent is under test: `judge.ts` shells
-      # out to `claude` for the judged tasks, and the judge stays Claude because
-      # it is the instrument, not the subject.
+      # Installed in every job, whichever agent is under test, because this
+      # repository's `defaultJudge` is Copilot: `judge.ts` shells out to it for
+      # every judged task. Move that key and this condition moves with it — a
+      # judge whose CLI is missing makes every judged task `judge_error`.
+      - name: Install Copilot
+        run: npm install -g @github/copilot@1.0.83
+
+      # Pinned for the same reason, and installed only when it is the subject.
       - name: Install Claude Code
+        if: matrix.agent == 'claude'
         run: npm install -g @anthropic-ai/claude-code@2.1.258
 
-      # Pinned for the same reason, and never yet run by this workflow. A wrong
-      # pin fails the job rather than scoring something else, and only a job
-      # that asked for Codex can hit it.
+      # Same pin, and never yet run by this workflow: written from the docs. A
+      # wrong pin fails the job rather than scoring something else, and only a
+      # job that asked for Codex can hit it.
       - name: Install Codex
         if: matrix.agent == 'codex'
         run: npm install -g @openai/codex@0.153.4
-
-      # Same pin, same standing: written from the docs, never run here.
-      - name: Install Copilot
-        if: matrix.agent == 'copilot'
-        run: npm install -g @github/copilot@1.0.83
 
       - name: Run gate
         env:

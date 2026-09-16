@@ -9,10 +9,10 @@
  * is not one of them: every agent discovers skills from a directory, so the
  * "without-skills" arm removes directories and never asks who is reading.
  *
- * The judge is deliberately not one of these. It is the instrument, not the
- * subject: a grader that changed with the agent would make no two runs
- * comparable, which is the same reason `JUDGE_MODEL` is pinned apart from the
- * subject's model.
+ * The judge is deliberately not one of these, and has its own narrower interface
+ * in `judge.ts`. It is the instrument, not the subject: an agent is handed a
+ * repository and every tool, a judge must have neither, and a grader that
+ * followed whoever was under test would make no two runs comparable.
  *
  * One file, one implementation, on purpose. A second agent splits it; a folder
  * of three files around a single adapter would be layering ahead of the need.
@@ -260,7 +260,7 @@ const CLAUDE_EFFORT: Effort = "high";
  */
 const CLAUDE_MAX_TURNS = 80;
 
-const CLAUDE: Agent = {
+const CLAUDE = {
   id: "claude",
   defaultModel: CLAUDE_MODEL,
   efforts: EFFORTS,
@@ -326,7 +326,7 @@ const CLAUDE: Agent = {
       skillsInvoked: transcript.skillsInvoked,
     };
   },
-};
+} as const satisfies Agent;
 
 /**
  * The Codex CLI, driven through `codex exec`. Written against the documented
@@ -361,7 +361,7 @@ type CodexEvent = {
   readonly error?: { readonly message?: string };
 };
 
-const CODEX: Agent = {
+const CODEX = {
   id: "codex",
   defaultModel: CODEX_MODEL,
   efforts: CODEX_EFFORTS,
@@ -446,45 +446,122 @@ const CODEX: Agent = {
       await rm(scratch, { recursive: true, force: true }).catch(() => {});
     }
   },
-};
+} as const satisfies Agent;
 
 /**
- * The GitHub Copilot CLI, driven through `copilot -p`. Written against the
- * documented flags and never run on the machine that added it: check
- * `copilot help` before trusting a score from it.
+ * The GitHub Copilot CLI, driven through `copilot -p`. Written against
+ * `copilot --help` and probed on the machine that added it, unlike Codex above:
+ * the published documentation lists barely a third of the flags this adapter
+ * uses, so read the CLI rather than the docs page before changing anything here.
  *
- * Copilot scans `.github/skills`, `.claude/skills` and `.agents/skills`, so
- * this repository's rules reach it where they already sit and both arms are a
- * real comparison. What it will not report is which of them it loaded: the
- * choice is description-driven as Claude's is, but `-s` leaves only the final
- * message on stdout and there is no structured mode to ask the tool calls back
- * from.
+ * `copilot skill --help` names its discovery paths: `.github/skills`,
+ * `.agents/skills` and `.claude/skills`. This repository's rules therefore reach
+ * it where they already sit, and both arms are a real comparison.
  */
 const COPILOT_TIMEOUT_MS = 15 * 60 * 1000;
 
 /**
- * Pinned like the others, and unverified. The documented examples are `gpt-5.4`,
- * `gpt-5.3-codex` and `claude-haiku-4.5`; `/model` in an interactive session is
- * the only authoritative list. Running this agent on a Claude model is the
- * interesting comparison — it changes the scaffold while holding the model,
- * which is the variable a harness comparison is actually about.
+ * Pinned like the others, and verified: this adapter's probes ran on it.
+ *
+ * Copilot's own default is `claude-sonnet-5`, which is the interesting comparison
+ * inverted — it would change the scaffold *and* hold the model, and a Copilot
+ * run would then be a Claude model wearing another CLI's name on the chart. Hold
+ * the model here and the delta against the `claude` agent is the scaffold, which
+ * is the variable a harness comparison is actually about.
  */
 const COPILOT_MODEL = "gpt-5.4";
 
-const COPILOT: Agent = {
+/**
+ * Copilot takes `none | minimal | low | medium | high | xhigh | max`. Only the
+ * five `EFFORTS` also names are offered, for the reason Codex's three are:
+ * `none` and `minimal` have no counterpart to compare against.
+ */
+const COPILOT_EFFORTS = EFFORTS;
+
+/**
+ * Pinned at `high` like Claude and Codex, and the pin steps the line: the CLI's
+ * own default is `medium`, so nothing measured from here is comparable to a
+ * Copilot run from before it. Unpinned it would follow the account and the
+ * settings file, and a laptop and a CI runner could disagree — a trial that
+ * thinks harder passes more often, and the difference reads as a skill change.
+ */
+const COPILOT_EFFORT: Effort = "high";
+
+/** One line of `copilot --output-format json`. */
+type CopilotEvent = {
+  readonly type?: string;
+  readonly data?: {
+    readonly content?: unknown;
+    readonly toolName?: unknown;
+    readonly arguments?: { readonly skill?: unknown };
+  };
+  /** Only the `result` event carries these, and it is the last line. */
+  readonly exitCode?: number;
+  readonly usage?: { readonly sessionDurationMs?: number };
+};
+
+/**
+ * What one run left on stdout, read the way Claude's stream is and for the same
+ * reason: the final message, whether the CLI thought it had failed, and which
+ * skills were loaded on the way.
+ *
+ * The skills come from `tool.execution_start`, whose `toolName` is `skill` and
+ * whose `arguments.skill` is the directory name — the same name a task calls its
+ * `gate`, so an invocation is comparable with nothing translating between the
+ * two. Read from the execution rather than from the model's request, which is
+ * the difference between a skill that loaded and one that was merely asked for.
+ */
+type CopilotTranscript = {
+  readonly message: string;
+  readonly exitCode: number | undefined;
+  readonly durationMs: number | undefined;
+  readonly skillsInvoked: readonly string[];
+};
+
+const parseCopilot = (stdout: string): CopilotTranscript => {
+  const skills: string[] = [];
+  let message = "";
+  let exitCode: number | undefined;
+  let durationMs: number | undefined;
+
+  for (const line of stdout.split("\n")) {
+    if (line.trim() === "") continue;
+
+    let event: CopilotEvent;
+    try {
+      event = JSON.parse(line) as CopilotEvent;
+    } catch {
+      // A line that is not an event is not a reason to lose the trial: the diff
+      // is already on disk and the rest of the stream still holds the summary.
+      continue;
+    }
+
+    if (event.type === "result") {
+      exitCode = event.exitCode;
+      durationMs = event.usage?.sessionDurationMs;
+    }
+    if (event.type === "tool.execution_start" && event.data?.toolName === "skill") {
+      if (typeof event.data.arguments?.skill === "string") skills.push(event.data.arguments.skill);
+    }
+    // The last one that said anything: an assistant message whose content is
+    // empty is the turn that called a tool, not the answer.
+    if (event.type === "assistant.message" && typeof event.data?.content === "string") {
+      if (event.data.content !== "") message = event.data.content;
+    }
+  }
+
+  return { message, exitCode, durationMs, skillsInvoked: [...new Set(skills)] };
+};
+
+const COPILOT = {
   id: "copilot",
   defaultModel: COPILOT_MODEL,
-  /**
-   * Empty, though the CLI does have the setting: `effortLevel` is a key in
-   * `~/.copilot/settings.json`, not a flag, and the only way to set it per run
-   * is to point `COPILOT_HOME` at a directory this harness writes. That
-   * directory also holds the MCP config and the model key, so supplying one
-   * would change more than the effort. Declared as unsupported until it can be
-   * changed alone.
-   */
-  efforts: [],
-  defaultEffort: undefined,
+  efforts: COPILOT_EFFORTS,
+  defaultEffort: COPILOT_EFFORT,
   // No turn cap exists, as with Codex: the timeout is the only bound.
+  // `--max-autopilot-continues` is not one — it bounds a mode this adapter does
+  // not run in, and a cap recorded from a flag that never applied is worse than
+  // none.
   defaultMaxTurns: undefined,
 
   /**
@@ -500,7 +577,7 @@ const COPILOT: Agent = {
       .then(({ stdout }) => stdout.trim())
       .catch(() => "unknown"),
 
-  run: async ({ prompt, cwd, model }): Promise<AgentRun> => {
+  run: async ({ prompt, cwd, model, effort }): Promise<AgentRun> => {
     try {
       const { stdout } = await run(
         "copilot",
@@ -509,6 +586,7 @@ const COPILOT: Agent = {
           prompt,
           "--model",
           model,
+          ...(effort === undefined ? [] : ["--reasoning-effort", effort]),
           // The counterpart of Claude's `acceptEdits` and Codex's
           // `workspace-write`. Paths are allowed as well as tools because the
           // worktree is a temporary directory outside the repository, and a
@@ -520,39 +598,73 @@ const COPILOT: Agent = {
           // A question asked in a non-interactive run is answered by nobody. It
           // would sit there until the timeout kills it, having spent the money.
           "--no-ask-user",
-          // Suppresses the stats and decoration around the answer, leaving the
-          // final message alone on stdout. It is also why the three telemetry
-          // fields below are undefined: the stats it removes are unstructured,
-          // and there is no JSON mode to ask for them back.
-          "-s",
+          // A CLI that updated itself mid-suite would be an unrecorded variable
+          // moving under a score, which is what pinning the model exists to stop.
+          "--no-auto-update",
+          // JSONL, one event per line: the final message, the tool calls before
+          // it and the exit code after. `-s` is not passed with it — that flag
+          // trims the decoration around a *text* answer, and the two formats
+          // answer different questions.
+          "--output-format",
+          "json",
         ],
         { cwd, timeout: COPILOT_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 },
       );
 
-      // The exit code is the only failure signal this CLI gives: no `subtype`
-      // as Claude has, no `turn.failed` event as Codex has. A run that fails
-      // partway and still exits zero is therefore scored as an answer — the one
-      // known hole in this adapter, and it needs a structured output mode to
-      // close.
+      const transcript = parseCopilot(stdout);
+
+      // A non-zero code inside a process that exited zero: the CLI reports the
+      // run's own verdict in its last event, and a failure scored as an answer
+      // publishes a zero the agent never had the chance to earn. `execFile`
+      // covers the other direction by rejecting.
+      if (transcript.exitCode !== undefined && transcript.exitCode !== 0) {
+        return { status: "unavailable", reason: `copilot exited ${transcript.exitCode}` };
+      }
+
       return {
         status: "ran",
-        summary: stdout.trim(),
+        summary: transcript.message,
+        // No turn cap to hit: with none set there is nothing to be cut off by,
+        // so a missing summary here is the agent's silence and a judge may read
+        // it as such.
         stop: "finished",
+        // `usage` reports premium requests, not dollars. A price here would be a
+        // pinned rate table wearing a measurement's name, and it would land in
+        // the same field as Claude's metered one.
         costUsd: undefined,
+        // Not reported, and not counted from the `assistant.turn_end` events
+        // either: those bound a model call, where Claude's `num_turns` counts
+        // something else. One number under one name has to mean one thing.
         turns: undefined,
-        durationMs: undefined,
-        // Blocked on the same thing the failure signal above is: `-s` leaves
-        // the final message alone on stdout, and there is no structured mode
-        // to ask the tool calls back from.
-        skillsInvoked: undefined,
+        durationMs: transcript.durationMs,
+        skillsInvoked: transcript.skillsInvoked,
       };
     } catch (error) {
       return { status: "unavailable", reason: describeFailure(error, COPILOT_TIMEOUT_MS) };
     }
   },
-};
+} as const satisfies Agent;
 
-export const AGENTS: readonly Agent[] = [CLAUDE, CODEX, COPILOT];
+/**
+ * `as const`, like the three adapters above, and for the same reason: `id` has
+ * to stay the literal each one wrote. Either annotating an adapter `: Agent` or
+ * leaving off its `as const` widens `id` to `string` — `satisfies` alone is not
+ * enough, since the contextual type it checks against is what does the widening
+ * — and `AgentId` below is then `string`, which types nothing.
+ */
+export const AGENTS = [CLAUDE, CODEX, COPILOT] as const satisfies readonly Agent[];
+
+/**
+ * The names this harness answers to, derived rather than listed: a second list
+ * would be the half-wired declaration `alias.ts` and tsconfig `paths` warn
+ * about, where an agent is added to one and the other rots.
+ *
+ * It is what `evals.config.ts` types its `defaultAgent` as, so a typo there is a
+ * type error naming the three that exist, before anything spawns. `--agent`
+ * cannot use it — a command line is strings — and that is why `agentNamed` still
+ * takes one.
+ */
+export type AgentId = (typeof AGENTS)[number]["id"];
 
 export const DEFAULT_AGENT = CLAUDE;
 

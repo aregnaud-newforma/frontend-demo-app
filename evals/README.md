@@ -16,7 +16,7 @@ yarn evals --gate javascript            # another gate
 yarn evals --task effects-reset-state-with-key   # one task
 yarn evals --arm without-skills         # the ablation arm
 yarn evals --arm previous-skill --baseline-ref main   # the skill as it was on main, all else HEAD
-yarn evals --repeat 5                   # five passes over each task's prompts instead of two
+yarn evals --repeat 5                   # five passes over each task's prompts instead of one
 yarn evals --max-concurrency 3          # three tasks at once (CI does; local output interleaves)
 yarn evals --reuse                      # re-score stored trials, no trial spawned
 yarn evals --run-name before-skill-edit # name the run yourself
@@ -24,8 +24,9 @@ yarn evals --agent codex                # the agent under test (`claude` by defa
 yarn evals --model claude-opus-5        # the model under test (the agent's own, by default)
 yarn evals --effort low                 # its effort level (the agent's own, by default)
 yarn evals --max-turns 120              # the per-trial turn budget, for an agent that takes one
-yarn evals --judge-model claude-sonnet-5 # the model that grades judged tasks
-yarn evals --judge-effort high          # its effort level (pinned by default)
+yarn evals --judge-agent copilot         # who grades judged tasks (`claude` by default)
+yarn evals --judge-model claude-sonnet-5 # the model it grades with (the judge's own, by default)
+yarn evals --judge-effort high           # its effort level (the judge's own, by default)
 yarn evals --list-gates                 # the gates that have a task, as JSON
 yarn evals --list-agents                # the agents and the default one, as JSON
 ```
@@ -40,8 +41,8 @@ cost $2.36 over 51 turns and seven minutes on Claude Fable 5.1, nearly all of it
 `checks: "skip"` (see below) the same task runs in **8 turns for about $0.40**.
 Use `--reuse` whenever you are changing a grader rather than measuring an agent.
 
-A run costs that **times the task's prompts, times `--repeat`**, which is two by
-default. See below for why one is not enough.
+A run costs that **times the task's prompts, times `--repeat`**, which is one by
+default. See below for when one is not enough.
 
 The model under test moved from Fable 5.1 to **Opus 5**, which is half the price
 per token ($5/$25 per MTok against $10/$50) and the harder test, since a skill
@@ -133,12 +134,20 @@ repository's, everything below knows nothing about it. `tasks.ts` is on the
 repository's side and sits in this directory only because 300 lines of prompt
 prose do not belong in a config file.
 
-The config holds two keys — `tasks` and `sourcePaths` — and the shortness is the
-point. Arms, agents, models, effort, repetition and concurrency are flags with a
-default in `run.ts`, and a key beside a flag would be a second place a run's
-conditions get decided. There is no `--config` either: a suite that can be
+The config holds seven keys — `tasks`, `sourcePaths` and the optional
+`defaultAgent`, `defaultJudge`, `agents`, `judges` and `maxConcurrency` — and the
+shortness is the point. Arms and repetition are flags with a default in `run.ts`,
+and a key beside one of those would be a second place a run's conditions get
+decided. There is no `--config` either: a suite that can be
 pointed at two of them is a suite whose scores were produced under conditions
 nobody can read off the run.
+
+The other four earn their place twice, in two pairs that read as one sentence
+each — `defaultAgent` and `agents`, then `defaultJudge` and `judges`. Each is a
+chain rather than a second place — flag, then this file, then the adapter's own
+pin — and each lands in the run metadata. That is the test a key has to pass to live here. A
+condition nobody could read off the run would fail it however convenient the key
+looked.
 
 `sourcePaths` has no default on purpose. A default that missed this repository's
 sources would leave every diff empty, and an empty diff scores 0 on every task —
@@ -147,16 +156,65 @@ produce.
 
 ## Another agent
 
-`--agent` names who is under test. `agents.ts` is the seam, and deliberately the
-only file that knows a CLI exists: the worktree, the diff, the graders and the
-Langfuse reporting never ask who wrote the change. An `Agent` declares what its
+`--agent` names who is under test, and `defaultAgent` in `evals.config.ts` names
+who that is when the flag is absent — the flag wins, the config is next, and the
+harness's own default is last. The key is optional, and a repository measuring
+the agent the harness already defaults to should leave it out rather than copy
+the value.
+
+`defaultJudge` is the same chain for `--judge-agent`, and never derived from
+`defaultAgent`: the judge is the instrument and the agent is the subject, so a
+judge that followed whoever was under test would move the ruler and the thing
+measured at once. This repository sets it to `copilot`, which grades on `gpt-5.4`
+— a different vendor from every agent it measures, and from the harness default
+of `claude`.
+
+CI follows that key rather than restating it: the Copilot CLI is installed in
+every job because the judge needs it, and each agent's own CLI only in the jobs
+that put it under test. Move `defaultJudge` and that condition has to move with
+it, or every judged task comes back `judge_error`.
+
+`agents` and `judges` are the same chain again, for the model and the effort,
+keyed by the CLI they belong to:
+
+```ts
+agents: { copilot: { model: "gpt-5.3-codex", effort: "low" } },
+judges: { claude: { model: "claude-haiku-4.5" } },
+```
+
+Keyed, because a model id is a string one CLI knows and another has never heard
+of — a flat `model` here would be handed to whoever ran. Each entry is checked
+against the CLI it names as the config loads, so `gpt-5.4` under `claude`, an
+effort a CLI does not take, or a name that is nobody all fail before a worktree
+is cut:
+
+```
+evals.config.ts: `agents.claude.effort` takes one of low, medium, high, xhigh, max, not "bogus".
+```
+
+The pins in `agents.ts` and `judge.ts` are what this suite measured its history
+with. Overriding one steps the line — nothing scored after is comparable to what
+came before — which is a thing to do deliberately rather than by inheriting a
+config from elsewhere.
+
+`maxConcurrency` is the odd one out, and it is not about the experiment at all:
+it is how fast this machine may go. Not keyed by CLI like the two above, because
+it is the account's quota and the reader's patience that it answers to, not the
+agent's. The harness runs one task at a time; set it here when this repository's
+runs are normally unattended.
+
+`agents.ts` is the seam, and deliberately the only file that knows a CLI exists:
+the worktree, the diff, the graders and the Langfuse reporting never ask who
+wrote the change. An `Agent` declares what its
 CLI takes, and `run.ts` refuses anything it does not — **nothing is recorded that
 was not applied**, which is the same rule the model and effort pins already obey.
 
-`claude`, `codex` and `copilot` are wired. Only the Claude adapter has ever
-been run: the other two were written against the documented flags, so check
-`codex exec --help` or `copilot help` before trusting a score, and expect the
-model id to need pinning to whatever your account actually serves.
+`claude`, `codex` and `copilot` are wired. Claude and Copilot have both been run
+and probed; only Codex has never been, having been written against the documented
+flags — check `codex exec --help` before trusting a score from it, and expect the
+model id to need pinning to whatever your account actually serves. Read the CLI
+rather than the docs page: GitHub's published page lists barely a third of what
+`copilot --help` does, and three of this adapter's flags are absent from it.
 
 Four things do not port, and the shape of the code says so:
 
@@ -167,38 +225,55 @@ Four things do not port, and the shape of the code says so:
   agents on one chart are two experiments. `stripRules` is nonetheless shared:
   this repository keeps its rules in one place, so the arm that removes them
   removes the same files whoever was reading them.
-- **Effort and turns.** `--effort` is a flag on Claude, a config override on
-  Codex, and on Copilot a settings-file key that cannot be set for one run
-  without also supplying that CLI's model and MCP config — so Copilot declares
-  no efforts at all. Neither Codex nor Copilot has a turn cap. Each agent
-  declares its `efforts` and its `defaultMaxTurns`, and a level or a budget
-  outside them is a command-line error rather than a flag quietly dropped.
-  Trials on both are therefore bounded only by the timeout — which stops a loop
-  after the money is spent, not before.
+- **Effort and turns.** `--effort` is a flag on Claude, `--reasoning-effort` one
+  on Copilot, and a config override on Codex. The levels differ too: Codex takes
+  three of the five this suite names, Copilot all five plus two with no
+  counterpart. Neither Codex nor Copilot has a turn cap. Each agent declares its
+  `efforts` and its `defaultMaxTurns`, and a level or a budget outside them is a
+  command-line error rather than a flag quietly dropped. Trials on both are
+  therefore bounded only by the timeout — which stops a loop after the money is
+  spent, not before.
 - **Cost.** Claude reports dollars; `codex exec --json` reports tokens and no
-  price; `copilot -p -s` reports nothing, the flag that leaves the final message
-  alone on stdout being the same one that strips the stats. An agent that reports
-  no cost publishes no `trial_cost_usd` score at all, because a zero reads as a
-  free run.
+  price; `copilot --output-format json` reports premium requests, which is a
+  count of calls and not a price. An agent that reports no cost publishes no
+  `trial_cost_usd` score at all, because a zero reads as a free run. Copilot does
+  report a wall-clock duration, so that one field is real there.
 - **Saying it failed.** Claude answers with a `subtype`, Codex with a
-  `turn.failed` event: both can tell a trial the harness could not obtain from an
-  agent that answered badly, which is the difference between `unavailable` and a
-  zero. Copilot offers only an exit code, so a run that fails partway and still
-  exits zero is scored as an answer. That is the known hole in that adapter, and
-  it needs a structured output mode to close.
+  `turn.failed` event, Copilot with an `exitCode` on the last line of its JSONL —
+  all three can tell a trial the harness could not obtain from an agent that
+  answered badly, which is the difference between `unavailable` and a zero.
 
-**Before a Codex or Copilot run means anything**, the rules have to reach them.
-The Skills section of `AGENTS.md` names Claude's Skill tool, which Codex has not;
-Copilot does not read `.claude/skills` at all, looking instead in `AGENTS.md`,
-`.github/copilot-instructions.md`, `.github/instructions/**` and its own skills
-location. Either way the `with-skills` arm hands over a pointer that cannot be
-followed, scores near-identically to `without-skills`, and reads as a skill with
-no effect where there is one.
+**Before a Codex run means anything**, the rules have to reach it. The Skills
+section of `AGENTS.md` names Claude's Skill tool, which Codex has not, and it
+scans `.agents/skills` where this repository keeps none — so its `with-skills`
+arm hands over a pointer that cannot be followed, scores near-identically to
+`without-skills`, and reads as a skill with no effect where there is one.
 
-The judge stays Claude whichever agent is under test. It is the instrument, not
-the subject: grading Codex's diff with Codex would move the ruler and the thing
-measured at once. In CI that means every job installs the Claude CLI, including
-the Codex ones.
+Copilot is not in that position, which `copilot skill --help` settles: it
+discovers `.github/skills`, `.agents/skills` **and** `.claude/skills`. A probe
+confirms the loading rather than the documentation — an agent run in a scratch
+directory holding one `.claude/skills/greet/SKILL.md` came back with
+`skillsInvoked: ["greet"]` and no `--add-dir` needed. Both arms are a real
+comparison there, and which rules were read is recorded per trial.
+
+The judge is one CLI whichever agent is under test — `copilot` here, `claude`
+where this repository says nothing — and `--judge-agent` is the only way to move
+it for a single run. It is the instrument, not the subject: grading
+Codex's diff with Codex would move the ruler and the thing measured at once, so
+hold it fixed across a series of runs you mean to compare. In CI that means every
+job installs the Claude CLI, including the Codex ones.
+
+Two are implemented. `claude` is the default and the instrument this suite's
+history was measured with. `copilot` is the independent reading, and it is
+pinned to `gpt-5.4` for the reason that matters: Copilot's own default model is
+`claude-sonnet-5`, so an unpinned Copilot judge would grade a Claude subject with
+Claude while appearing on the chart to be a second vendor.
+
+Prefer `claude` unless you are asking what a Claude judge does to a Claude
+subject. Copilot has no system-prompt flag, so the grading rules travel in the
+same prompt as the diff and the summary the agent under test wrote — rules the
+summary sits beside rather than under. `--no-custom-instructions` at least leaves
+them the only instructions in play.
 
 CI runs Claude alone unless asked. An `evals:<agent>` label on a pull request
 selects who runs — `evals:claude`, `evals:codex`, `evals:copilot`, or any
@@ -266,10 +341,10 @@ effects exist.
 
 ## How many trials a task gets
 
-`--repeat` is the number of passes over each task's prompts, and it is **2** by
-default. A task with one prompt gets two trials; one with three gets six. A pass
-covers every prompt before the next pass starts, so a run cut short still holds
-whole passes.
+`--repeat` is the number of passes over each task's prompts, and it is **1** by
+default. At `--repeat 2` a task with one prompt gets two trials; one with three
+gets six. A pass covers every prompt before the next pass starts, so a run cut
+short still holds whole passes.
 
 One is a coin flipped once. The score a single trial produces is 1 or 0, and
 nothing in it says how repeatable that is: a gate that reads 5/5 one week and
@@ -283,25 +358,27 @@ graded. `pass_rate` is then the mean of those means: every task weighs the same
 whatever happened inside its repetitions, so a task cannot count twice for having
 been sampled twice.
 
-Two is the smallest count that can disagree with itself, which is what makes it
-the default rather than an ambition. It halves nothing and proves nothing on its
-own; what it does is make a flaky task visible as a 0.5 instead of letting it
-alternate silently between two clean runs. Raise it — 5, 10 — for the tasks whose
-two arms sit within a point of each other, because that is precisely the question
-repetition answers and precisely where the money is worth spending. Drop it to 1
-when the point of the run is to exercise the harness rather than to measure
-anything.
+So the default answers the cheap question — did this edit break something
+obvious — and nothing more. It is 1 because that is the run people actually type,
+and a default that doubled the bill of every one of them would be paid to answer
+a question most were not asking.
+
+Ask for the samples when the run is asking the other question. Two is the
+smallest count that can disagree with itself: it proves nothing on its own, but
+it makes a flaky task visible as a 0.5 instead of letting it alternate silently
+between two clean runs. Five or ten is for the tasks whose two arms sit within a
+point of each other, because that is precisely what repetition answers and
+precisely where the money is worth spending.
 
 The cost is linear, and `repeat` travels in the run metadata: a pass rate read
 without knowing how many samples it averages says nothing about how much of its
 movement is noise.
 
-CI on a pull request overrides it to **1**. That tier asks whether a rule change
-broke something obvious, and one trial answers that for a third of the money —
-a push touching `AGENTS.md` runs every gate in both arms, and the second sample
-doubles it. Repetition belongs where the question is how much of a gap is noise,
-which is the scheduled run and the manual one: `workflow_dispatch` takes
-`repeat`, so a run that wants a measurement asks for the samples.
+CI on a pull request passes **1** explicitly rather than inheriting it, so the
+tier says what it measures even if this default moves again. Repetition belongs
+where the question is how much of a gap is noise, which is the scheduled run and
+the manual one: `workflow_dispatch` takes `repeat`, so a run that wants a
+measurement asks for the samples.
 
 ## Gates
 
@@ -414,22 +491,32 @@ the choice was a deliberate check rather than habit".
 
 Three things keep it honest:
 
-- **The judge is pinned separately from the subject.** `JUDGE_MODEL` is
-  `claude-sonnet-5`, `JUDGE_EFFORT` is `high`, and both travel in the run
-  metadata beside `model` and `effort`. Two models move in this system; a judge
-  that followed the CLI default would change what "pass" means without leaving
-  a trace. Effort stays high because the judge costs a cent and a verdict that
-  flips on a borderline diff costs a gate score.
+- **The judge is resolved separately from the subject.** It defaults to
+  `claude-sonnet-5` at `high`, and the judge, its model and its effort all travel
+  in the run metadata beside `agent`, `model` and `effort`. Two models move in
+  this system; a judge that followed the CLI default would change what "pass"
+  means without leaving a trace. Effort stays high because the judge costs a cent
+  and a verdict that flips on a borderline diff costs a gate score.
 - **A judge that fails does not score zero.** It writes `judge_error` instead and
   no `*_gate` score at all. A zero from an unreachable model is indistinguishable
   from a skill that regressed, and unattributable numbers are what this suite
   exists to stop producing.
+- **A judge adapter is held to a higher bar than an agent one.** A subject
+  adapter that is wrong fails its own trial visibly; a judge adapter that is
+  wrong moves every score in the dataset quietly, including those of runs that
+  did not change judge. Both adapters here were probed against the installed CLI
+  before being trusted, which is why Codex is still absent: `codex exec` has no
+  system-prompt flag either, and no verified isolation to pair with one.
 - **The judge has no repository.** It runs in a scratch directory with tools, MCP
   and slash commands disabled — otherwise it could confirm a criterion the agent
   never satisfied. That isolation is also what makes it affordable: a plain
   `claude -p` question loads 148,068 tokens of context and costs **$0.59**; the
   same question with those flags loads about 3,000 and costs **$0.012**, roughly
-  one percent of the trial it is grading.
+  one percent of the trial it is grading. Copilot measures the same way: 18,209
+  prompt tokens with its 18 tools loaded, 2,774 with `--available-tools none`.
+  That flag is a whitelist, and passing it with no value at all is silently
+  ignored rather than rejected — which is how a judge ends up holding every tool
+  it was meant to have none of.
 
 Prefer a diff grader. Reach for the judge when, and only when, the same code
 could be right or wrong depending on why it was written.

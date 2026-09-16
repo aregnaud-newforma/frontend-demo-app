@@ -7,7 +7,7 @@
  *                   [--arm with-skills|without-skills|previous-skill] [--baseline-ref <ref>]
  *                   [--repeat <n>] [--max-concurrency <n>] [--reuse] [--run-name <name>]
  *                   [--max-turns <n>] [--agent <id>] [--model <id>] [--effort <level>]
- *                   [--judge-model <id>] [--judge-effort <level>]
+ *                   [--judge-agent <id>] [--judge-model <id>] [--judge-effort <level>]
  *                   [--list-gates] [--list-agents]
  *
  * One gate per invocation: a gate is a Langfuse dataset, and two skills sharing
@@ -18,7 +18,7 @@ import { parseArgs, promisify } from "node:util";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { LangfuseClient } from "@langfuse/client";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
-import { config } from "./config.ts";
+import { config, configuredDefaults } from "./config.ts";
 import {
   gatesWithTasks,
   gradeAdded,
@@ -37,13 +37,22 @@ import {
   type Treatment,
   type TrialOutcome,
 } from "./trial.ts";
-import { agentNamed, AGENTS, DEFAULT_AGENT, EFFORTS, type Effort } from "./agents.ts";
-import { judge, JUDGE_EFFORT, JUDGE_MODEL } from "./judge.ts";
+import { agentNamed, AGENTS, DEFAULT_AGENT, type Effort } from "./agents.ts";
+import { judge, judgeNamed, DEFAULT_JUDGE, JUDGES } from "./judge.ts";
 
 const run = promisify(execFile);
 
 /** This repository's rules, from `evals.config.ts`. */
 const { tasks: TASKS } = config;
+
+/**
+ * Who a run is about when nobody says: this repository's choice, or the
+ * harness's when it has none. Validated as it was loaded, so it names an agent.
+ */
+const defaultAgentId = config.defaultAgent ?? DEFAULT_AGENT.id;
+
+/** Who grades when nobody says, resolved as the subject above and apart from it. */
+const defaultJudgeId = config.defaultJudge ?? DEFAULT_JUDGE.id;
 
 const { values } = parseArgs({
   options: {
@@ -52,18 +61,26 @@ const { values } = parseArgs({
     arm: { type: "string", default: "with-skills" },
     // No default: the arm that needs it is the only one that may carry it.
     "baseline-ref": { type: "string" },
-    repeat: { type: "string", default: "2" },
-    "max-concurrency": { type: "string", default: "1" },
+    repeat: { type: "string", default: "1" },
+    // No default: it is the last link of a chain, and a default here would win
+    // over `evals.config.ts` before the config was ever read.
+    "max-concurrency": { type: "string" },
     reuse: { type: "boolean", default: false },
     "run-name": { type: "string" },
-    agent: { type: "string", default: DEFAULT_AGENT.id },
+    // No default: it is the last link of a chain, and a default here would win
+    // over `evals.config.ts` before the config was ever read.
+    agent: { type: "string" },
     // No defaults: all three belong to the agent, and a model id pinned here
     // would be handed to a CLI that has never heard of it.
     "max-turns": { type: "string" },
     model: { type: "string" },
     effort: { type: "string" },
-    "judge-model": { type: "string", default: JUDGE_MODEL },
-    "judge-effort": { type: "string", default: JUDGE_EFFORT },
+    // No defaults, for the reason the subject's three have none: they belong to
+    // whichever judge `--judge-agent` names, and a model id pinned here would be
+    // handed to a CLI that has never heard of it.
+    "judge-agent": { type: "string" },
+    "judge-model": { type: "string" },
+    "judge-effort": { type: "string" },
     "list-gates": { type: "boolean", default: false },
     "list-agents": { type: "boolean", default: false },
   },
@@ -82,9 +99,11 @@ if (values["list-gates"]) {
 // `evals:<agent>` labels into the agent axis of its matrix, and an agent named
 // in the workflow instead of here would be a declaration wired into half the
 // system. The default travels with the list because the workflow needs it when
-// a pull request carries no label at all.
+// a pull request carries no label at all, and it is the resolved one — so an
+// `evals.config.ts` that names an agent moves CI and a bare `yarn evals`
+// together rather than leaving the two disagreeing.
 if (values["list-agents"]) {
-  console.log(JSON.stringify({ agents: AGENTS.map(({ id }) => id), default: DEFAULT_AGENT.id }));
+  console.log(JSON.stringify({ agents: AGENTS.map(({ id }) => id), default: defaultAgentId }));
   process.exit(0);
 }
 
@@ -123,16 +142,53 @@ const selected = requested ? [requested] : gateTasks;
  * writes, and that question is asked of one agent at a time: the arms, the
  * model and the effort all mean something different per CLI, and a run mixing
  * two of them would average scores that were never the same experiment.
+ *
+ * `--agent` first, then whoever `evals.config.ts` named, then the harness's
+ * own. Only the flag can be wrong by this point: the config's was checked when
+ * it was loaded, and the harness's is one of the agents it declares.
  */
-const agent = agentNamed(values.agent);
+const agentId = values.agent ?? defaultAgentId;
+const agent = agentNamed(agentId);
 if (agent === undefined) {
+  console.error(`No agent named "${agentId}". Known: ${AGENTS.map(({ id }) => id).join(", ")}`);
+  process.exit(1);
+}
+
+/**
+ * What this repository asks of whoever it resolved, when it asks anything. The
+ * flag still wins over it, and the adapter's pin is what both mean when neither
+ * says — one value, three sources, the chain `--agent` already has.
+ */
+const configuredAgent = configuredDefaults("agents", agent.id);
+
+const model = values.model ?? configuredAgent.model ?? agent.defaultModel;
+
+/**
+ * Who grades the criteria the diff graders cannot. Resolved exactly as the
+ * subject is and kept apart from it on purpose: the judge is the instrument, so
+ * grading Codex's diff with Codex would change the ruler and the thing being
+ * measured at once, and no two runs of this suite would be comparable again.
+ * Nothing here stops that — only recording it does, which the metadata below
+ * does beside the judge's model.
+ *
+ * Defaulted rather than pinned so a machine with no `claude` CLI has somewhere
+ * to go, and so the bias a Claude judge has reading a Claude subject can be
+ * measured against a second vendor rather than assumed absent. `--judge-agent`
+ * first, then `defaultJudge` in `evals.config.ts`, then the harness's own — the
+ * chain `--agent` has, and separate from it at every link.
+ */
+const judgeAgentId = values["judge-agent"] ?? defaultJudgeId;
+const judgeAgent = judgeNamed(judgeAgentId);
+if (judgeAgent === undefined) {
   console.error(
-    `No agent named "${values.agent}". Known: ${AGENTS.map(({ id }) => id).join(", ")}`,
+    `No judge named "${judgeAgentId}". Known: ${JUDGES.map(({ id }) => id).join(", ")}`,
   );
   process.exit(1);
 }
 
-const model = values.model ?? agent.defaultModel;
+const configuredJudge = configuredDefaults("judges", judgeAgent.id);
+
+const judgeModel = values["judge-model"] ?? configuredJudge.model ?? judgeAgent.defaultModel;
 
 /**
  * The turn budget, when the agent has one. Rejected rather than dropped for the
@@ -152,15 +208,21 @@ if (maxTurns !== undefined && (!Number.isInteger(maxTurns) || maxTurns < 1)) {
 }
 
 /**
- * How many trials each task gets. One is a coin flipped once: the gate score is
- * then 1 or 0, and a gate moving from 5/5 to 4/5 is as easily sampling noise as
- * a skill that regressed. Repeating turns the per-task score into a mean, so the
- * variance shows in the number instead of hiding inside it.
+ * How many trials each task gets. Repeating turns the per-task score into a mean,
+ * so the variance shows in the number instead of hiding inside it.
  *
- * Two by default, which is the smallest count that can disagree with itself.
- * Raise it for the tasks whose arms sit within a point of each other — that is
- * the question repetition answers — and lower it to one when the point of the
- * run is to exercise the harness rather than to measure anything.
+ * One by default, which is a coin flipped once: the gate score is then 1 or 0,
+ * and a gate moving from 5/5 to 4/5 is as easily sampling noise as a skill that
+ * regressed. The default is the cheap question — did this edit break something
+ * obvious — because that is the run people actually type, and a default that
+ * doubled its bill would be paid on every run to answer a question most of them
+ * were not asking.
+ *
+ * Raise it for the run that is asking: 2 is the smallest count that can disagree
+ * with itself, and 5 or 10 for two arms sitting within a point of each other,
+ * which is precisely what repetition answers and where the money is worth
+ * spending. `repeat` travels in the run metadata, so a pass rate is always read
+ * beside the number of samples it averages.
  */
 const repeat = Number(values.repeat);
 if (!Number.isInteger(repeat) || repeat < 1) {
@@ -169,15 +231,21 @@ if (!Number.isInteger(repeat) || repeat < 1) {
 }
 
 /**
- * How many tasks run at once. One by default, because a trial is minutes and
- * real money and output that interleaves is output nobody reads while it runs.
- * CI reads nothing while it runs and pays by the wall clock, so it raises this:
- * a gate of five tasks at three abreast finishes in two waves instead of five.
+ * How many tasks run at once. One when nobody says, because a trial is minutes
+ * and real money and output that interleaves is output nobody reads while it
+ * runs. CI reads nothing while it runs and pays by the wall clock, so it raises
+ * this: a gate of five tasks at three abreast finishes in two waves instead of
+ * five. `evals.config.ts` may raise it too, for a repository whose runs are
+ * normally unattended — the flag, then the config, then this one.
  *
  * Tasks, not trials: a task's repetitions stay serial inside it, so the samples
  * a score averages never compete with each other for the same rate limit.
  */
-const concurrency = Number(values["max-concurrency"]);
+const concurrency =
+  values["max-concurrency"] === undefined
+    ? (config.maxConcurrency ?? 1)
+    : Number(values["max-concurrency"]);
+// Only the flag can still be wrong: the config's was checked as it was loaded.
 if (!Number.isInteger(concurrency) || concurrency < 1) {
   console.error(
     `--max-concurrency takes a whole number of tasks at once, not "${values["max-concurrency"]}".`,
@@ -256,13 +324,24 @@ if (values.effort !== undefined && agent.efforts.length === 0) {
   process.exit(1);
 }
 
+// The config's own effort was checked against this agent as it was loaded, so
+// only the flag can still be wrong here.
 const effort =
   values.effort === undefined
-    ? agent.defaultEffort
+    ? (configuredAgent.effort ?? agent.defaultEffort)
     : effortNamed("effort", values.effort, agent.efforts);
-// Always a level, out of all of them: the judge is Claude whichever agent is
-// under test.
-const judgeEffort = effortNamed("judge-effort", values["judge-effort"], EFFORTS);
+
+if (values["judge-effort"] !== undefined && judgeAgent.efforts.length === 0) {
+  console.error(
+    `--judge-effort has no meaning for ${judgeAgent.id}, which takes no reasoning effort.`,
+  );
+  process.exit(1);
+}
+
+const judgeEffort =
+  values["judge-effort"] === undefined
+    ? (configuredJudge.effort ?? judgeAgent.defaultEffort)
+    : effortNamed("judge-effort", values["judge-effort"], judgeAgent.efforts);
 
 const gitOutput = async (args: readonly string[]): Promise<string> => {
   const { stdout } = await run("git", [...args]);
@@ -428,7 +507,8 @@ const gradeTrial = async (
     prompt,
     diff: trial.diff,
     summary: trial.summary,
-    model: values["judge-model"],
+    judge: judgeAgent,
+    model: judgeModel,
     effort: judgeEffort,
   });
 
@@ -477,8 +557,11 @@ const result = await dataset.runExperiment({
     // The judge is pinned separately from the subject and recorded beside it.
     // Two models move in this system, and a run nobody can read the judge of is
     // a run whose verdicts cannot be compared to last month's.
-    judgeModel: values["judge-model"],
-    judgeEffort,
+    judgeAgent: judgeAgent.id,
+    judgeModel,
+    // "none" is a judge with no effort setting, which is not the same claim as
+    // an unrecorded one.
+    judgeEffort: judgeEffort ?? "none",
     // "none" is an agent with no turn cap, which is not the same claim as a cap
     // that went unrecorded.
     maxTurns: maxTurns ?? "none",
