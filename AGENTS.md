@@ -11,20 +11,6 @@ looks surprising, the explanation is in the file that does it (`alias.ts`,
 
 ## Skills
 
-`.claude/skills/` holds the rules this repo expects you to follow, and they are
-not optional context — read the skill **before** writing the code, not as a
-review pass afterwards. Most changes here touch more than one:
-
-- `react` — components, hooks, JSX/TSX, state, effects, context, re-render work
-- `javascript` — any JS/TS at all, React included: functions, variables, comments, conditionals, modern APIs
-- `typescript` — declaring or reviewing types: type vs interface, generics, unions, `any`, enums
-- `engineer` — design and architecture: a new module or layer, an abstraction, where code lives, the shape of props, a hook signature, an exported API
-- `testing` — any test written while building: which tier, the msw seam, the mount and queries, the file shape, fixtures
-
-Invoke them by name with the Skill tool. Writing one component is already three
-of them — `react` for the component, `javascript` for what is inside it,
-`typescript` for its props.
-
 A rule has one source, and it is the skill. Nothing outside `.claude/skills/`
 restates one — not this file, not a comment — because `evals/` measures a skill
 by removing it, and a copy that survives the removal makes that measurement read
