@@ -26,43 +26,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Whether the diff holds a source file at all. A pull request about docs or
-  # config has nothing to score, and the scoring job below is skipped rather
-  # than run to say so: a skipped check reads as "not about this" on the pull
-  # request, where a green one with an empty report would read as a pass.
-  changes:
-    name: anything to check?
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      files: ${{ steps.list.outputs.files }}
-    steps:
-      # Full history: the diff is taken from the merge base, which a shallow
-      # clone does not hold.
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: yarn
-      - run: yarn install --frozen-lockfile
-      - id: list
-        env:
-          BASE: ${{ github.base_ref }}
-        run: |
-          set -o pipefail
-          # The same filter `online.ts` scores with, so this job and that one
-          # cannot disagree about what a source file is.
-          files=$(yarn --silent evals:online --base "origin/$BASE" --list-files | wc -l | tr -d ' ')
-          echo "files=$files" >> "$GITHUB_OUTPUT"
-          echo "$files source file(s) changed against $BASE" >> "$GITHUB_STEP_SUMMARY"
-
-  score:
-    needs: changes
-    if: needs.changes.outputs.files != '0'
-    name: check this PR's diff
+  online:
+    name: score the diff
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # `write` for the comment below; nothing else here needs more than reading.
@@ -121,24 +86,31 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       # `always()`: a broken harness is worth a comment too, and the job link
-      # is where its reasons are. Without a report there is nothing else to
-      # say, and the comment says that.
+      # is where its reasons are. A green job with no report is a diff with no
+      # source file in it — `online.ts` said so and exited zero — and that
+      # gets no comment at all: a pull request about docs has nothing to read.
       - name: Write the comment
+        id: comment
         if: always()
         env:
           JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          OUTCOME: ${{ job.status }}
         run: |
           if [ -f "$RUNNER_TEMP/report.json" ]; then
             yarn --silent evals:comment --rules-check "$RUNNER_TEMP/report.json" --job-url "$JOB_URL" \
               > "$RUNNER_TEMP/comment.md"
-          else
+          elif [ "$OUTCOME" != "success" ]; then
             {
               echo '## Rules check'
               echo
               echo "The check could not run on this diff. What stopped it is in the [job]($JOB_URL); it is a broken harness, not a verdict on this pull request."
             } > "$RUNNER_TEMP/comment.md"
+          else
+            echo "No source file in the diff: nothing to say on the pull request."
+            exit 0
           fi
-      - if: always()
+          echo "post=true" >> "$GITHUB_OUTPUT"
+      - if: always() && steps.comment.outputs.post == 'true'
         uses: ./.github/actions/pr-comment
         with:
           marker: rules-check

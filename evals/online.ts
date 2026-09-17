@@ -51,10 +51,6 @@ const { values } = parseArgs({
     "judge-agent": { type: "string" },
     "judge-model": { type: "string" },
     "judge-effort": { type: "string" },
-    // Print the source files the diff touches and stop, before Langfuse or a
-    // judge is reached: CI asks this first, and skips the scoring job when
-    // there is nothing to score.
-    "list-files": { type: "boolean", default: false },
     // Where to write the report as data, for the pull request comment.
     "report-file": { type: "string" },
   },
@@ -127,11 +123,6 @@ const git = async (args: readonly string[]): Promise<string> => {
 // otherwise read as part of the pull request.
 const range = `${base}...HEAD`;
 const { diff, changedFiles } = await sourceDiff(range, repoRoot);
-
-if (values["list-files"]) {
-  for (const file of changedFiles) console.log(file);
-  process.exit(0);
-}
 
 const headSha = await git(["rev-parse", "HEAD"]);
 const baseSha = await git(["merge-base", base, "HEAD"]);
