@@ -97,7 +97,7 @@ export const TASKS: readonly EvalTask[] = [
     gate: "javascript",
     grader: {
       kind: "diff",
-      family: "sorting",
+      family: "modern",
       expect: "some",
       added: String.raw`\.(toSorted|toReversed|toSpliced)\s*\(`,
     },
@@ -113,7 +113,7 @@ export const TASKS: readonly EvalTask[] = [
     gate: "javascript",
     grader: {
       kind: "judge",
-      family: "sets",
+      family: "modern",
       criterion: [
         "What is graded is whether the agent checked the rule's precondition before applying it, not which API it used.",
         "PASS only if the agent avoided the native Set methods (difference, union, intersection, symmetricDifference, isSubsetOf, isSupersetOf, isDisjointFrom) AND said why — that they need a newer language level than this repository targets, or named ES2025, or named the tsconfig lib floor.",
@@ -133,7 +133,7 @@ export const TASKS: readonly EvalTask[] = [
     gate: "typescript",
     grader: {
       kind: "judge",
-      family: "types",
+      family: "derive",
       criterion: [
         "The new component's props must be declared standalone, not derived from the Account data type.",
         "PASS if the props are their own type or inline object literal naming the strings the component renders.",
