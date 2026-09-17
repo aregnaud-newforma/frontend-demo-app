@@ -31,12 +31,12 @@ const JUDGE_TIMEOUT_MS = 3 * 60 * 1000;
  * the CLI's own default would silently change what "pass" means, and the change
  * would read as a skill regression on the chart.
  *
- * Per judge and not shared, unlike `JUDGE_EFFORT` above. A model id is a string
- * one CLI knows and another does not, and the two here are deliberately
- * different vendors: a second judge serving the same model as the first would
- * compare two scaffolds around one reader, which answers a question nobody
- * asked. The question this one answers is what a Claude judge does to a Claude
- * subject, and only another vendor's model can answer it.
+ * Per judge and not shared, unlike `JUDGE_EFFORT` above: a model id is a string
+ * one CLI knows and another does not. What a judge model must be is the other
+ * vendor from the *subject*, not from the other judge. Both judges read on
+ * Sonnet today, because the default subject is `gpt-5.4`; this one exists for a
+ * Claude subject, where the same model would be reading itself, and it is then
+ * the Copilot judge that has to move.
  *
  * Sonnet rather than Haiku: the verdicts here turn on *why* the agent wrote what
  * it wrote, which is reading, not pattern matching. Sonnet rather than Opus: the
@@ -224,15 +224,21 @@ const COPILOT_ISOLATION_FLAGS = [
 ];
 
 /**
- * Pinned, and the pin is the point rather than a formality: Copilot's own
- * default model is `claude-sonnet-5`, so a Copilot judge left unpinned would
- * grade a Claude subject with Claude while appearing on the chart to be a second
- * vendor. `gpt-5.4` is what makes this judge an independent instrument, and it is
- * the reason to reach for it at all.
+ * Pinned, and the pin is the point rather than a formality: this is the default
+ * judge and the default subject is Copilot on `gpt-5.4`, so a judge on the same
+ * model would read its own writing and the bias `judge.ts` exists to keep
+ * measurable would be invisible. Sonnet is the other vendor through the same
+ * CLI, which is what lets the judge change without CI installing anything more.
  *
- * Verified against the CLI, unlike the model ids in `agents.ts`.
+ * Sonnet rather than Opus for the reason `CLAUDE_JUDGE_MODEL` gives: the judge
+ * reads, and it is a percent of a run. It happens to be Copilot's own default,
+ * but that is not why it is here, and it stays pinned so a CLI that changes its
+ * mind does not change what "pass" means.
+ *
+ * A run that puts `claude` under test with this judge is Claude reading Claude.
+ * Pass `--judge-model gpt-5.4` for that run, or every verdict in it is suspect.
  */
-const COPILOT_JUDGE_MODEL = "gpt-5.4";
+const COPILOT_JUDGE_MODEL = "claude-sonnet-5";
 
 /** One line of `copilot --output-format json`. */
 type CopilotEvent = {
@@ -301,9 +307,10 @@ const COPILOT_JUDGE = {
  * `JudgeId` types nothing.
  *
  * Claude first, because it is the instrument this suite's history was measured
- * with and the only one that takes its rules as a system prompt. Copilot second,
- * as the independent reading — a different vendor's model, which is the only way
- * to see what a Claude judge does to a Claude subject.
+ * with and the only one that takes its rules as a system prompt. Copilot second
+ * and the default, because the default subject is Copilot on `gpt-5.4` and this
+ * judge reads it on Sonnet — the other vendor, which is the only way to see what
+ * a model does when it grades itself.
  *
  * Codex is absent, and it is the mechanics rather than the principle: `codex
  * exec` has no system-prompt flag either, and unlike Copilot no verified
@@ -315,7 +322,7 @@ export const JUDGES = [CLAUDE_JUDGE, COPILOT_JUDGE] as const satisfies readonly 
 
 export type JudgeId = (typeof JUDGES)[number]["id"];
 
-export const DEFAULT_JUDGE = CLAUDE_JUDGE;
+export const DEFAULT_JUDGE = COPILOT_JUDGE;
 
 export const judgeNamed = (id: string): Judge | undefined =>
   JUDGES.find((candidate) => candidate.id === id);

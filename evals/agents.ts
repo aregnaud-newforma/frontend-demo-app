@@ -666,7 +666,7 @@ export const AGENTS = [CLAUDE, CODEX, COPILOT] as const satisfies readonly Agent
  */
 export type AgentId = (typeof AGENTS)[number]["id"];
 
-export const DEFAULT_AGENT = CLAUDE;
+export const DEFAULT_AGENT = COPILOT;
 
 export const agentNamed = (id: string): Agent | undefined =>
   AGENTS.find((agent) => agent.id === id);

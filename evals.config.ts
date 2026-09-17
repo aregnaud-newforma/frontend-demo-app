@@ -19,10 +19,4 @@ export default {
   // server/ too: the API process is where an API-route rule can be broken, and
   // the javascript gate carries three tasks that ask for a change there.
   sourcePaths: ["src/**", "server/**"],
-  defaultAgent: "copilot",
-  // The judge is the instrument, so it is named here rather than inherited: this
-  // repository grades with Copilot on `gpt-5.4`, which is a different vendor
-  // from every agent it measures. The harness default is `claude`, and leaving
-  // this out would have meant grading a Claude subject with a Claude reader.
-  defaultJudge: "copilot",
 } satisfies EvalsConfig;

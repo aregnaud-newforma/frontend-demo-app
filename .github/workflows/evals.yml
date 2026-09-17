@@ -64,7 +64,7 @@ on:
         required: false
         type: choice
         options: ["claude", "codex", "copilot", "both"]
-        default: "claude"
+        default: "copilot"
       repeat:
         description: "Trials per task. More samples, less noise, proportionally more money."
         required: false

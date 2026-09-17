@@ -26,12 +26,12 @@ yarn evals --repeat 5                   # five passes over each task's prompts i
 yarn evals --max-concurrency 3          # three tasks at once (CI does; local output interleaves)
 yarn evals --reuse                      # re-score stored trials, no trial spawned
 yarn evals --run-name before-skill-edit # name the run yourself
-yarn evals --agent codex                # the agent under test (`claude` by default)
-yarn evals --model claude-opus-5        # the model under test (the agent's own, by default)
+yarn evals --agent claude               # the agent under test (`copilot` by default)
+yarn evals --model claude-sonnet-5      # the model under test (the agent's own, by default)
 yarn evals --effort low                 # its effort level (the agent's own, by default)
 yarn evals --max-turns 120              # the per-trial turn budget, for an agent that takes one
-yarn evals --judge-agent copilot         # who grades judged tasks (`claude` by default)
-yarn evals --judge-model claude-sonnet-5 # the model it grades with (the judge's own, by default)
+yarn evals --judge-agent claude          # who grades judged tasks (`copilot` by default)
+yarn evals --judge-model gpt-5.4         # the model it grades with (the judge's own, by default)
 yarn evals --judge-effort high           # its effort level (the judge's own, by default)
 yarn evals --list-gates                 # the gates that have a task, as JSON
 yarn evals --list-agents                # the agents and the default one, as JSON
@@ -219,9 +219,11 @@ the value.
 `defaultJudge` is the same chain for `--judge-agent`, and never derived from
 `defaultAgent`: the judge is the instrument and the agent is the subject, so a
 judge that followed whoever was under test would move the ruler and the thing
-measured at once. This repository sets it to `copilot`, which grades on `gpt-5.4`
-— a different vendor from every agent it measures, and from the harness default
-of `claude`.
+measured at once. The harness defaults to `copilot` for both, and this
+repository leaves both keys out. The vendors still differ: the subject runs on
+`gpt-5.4` and the judge reads on `claude-sonnet-5`, through the same CLI. Put
+`claude` under test and that split closes — add `--judge-model gpt-5.4` to
+reopen it.
 
 CI follows that key rather than restating it: the Copilot CLI is installed in
 every job because the judge needs it, and each agent's own CLI only in the jobs
@@ -310,26 +312,27 @@ directory holding one `.claude/skills/greet/SKILL.md` came back with
 `skillsInvoked: ["greet"]` and no `--add-dir` needed. Both arms are a real
 comparison there, and which rules were read is recorded per trial.
 
-The judge is one CLI whichever agent is under test — `copilot` here, `claude`
-where this repository says nothing — and `--judge-agent` is the only way to move
-it for a single run. It is the instrument, not the subject: grading
-Codex's diff with Codex would move the ruler and the thing measured at once, so
-hold it fixed across a series of runs you mean to compare. In CI that means every
-job installs the Claude CLI, including the Codex ones.
+The judge is one CLI whichever agent is under test — `copilot` by default, and
+`--judge-agent` is the only way to move it for a single run. It is the
+instrument, not the subject: grading Codex's diff with Codex would move the
+ruler and the thing measured at once, so hold it fixed across a series of runs
+you mean to compare. In CI that means every job installs the Copilot CLI,
+including the Claude and Codex ones.
 
-Two are implemented. `claude` is the default and the instrument this suite's
-history was measured with. `copilot` is the independent reading, and it is
-pinned to `gpt-5.4` for the reason that matters: Copilot's own default model is
-`claude-sonnet-5`, so an unpinned Copilot judge would grade a Claude subject with
-Claude while appearing on the chart to be a second vendor.
+Two are implemented. `copilot` is the default, reading on `claude-sonnet-5`: the
+other vendor from the `gpt-5.4` it grades by default, through the CLI CI already
+has. The pin is the point — Copilot's own default happens to be Sonnet too, but
+a judge that followed the CLI would change what "pass" means the day the CLI
+changes its mind. `claude` is the instrument this suite's history was measured
+with, and the only one that takes its rules as a system prompt.
 
-Prefer `claude` unless you are asking what a Claude judge does to a Claude
-subject. Copilot has no system-prompt flag, so the grading rules travel in the
-same prompt as the diff and the summary the agent under test wrote — rules the
+A `claude` subject under the default judge is Claude reading Claude; pass
+`--judge-model gpt-5.4` for that run. Copilot has no system-prompt flag, so the
+grading rules travel in the same prompt as the diff and the summary the agent under test wrote — rules the
 summary sits beside rather than under. `--no-custom-instructions` at least leaves
 them the only instructions in play.
 
-CI runs Claude alone unless asked. An `evals:<agent>` label on a pull request
+CI runs Copilot alone unless asked. An `evals:<agent>` label on a pull request
 selects who runs — `evals:claude`, `evals:codex`, `evals:copilot`, or any
 combination — and no label at all means the default alone. A label naming an
 agent that does not exist fails the run rather than quietly scoring the default.
@@ -490,11 +493,12 @@ Each run carries the commit SHA and branch as metadata, so a run can be traced
 back to the state of `.claude/skills/` that produced it.
 
 It also carries the conditions the score was produced under. The model is pinned
-(`--model`, default `claude-opus-5`) because the CLI's default follows the plan
-and the account, and an unpinned model makes two runs different experiments under
-one name. So is its effort (`--effort`, default `high`, Opus 5's own): unpinned,
-`claude -p` reads `effortLevel` from the settings of whichever machine runs it,
-and a laptop and a CI runner can disagree. `--effort low` is a second experiment
+(`--model`, default `gpt-5.4` under Copilot, `claude-opus-5` under Claude)
+because the CLI's default follows the plan and the account, and an unpinned
+model makes two runs different experiments under one name. So is its effort
+(`--effort`, default `high` for every agent): unpinned, each CLI reads it from
+the settings of whichever machine runs it, and a laptop and a CI runner can
+disagree. `--effort low` is a second experiment
 worth running by hand — a rule that survives a model thinking less is a rule
 that carries the model, rather than one the model was going to find anyway. What
 cannot be pinned is recorded: `runner` (`local` or `ci`),
