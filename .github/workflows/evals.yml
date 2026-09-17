@@ -353,32 +353,53 @@ jobs:
       # the repository `evals/skills.pin.json` names, and a job without them
       # would fill no worktree, score 0 on every task, and read as a skill that
       # stopped working. `skills.ts` refuses to run rather than let that happen,
-      # so a missing key fails the job loudly.
+      # so a missing token fails the job loudly instead.
       #
       # Cloned here rather than left to the harness because the harness has no
       # credentials: `EVALS_SKILLS_DIR` is how a checkout made with them is
       # handed over. Full history, because `--baseline-ref` reaches for a commit
       # older than the pin.
+      #
+      # Over HTTPS with a token, where the pin names SSH, and the asymmetry is
+      # the point. Azure DevOps has no per-repository deploy keys — an SSH key
+      # there belongs to an account and carries everything that account can do,
+      # across the whole organisation, writes included. A PAT scoped to
+      # Code (Read) is the only credential that can be narrowed to what this job
+      # actually needs. The pin keeps the SSH url because that is what a
+      # developer's own machine clones with.
       - name: Clone the rules under test
         env:
-          SKILLS_SSH_KEY: ${{ secrets.SKILLS_SSH_KEY }}
+          SKILLS_REPO_TOKEN: ${{ secrets.SKILLS_REPO_TOKEN }}
         run: |
-          if [ -z "$SKILLS_SSH_KEY" ]; then
-            echo "::error::SKILLS_SSH_KEY is not set. It is a read-only deploy key for the repository named in evals/skills.pin.json, without which no job can read the rules under test." >&2
+          if [ -z "$SKILLS_REPO_TOKEN" ]; then
+            echo "::error::SKILLS_REPO_TOKEN is not set. It is an Azure DevOps PAT scoped to Code (Read) for the repository named in evals/skills.pin.json, without which no job can read the rules under test." >&2
             exit 1
           fi
 
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SKILLS_SSH_KEY" > ~/.ssh/skills
-          chmod 600 ~/.ssh/skills
-          # The host is whatever the pin names, so its key is taken on first
-          # contact rather than pinned here — a second place to keep in step.
-          url=$(jq -r .url evals/skills.pin.json)
-          host=$(echo "$url" | sed -n 's|^[^@]*@\([^:/]*\).*|\1|p')
-          ssh-keyscan -H "$host" >> ~/.ssh/known_hosts 2>/dev/null
+          # Derived rather than configured, so the pin stays the one place the
+          # repository is named. `git@ssh.dev.azure.com:v3/<org>/<project>/<repo>`
+          # is the same repository as
+          # `https://dev.azure.com/<org>/<project>/_git/<repo>`.
+          ssh_url=$(jq -r .url evals/skills.pin.json)
+          path=${ssh_url#*:v3/}
+          org=${path%%/*}
+          rest=${path#*/}
+          project=${rest%%/*}
+          repo=${rest#*/}
 
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/skills -o IdentitiesOnly=yes" \
-            git clone "$url" "$RUNNER_TEMP/skills"
+          if [ "$org" = "$path" ] || [ "$project" = "$rest" ] || [ -z "$repo" ]; then
+            echo "::error::Could not read an org/project/repo out of the pin url '$ssh_url'. This step derives the https url from it." >&2
+            exit 1
+          fi
+
+          # The token goes in the credential helper's input rather than the url,
+          # so it never reaches the command line, the process table, or a log
+          # line that git echoes back on failure.
+          git config --global credential.helper store
+          printf 'https://pat:%s@dev.azure.com\n' "$SKILLS_REPO_TOKEN" > ~/.git-credentials
+          chmod 600 ~/.git-credentials
+
+          git clone "https://dev.azure.com/$org/$project/_git/$repo" "$RUNNER_TEMP/skills"
           echo "EVALS_SKILLS_DIR=$RUNNER_TEMP/skills" >> "$GITHUB_ENV"
 
       - name: Run gate
