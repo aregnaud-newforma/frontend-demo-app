@@ -408,8 +408,11 @@ jobs:
           ref=$(jq -r .ref evals/skills.pin.json)
           echo "Cloned $(git -C "$RUNNER_TEMP/skills" rev-list --count HEAD) commit(s); refs:"
           git -C "$RUNNER_TEMP/skills" branch -r
-          if ! git -C "$RUNNER_TEMP/skills" rev-parse --verify --quiet "origin/$ref^{commit}" >/dev/null; then
-            echo "::error::The clone has no branch '$ref', which evals/skills.pin.json pins. The remote branches it does have are listed above." >&2
+          # Both forms, as `skills.ts` resolves them: a branch has no local head
+          # in a clone nobody checks out, and a commit has no `origin/` form.
+          if ! git -C "$RUNNER_TEMP/skills" rev-parse --verify --quiet "origin/$ref^{commit}" >/dev/null \
+            && ! git -C "$RUNNER_TEMP/skills" rev-parse --verify --quiet "$ref^{commit}" >/dev/null; then
+            echo "::error::The clone holds no '$ref', which evals/skills.pin.json pins. Its remote branches are listed above; a branch merged and deleted upstream looks exactly like this." >&2
             exit 1
           fi
 
