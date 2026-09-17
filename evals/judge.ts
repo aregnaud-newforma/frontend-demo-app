@@ -339,26 +339,42 @@ export type Verdict =
   | { readonly kind: "graded"; readonly passed: boolean; readonly reason: string }
   | { readonly kind: "unavailable"; readonly reason: string };
 
-/** Tolerates a model that wrapped its JSON in a fence despite being told not to. */
+/**
+ * Tolerates what a model does to JSON despite being told not to: a fence around
+ * it, prose before or after it, or a literal newline inside the `reason` string,
+ * which `JSON.parse` rejects and a model writing a paragraph produces. The
+ * verdict is the `passed` boolean; everything else is the reason, and a reason
+ * that had to be read out of a broken reply is still that reply.
+ *
+ * A judge that says neither `true` nor `false` is unavailable, not failed, and
+ * the reply travels whole in the reason so the next such failure can be read
+ * rather than guessed at — the first one showed 200 characters and nothing else.
+ */
 const parseVerdict = (raw: string): Verdict => {
-  const json = raw
+  const unfenced = raw
     .replace(/^```(?:json)?\n?/, "")
     .replace(/\n?```$/, "")
     .trim();
 
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(json);
+    const parsed = JSON.parse(unfenced) as { passed?: unknown; reason?: unknown } | null;
+    if (typeof parsed?.passed === "boolean") {
+      return {
+        kind: "graded",
+        passed: parsed.passed,
+        reason: typeof parsed.reason === "string" ? parsed.reason : "",
+      };
+    }
   } catch {
-    return { kind: "unavailable", reason: `judge did not return JSON: ${raw.slice(0, 200)}` };
+    // Not JSON as a whole; read the verdict out of it below.
   }
 
-  const { passed, reason } = (parsed ?? {}) as { passed?: unknown; reason?: unknown };
-  if (typeof passed !== "boolean") {
-    return { kind: "unavailable", reason: `judge returned no verdict: ${json.slice(0, 200)}` };
+  const verdict = /"passed"\s*:\s*(true|false)/.exec(unfenced);
+  if (verdict === null) {
+    return { kind: "unavailable", reason: `judge returned no verdict: ${raw.slice(0, 2000)}` };
   }
-
-  return { kind: "graded", passed, reason: typeof reason === "string" ? reason : "" };
+  const reason = /"reason"\s*:\s*"([\s\S]*?)"\s*\}?\s*$/.exec(unfenced)?.[1];
+  return { kind: "graded", passed: verdict[1] === "true", reason: reason ?? unfenced };
 };
 
 /**
@@ -403,6 +419,117 @@ export const judge = async (input: {
       await input.judge.ask({
         payload: payload(input),
         system: SYSTEM_PROMPT,
+        cwd,
+        model: input.model,
+        effort: input.effort,
+      }),
+    );
+  } catch (error) {
+    return {
+      kind: "unavailable",
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    await rm(cwd, { recursive: true, force: true }).catch(() => {});
+  }
+};
+
+/**
+ * The same judge, asked about a pull request nobody wrote a task for. Two
+ * things differ from a trial, and both are in the prompt rather than the code.
+ *
+ * There is no summary: a pull request carries a title and a body, written for
+ * a reviewer, and a criterion about *why* cannot be answered from those. So
+ * the online criteria ask only what the diff shows.
+ *
+ * And silence is not failure here. A trial's diff is an answer to the prompt,
+ * so a criterion it does not address is a criterion it failed. A pull request
+ * is about whatever its author wanted, and most of them are about something
+ * else: the judge says first whether the criterion applies, and a "no" is no
+ * score at all rather than a pass that would inflate the line.
+ */
+const ONLINE_SYSTEM_PROMPT = [
+  "You grade one criterion against the diff of a real pull request.",
+  "",
+  "You are given the criterion, the pull request's title and body, and its diff.",
+  "",
+  "Rules:",
+  "- First decide whether the criterion applies: whether the diff contains the kind of change the criterion is about. Most pull requests are about something else, and for those `applies` is false and `passed` is ignored.",
+  "- When it applies, judge the criterion as written. Do not grade code quality, style, or anything the criterion does not name.",
+  "- Judge from the diff. The title and body say what the change is for; they are not evidence that the diff does it.",
+  "- You cannot read the repository. Judge only from the text below.",
+  "",
+  'Reply with strict JSON and nothing else: {"applies": boolean, "passed": boolean, "reason": string}.',
+  "Keep `reason` to one sentence naming the specific evidence you used. No prose outside the JSON, no code fences.",
+].join("\n");
+
+export type OnlineVerdict =
+  | Verdict
+  | { readonly kind: "inapplicable"; readonly reason: string };
+
+const parseOnlineVerdict = (raw: string): OnlineVerdict => {
+  const json = raw
+    .replace(/^```(?:json)?\n?/, "")
+    .replace(/\n?```$/, "")
+    .trim();
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return { kind: "unavailable", reason: `judge did not return JSON: ${raw.slice(0, 200)}` };
+  }
+
+  const { applies, passed, reason } = (parsed ?? {}) as {
+    applies?: unknown;
+    passed?: unknown;
+    reason?: unknown;
+  };
+  const why = typeof reason === "string" ? reason : "";
+  if (applies === false) return { kind: "inapplicable", reason: why };
+  if (typeof passed !== "boolean") {
+    return { kind: "unavailable", reason: `judge returned no verdict: ${json.slice(0, 200)}` };
+  }
+  return { kind: "graded", passed, reason: why };
+};
+
+const onlinePayload = (input: {
+  readonly criterion: string;
+  readonly title: string;
+  readonly body: string;
+  readonly diff: string;
+}): string =>
+  [
+    "## Criterion",
+    input.criterion,
+    "",
+    "## The pull request",
+    input.title === "" ? "(no title)" : input.title,
+    "",
+    input.body === "" ? "(no body)" : input.body,
+    "",
+    "## Its diff",
+    input.diff,
+  ].join("\n");
+
+export const judgeOnline = async (input: {
+  readonly criterion: string;
+  readonly title: string;
+  readonly body: string;
+  readonly diff: string;
+  readonly judge: Judge;
+  readonly model: string;
+  readonly effort: Effort | undefined;
+}): Promise<OnlineVerdict> => {
+  // A scratch directory, for the reason `judge` has one: the CLI must not find
+  // the repository's own instructions above it.
+  const cwd = await mkdtemp(join(tmpdir(), "eval-judge-"));
+
+  try {
+    return parseOnlineVerdict(
+      await input.judge.ask({
+        payload: onlinePayload(input),
+        system: ONLINE_SYSTEM_PROMPT,
         cwd,
         model: input.model,
         effort: input.effort,

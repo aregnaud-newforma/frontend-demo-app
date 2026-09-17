@@ -550,6 +550,11 @@ const dataset = await langfuse.dataset.get(gate);
 
 const result = await dataset.runExperiment({
   name: runName,
+  // Passed as the run name too, verbatim: left out, the SDK stores
+  // `${name} - ${timestamp}` and the deletion below asks for a run that does
+  // not exist. A run that could not be measured then stayed on the chart with
+  // a 404 in the job log — the first one this suite deleted taught it that.
+  runName,
   description: `${gate}, ${arm}, ${agent.id} ${model}${effort === undefined ? "" : ` at ${effort}`}, ${selected.length} task(s), commit ${commitSha.slice(0, 7)}`,
   maxConcurrency: concurrency,
   metadata: {
