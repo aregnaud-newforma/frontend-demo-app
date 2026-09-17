@@ -33,7 +33,11 @@ runs:
         set -o pipefail
 
         marker="<!-- $MARKER -->"
-        { echo "$marker"; cat "$BODY_FILE"; } > "$RUNNER_TEMP/comment.md"
+        # A fresh file, not a fixed name: the caller's body file lives in the
+        # same temp directory, and the first run with both named `comment.md`
+        # had `cat` read the file it was writing.
+        body=$(mktemp)
+        { echo "$marker"; cat "$BODY_FILE"; } > "$body"
 
         # `--paginate` because a long review has more than one page of
         # comments, and the marker may be on the last one.
@@ -42,7 +46,7 @@ runs:
 
         if [ -n "$existing" ]; then
           gh api -X PATCH "repos/$REPO/issues/comments/$existing" \
-            -F body=@"$RUNNER_TEMP/comment.md" --silent
+            -F body=@"$body" --silent
         else
-          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR" --repo "$REPO" --body-file "$body"
         fi
