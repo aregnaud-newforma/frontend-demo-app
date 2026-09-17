@@ -7,8 +7,11 @@
 #
 # Informative, not blocking. `evals/run.ts` prints the pass rate and exits zero
 # whatever the score, so a red gate never stops a merge. A failing job here is a
-# broken harness — a missing secret, a CLI that would not install — not a skill
-# that regressed. Read the score in the run summary or in Langfuse.
+# broken harness — a missing secret, a CLI that would not install or would not
+# authenticate, a judge it could not reach — not a skill that regressed. The
+# line is drawn by `run.ts`: a verdict it could not reach deletes the run from
+# Langfuse and exits non-zero, a trial that ran and failed does neither. Read the score in the run summary or in
+# Langfuse.
 name: Evals
 
 on:
@@ -462,7 +465,9 @@ jobs:
           # always succeeds. A Langfuse 409 that killed `run.ts` before the first
           # trial still reported success — the exact inversion of what this
           # workflow claims, where a red job means a broken harness. A red score
-          # still exits zero, because `run.ts` decides that, not the shell.
+          # still exits zero, because `run.ts` decides that, not the shell — and
+          # it exits non-zero when a trial could not be run or graded at all,
+          # which is the other way this job can say nothing while looking green.
           set -o pipefail
 
           {

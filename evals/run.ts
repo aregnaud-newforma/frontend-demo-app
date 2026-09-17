@@ -487,12 +487,23 @@ type Verdict =
   | { readonly kind: "graded"; readonly passed: boolean; readonly comment: string }
   | { readonly kind: "unanswered"; readonly source: "trial" | "judge"; readonly comment: string };
 
+/**
+ * Every verdict the run could not reach: a CLI that would not start or
+ * authenticate, a rate limit, a judge that could not be reached, a turn budget
+ * that cut the agent off before the summary a judge reads. Each is the run
+ * failing to measure, not the agent being measured — the last one is a
+ * `--max-turns` too small for the task, which the README says to raise — and
+ * together they are what makes the process exit non-zero at the end.
+ */
+const unreachable: string[] = [];
+
 const gradeTrial = async (
   trial: TrialOutcome,
   grader: Grader,
   prompt: string,
 ): Promise<Verdict> => {
   if (trial.status === "unavailable") {
+    unreachable.push(trial.reason);
     return { kind: "unanswered", source: "trial", comment: trial.reason };
   }
 
@@ -506,11 +517,9 @@ const gradeTrial = async (
   // about *why* cannot be answered from a diff alone, so this trial has no
   // verdict — not a failed one.
   if (trial.stop === "max-turns") {
-    return {
-      kind: "unanswered",
-      source: "trial",
-      comment: `out of turns after ${trial.turns ?? maxTurns}, no summary for the judge to read`,
-    };
+    const comment = `out of turns after ${trial.turns ?? maxTurns}, no summary for the judge to read`;
+    unreachable.push(comment);
+    return { kind: "unanswered", source: "trial", comment };
   }
 
   const verdict = await judge({
@@ -523,9 +532,11 @@ const gradeTrial = async (
     effort: judgeEffort,
   });
 
-  return verdict.kind === "unavailable"
-    ? { kind: "unanswered", source: "judge", comment: verdict.reason }
-    : { kind: "graded", passed: verdict.passed, comment: verdict.reason };
+  if (verdict.kind === "unavailable") {
+    unreachable.push(verdict.reason);
+    return { kind: "unanswered", source: "judge", comment: verdict.reason };
+  }
+  return { kind: "graded", passed: verdict.passed, comment: verdict.reason };
 };
 
 const reusable = values.reuse
@@ -763,3 +774,26 @@ const result = await dataset.runExperiment({
 
 console.log(await result.format());
 await otel.shutdown();
+
+// A run that could not reach every verdict is not a measurement, and it does
+// not stay on the chart: the dataset run is deleted and the process exits
+// non-zero, which is what CI reads. The report above, printed before this and
+// copied into the job summary, is where the reasons live — a run kept on the
+// chart with `trial_error` counts was the earlier design, and it made every
+// comparison a month later start by sorting the runs that measured from the
+// runs that did not. A red score with every trial answered is a result, not a
+// failure: it stays, and exits zero.
+//
+// The traces stay too: `deleteRun` removes the run and its items, not the
+// traces they pointed at, and a trace still says what a failed trial cost.
+// Deleted after the flush, so nothing arriving late can recreate the run.
+if (unreachable.length > 0) {
+  console.error(
+    `${unreachable.length} trial(s) could not be run or graded, so this run is not a measurement and is not kept:`,
+  );
+  for (const reason of new Set(unreachable)) console.error(`  ${reason}`);
+  await langfuse.api.datasets.deleteRun(gate, runName).catch((error: unknown) => {
+    console.error(`Could not delete run ${runName} from dataset ${gate}: ${String(error)}`);
+  });
+  process.exit(1);
+}

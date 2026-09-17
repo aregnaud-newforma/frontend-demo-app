@@ -526,6 +526,19 @@ every run needs a larger `--max-turns`, not a better skill. In CI, where the
 token is shared and trials run three abreast, read a burst of `trial_error` as
 an exhausted five-hour window, not as a regression.
 
+The exit code draws that line for CI. Any verdict the run could not reach — a
+trial that would not run, a judge that would not answer, a judged task cut off
+before its summary — makes `run.ts` delete its dataset run from Langfuse and
+exit non-zero: the job is red because it failed to measure, not because of what
+it measured, and the chart holds only runs that measured. The reasons are in the
+report `run.ts` prints, which CI copies into the job summary. The traces stay,
+with what the failed trials cost. A gate that scores 0 exits zero and stays on
+the chart; that is an answer.
+
+In CI that deletion loses the verdicts the run did reach, since the runner's
+trial cache goes with the runner. Locally the cache stays, and `--reuse` will
+publish those verdicts again once the cause is fixed.
+
 ## The judge
 
 Some rules have no diff signature. `modern-set-operations` is the one that forced
