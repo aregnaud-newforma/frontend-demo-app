@@ -85,11 +85,11 @@ describe("renderBenchmark", () => {
       links,
     );
     expect(comment).toContain("commit `74a58d5`");
-    expect(comment).toContain("| Rule family · agent | With skills | Without skills |");
+    expect(comment).toContain("| Rule family | Agent | With skills | Without skills |");
     expect(comment).toContain(
-      "| react · copilot | [93%](https://langfuse/run/with) | [50%](https://langfuse/run/without) |",
+      "| react | copilot | [93%](https://langfuse/run/with) | [50%](https://langfuse/run/without) |",
     );
-    expect(comment).toContain("| testing · copilot | [80%](https://langfuse/run/1) |  |");
+    expect(comment).toContain("| testing | copilot | [80%](https://langfuse/run/1) |  |");
     expect(comment).not.toContain("Previous skill");
   });
 
@@ -103,7 +103,7 @@ describe("renderBenchmark", () => {
       ],
       links,
     );
-    expect(comment).toContain("| react · copilot | ⚠️ could not measure |");
+    expect(comment).toContain("| react | copilot | ⚠️ could not measure |");
     expect(comment).toContain("- **react · copilot · with-skills** did not measure:");
     expect(comment.match(/judge returned no verdict/g)).toHaveLength(1);
   });

@@ -132,13 +132,14 @@ export const renderBenchmark = (
   const arms = ARM_ORDER.filter((arm) => reports.some((report) => report.arm === arm));
   const lines = new Map<string, BenchmarkReport[]>();
   for (const report of reports) {
-    const key = `${report.gate} · ${report.agent}`;
+    const key = `${report.gate}\t${report.agent}`;
     lines.set(key, [...(lines.get(key) ?? []), report]);
   }
 
   const rows = [...lines.entries()]
     .toSorted(([a], [b]) => a.localeCompare(b))
     .map(([key, runs]) => {
+      const [gate, agent] = key.split("\t");
       const cells = arms.map((arm) => {
         const run = runs.find((report) => report.arm === arm);
         if (run === undefined) return "";
@@ -146,7 +147,7 @@ export const renderBenchmark = (
         if (run.passRate === undefined) return "no task scored";
         return link(percent(run.passRate), run.runUrl);
       });
-      return `| ${key} | ${cells.join(" | ")} |`;
+      return `| ${gate} | ${agent} | ${cells.join(" | ")} |`;
     });
 
   const failures = reports
@@ -173,8 +174,8 @@ export const renderBenchmark = (
     "",
     `How often an agent applies each rule family in an exercise, with and without the skills installed. Each number links to its run in Langfuse. ${NOT_BLOCKING}`,
     "",
-    `| Rule family · agent | ${arms.map((arm) => ARM_LABEL[arm] ?? arm).join(" | ")} |`,
-    `|---|${arms.map(() => "---").join("|")}|`,
+    `| Rule family | Agent | ${arms.map((arm) => ARM_LABEL[arm] ?? arm).join(" | ")} |`,
+    `|---|---|${arms.map(() => "---").join("|")}|`,
     ...rows,
     "",
     ...(failures.length === 0 ? [] : [...failures, ""]),
