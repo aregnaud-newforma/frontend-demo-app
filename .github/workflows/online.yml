@@ -85,13 +85,14 @@ jobs:
             | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      # `always()`: a broken harness is worth a comment too, and the job link
-      # is where its reasons are. A green job with no report is a diff with no
-      # source file in it — `online.ts` said so and exited zero — and that
-      # gets no comment at all: a pull request about docs has nothing to read.
+      # `!cancelled()`: a broken harness is worth a comment too, and the job
+      # link is where its reasons are; a run a newer push cancelled is not, and
+      # says nothing. A green job with no report is a diff with no source file
+      # in it — `online.ts` said so and exited zero — and that gets no comment
+      # at all: a pull request about docs has nothing to read.
       - name: Write the comment
         id: comment
-        if: always()
+        if: "!cancelled()"
         env:
           JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           OUTCOME: ${{ job.status }}
@@ -110,7 +111,7 @@ jobs:
             exit 0
           fi
           echo "post=true" >> "$GITHUB_OUTPUT"
-      - if: always() && steps.comment.outputs.post == 'true'
+      - if: "!cancelled() && steps.comment.outputs.post == 'true'"
         uses: ./.github/actions/pr-comment
         with:
           marker: rules-check

@@ -488,18 +488,21 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       # For the `report` job below, which posts every gate's report as one
-      # comment. `always()`: a gate that broke is a report too. `run.ts` writes
-      # its report even when it exits non-zero; a job that died before that
-      # point leaves one here that says so, so the comment has a line for it.
+      # comment. `!cancelled()`: a gate that broke is a report too, a gate a
+      # newer push cancelled is not — the run it belonged to was superseded, and
+      # the first one to comment said "could not measure" about a commit nobody
+      # was measuring any more. `run.ts` writes its report even when it exits
+      # non-zero; a job that died before that point leaves one here that says
+      # so, so the comment has a line for it.
       - name: Keep the report for the comment
-        if: always() && github.event_name == 'pull_request'
+        if: "!cancelled() && github.event_name == 'pull_request'"
         run: |
           report="$RUNNER_TEMP/reports/${{ matrix.agent }}-${{ matrix.gate }}-${{ matrix.arm }}.json"
           mkdir -p "$RUNNER_TEMP/reports"
           if [ ! -f "$report" ]; then
             printf '%s\n' '{"kind":"benchmark","agent":"${{ matrix.agent }}","gate":"${{ matrix.gate }}","arm":"${{ matrix.arm }}","model":"","commit":"${{ github.event.pull_request.head.sha }}","tasks":[],"unreachable":["the job stopped before the harness wrote a report; see the job log"]}' > "$report"
           fi
-      - if: always() && github.event_name == 'pull_request'
+      - if: "!cancelled() && github.event_name == 'pull_request'"
         uses: actions/upload-artifact@v4
         with:
           name: report-${{ matrix.agent }}-${{ matrix.gate }}-${{ matrix.arm }}
@@ -510,9 +513,10 @@ jobs:
   # gate, which on an `AGENTS.md` edit would be ten comments on one push.
   report:
     needs: [changes, evals]
-    # `always()` because a broken gate is the report most worth reading, and
-    # `needs.evals` is then `failure`, which would otherwise skip this job.
-    if: always() && github.event_name == 'pull_request' && needs.changes.outputs.jobs != '[]'
+    # `!cancelled()` rather than the default: a broken gate is the report most
+    # worth reading, and `needs.evals` is then `failure`, which would otherwise
+    # skip this job. A cancelled run posts nothing — see the gate step above.
+    if: "!cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.jobs != '[]'"
     name: comment on the pull request
     runs-on: ubuntu-latest
     timeout-minutes: 10
