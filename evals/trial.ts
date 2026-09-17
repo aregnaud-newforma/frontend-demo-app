@@ -6,18 +6,11 @@ import { describeFailure, type Agent, type AgentStop, type Effort } from "./agen
 import { config, repoRoot } from "./config.ts";
 import { gatesWithTasks, type EvalTask } from "./grading.ts";
 import { installGate, installSkills, resolveSkills, type SkillSet } from "./skills.ts";
+import { SOURCE_PATHS, sourceDiff } from "./diff.ts";
 
 const run = promisify(execFile);
 
 const RUNS_DIR = join(repoRoot, "evals", ".runs");
-
-/**
- * What the repository counts as an answer, as git pathspecs. Prefixed with
- * `:(glob)` because a bare pathspec reads a double star as a single one, so a
- * glob written to cross directories would match only one level down and quietly
- * grade a fraction of the change.
- */
-const SOURCE_PATHS = config.sourcePaths.map((glob) => `:(glob)${glob}`);
 
 /**
  * Every gate this suite measures, installed into every worktree whatever the
@@ -340,13 +333,12 @@ export const runTrial = async (options: {
     // grade as if it had never been written. Intent-to-add puts an empty entry
     // in the index so the diff shows the file whole, without staging content.
     await git(["add", "--intent-to-add", "--", ...SOURCE_PATHS], worktree);
-    const diff = await git(["diff", "HEAD", "--", ...SOURCE_PATHS], worktree);
-    const names = await git(["diff", "HEAD", "--name-only", "--", ...SOURCE_PATHS], worktree);
+    const { diff, changedFiles } = await sourceDiff("HEAD", worktree);
 
     const outcome: TrialOutcome = {
       status: "completed",
       diff,
-      changedFiles: names.split("\n").filter((line) => line !== ""),
+      changedFiles,
       summary: attempt.summary,
       stop: attempt.stop,
       costUsd: attempt.costUsd,

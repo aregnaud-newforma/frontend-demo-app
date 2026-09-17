@@ -182,15 +182,17 @@ the pin against itself and be refused.
 | `trial.ts`           | isolation: worktree, the resulting diff, the stored outcome            |
 | `judge.ts`           | the LLM grader, for rules a diff cannot separate                       |
 | `run.ts`             | Langfuse: dataset, run, scores, and the command line                   |
+| `diff.ts`            | the one definition of the diff a grader reads, offline and online      |
+| `online.ts`          | the online tier: a real diff, the same graders, one trace              |
 
 The split is down the middle of `evals.config.ts`: everything above it is this
 repository's, everything below knows nothing about it. `tasks.ts` is on the
 repository's side and sits in this directory only because 300 lines of prompt
 prose do not belong in a config file.
 
-The config holds seven keys — `tasks`, `sourcePaths` and the optional
-`defaultAgent`, `defaultJudge`, `agents`, `judges` and `maxConcurrency` — and the
-shortness is the point. Arms and repetition are flags with a default in `run.ts`,
+The config holds eight keys — `tasks`, `sourcePaths` and the optional
+`defaultAgent`, `defaultJudge`, `agents`, `judges`, `maxConcurrency` and
+`onlineJudge` — and the shortness is the point. Arms and repetition are flags with a default in `run.ts`,
 and a key beside one of those would be a second place a run's conditions get
 decided. There is no `--config` either: a suite that can be
 pointed at two of them is a suite whose scores were produced under conditions
@@ -538,6 +540,50 @@ the chart; that is an answer.
 In CI that deletion loses the verdicts the run did reach, since the runner's
 trial cache goes with the runner. Locally the cache stays, and `--reuse` will
 publish those verdicts again once the cause is fixed.
+
+## Online
+
+Everything above gives an agent an exercise and grades the answer. That says
+whether a rule is well written. It says nothing about whether the agents people
+actually use, on real work, follow it — and that is a diff nobody wrote a task
+for.
+
+```bash
+yarn evals:online --base origin/main                  # this branch, diff graders and judge
+yarn evals:online --base origin/main --judge off      # the diff graders alone: free, instant
+yarn evals:online --base origin/main --judge on       # the judge too, whatever the config says
+yarn evals:online --base origin/main --pr 42 --title "…" --body-file body.md
+```
+
+It takes the source diff from the merge base with `--base` to `HEAD`, runs
+every task's `online` grader over it, and reports one Langfuse **trace** tagged
+`online`. No dataset and no run: a dataset item is a task, and this diff answers
+none. The scores carry the same `<family>_gate` names `run.ts` writes, so both
+tiers meet in the Scores view under one name — and a dashboard filtered on the
+`online` tag is the line the Experiments view draws for the offline tier.
+
+A task's own grader cannot read an arbitrary diff. Its criterion names the
+component the prompt pointed at, and a diff grader that expects `some` asks for
+something no pull request can be told to contain. So a task that wants to be
+measured online carries a second grader, `online`, written without the task: a
+`forbidden` signature the diff must not add, or a `criterion` that first says
+when it applies. A judge asked online returns `applies` before `passed`, and a
+"no" is no score at all — a pull request about something else is not a pass. One
+`online` grader per family is enough; a family with two that both apply is
+meaned into one score.
+
+The trace's metadata records which coding agents signed the commits, read from
+their `Co-Authored-By` trailers and their accounts. Every change is scored
+whoever wrote it: attribution is a filter in Langfuse, and agent-written against
+hand-written under one gate is the comparison this tier exists to draw.
+
+`.github/workflows/online.yml` runs it on every pull request, report-only.
+Whether the judge runs is `onlineJudge` in `evals.config.ts` — `--judge on|off`
+wins over it, and absent it means yes. This repository sets it to `false` for
+now: the online criteria are new and should be read against a handful of real
+diffs before their verdicts are trusted, and flipping the key is a change
+somebody reviews. A pull request that fails a gate online is a task waiting to
+be written — that is how this suite grows past the cases its authors thought of.
 
 ## The judge
 

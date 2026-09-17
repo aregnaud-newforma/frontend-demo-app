@@ -117,6 +117,16 @@ export type EvalsConfig = {
    * this repository's runs are normally unattended.
    */
   readonly maxConcurrency?: number;
+  /**
+   * Whether `online.ts` asks the judge, or runs the diff graders alone. Absent
+   * means yes. Set it to `false` while the online criteria are new: each is
+   * read against a handful of real diffs before its verdicts are trusted, and
+   * that reading is a decision about this repository, reviewed in a pull
+   * request, not a switch in a CI settings page. `--judge on|off` on the
+   * command line still wins over it, and the judge that ran — or "none" — is
+   * in the trace's metadata, which is the test a key here has to pass.
+   */
+  readonly onlineJudge?: boolean;
 };
 
 /**
@@ -240,12 +250,24 @@ const validated = (loaded: unknown): EvalsConfig => {
     );
   }
 
+  if (config.onlineJudge !== undefined && typeof config.onlineJudge !== "boolean") {
+    return fail(`\`onlineJudge\` is true or false, not "${String(config.onlineJudge)}".`);
+  }
+
   for (const task of config.tasks) {
-    if (task.grader.kind !== "diff") continue;
-    try {
-      addedCall(task.grader);
-    } catch (error) {
-      return fail(`task "${task.id}" has an unusable \`added\` pattern: ${String(error)}`);
+    if (task.grader.kind === "diff") {
+      try {
+        addedCall(task.grader);
+      } catch (error) {
+        return fail(`task "${task.id}" has an unusable \`added\` pattern: ${String(error)}`);
+      }
+    }
+    if (task.online?.kind === "diff") {
+      try {
+        new RegExp(task.online.forbidden);
+      } catch (error) {
+        return fail(`task "${task.id}" has an unusable \`forbidden\` pattern: ${String(error)}`);
+      }
     }
   }
 

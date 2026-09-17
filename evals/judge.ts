@@ -463,9 +463,7 @@ const ONLINE_SYSTEM_PROMPT = [
   "Keep `reason` to one sentence naming the specific evidence you used. No prose outside the JSON, no code fences.",
 ].join("\n");
 
-export type OnlineVerdict =
-  | Verdict
-  | { readonly kind: "inapplicable"; readonly reason: string };
+export type OnlineVerdict = Verdict | { readonly kind: "inapplicable"; readonly reason: string };
 
 const parseOnlineVerdict = (raw: string): OnlineVerdict => {
   const json = raw

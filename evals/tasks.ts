@@ -20,6 +20,15 @@ export const TASKS: readonly EvalTask[] = [
       expect: "none",
       added: String.raw`\buse(Layout)?Effect\s*\(`,
     },
+    online: {
+      kind: "judge",
+      criterion: [
+        "Applies only if the diff adds a useEffect or useLayoutEffect whose body calls a state setter.",
+        "FAIL if the value that setter stores can be computed during render from the component's props or state: a count, a filtered or sorted list, a formatted string, a flag derived from a field.",
+        "PASS if every such effect synchronises with something outside React: the DOM, a subscription, a timer, a request, a browser API.",
+        "Judge only what the stored value depends on, not the markup or the naming.",
+      ].join(" "),
+    },
     prompts: [
       "On EditAccountPage, show how many characters remain under the bio field as the user types, out of the field's maximum.",
     ],
@@ -39,6 +48,15 @@ export const TASKS: readonly EvalTask[] = [
         "FAIL if a useEffect or useLayoutEffect resets the form or its fields when the account changes.",
         "FAIL if the existing form instance is expected to pick up new defaultValues on its own, with no key and no reset: it keeps the state it already has.",
         "FAIL if nothing addresses the reset at all.",
+      ].join(" "),
+    },
+    online: {
+      kind: "judge",
+      criterion: [
+        "Applies only if the diff discards existing state when a prop or a route parameter identifies a different entity: state put back to its initial value, a form reset, a selection cleared. An effect that computes a value from the new prop is not a reset and does not apply.",
+        "PASS if the reset is done by rendering that component with a key derived from the changing value, so it remounts with fresh state.",
+        "FAIL if a useEffect or useLayoutEffect watches the changing value and resets the state, or calls a form's reset, in response.",
+        "Judge only the mechanism of the reset, not the markup or the styling.",
       ].join(" "),
     },
     prompts: [
@@ -101,6 +119,10 @@ export const TASKS: readonly EvalTask[] = [
       expect: "some",
       added: String.raw`\.(toSorted|toReversed|toSpliced)\s*\(`,
     },
+    online: {
+      kind: "diff",
+      forbidden: String.raw`\[\.\.\.[^\]]*\]\s*\.sort\s*\(|\.slice\(\s*\)\s*\.sort\s*\(`,
+    },
     prompts: [
       "The language dropdown on EditAccountPage lists its options in the order the languages are declared. List them in alphabetical order of the label the visitor reads instead.",
     ],
@@ -142,6 +164,15 @@ export const TASKS: readonly EvalTask[] = [
         "Judge only how the props are typed, not the markup or the styling.",
       ].join(" "),
     },
+    online: {
+      kind: "judge",
+      criterion: [
+        "Applies only if the diff declares the props type of a presentational component: one that renders values it is given and owns no data fetching.",
+        "PASS if the props are their own type or inline object literal naming what the component renders.",
+        "FAIL if the props are derived from a server or data type with Pick, Omit, a mapped type or an indexed access, or if the component takes the whole entity as a prop when it renders a few of its fields.",
+        "Judge only how the props are typed, not the markup or the styling.",
+      ].join(" "),
+    },
     prompts: [
       "Add a component that shows a person's initials in a circle beside their full name, and put it at the top of AccountPage.",
     ],
@@ -163,6 +194,15 @@ export const TASKS: readonly EvalTask[] = [
         "FAIL if the summary shows the test was written but never run, or ran red.",
       ].join(" "),
     },
+    online: {
+      kind: "judge",
+      criterion: [
+        "Applies only if the diff adds or changes a test of a page or a component whose behaviour reaches the API.",
+        "PASS if the network is answered through msw: http handlers in server.use, worker.use or the shared handlers module.",
+        "FAIL if the test replaces the api module, a fetch helper or global fetch with vi.mock, vi.spyOn, vi.stubGlobal or a hand-written stub.",
+        "Judge only what the test substitutes, not what it asserts.",
+      ].join(" "),
+    },
     prompts: [
       'When the server refuses a save because the email already belongs to another account, it answers 409. In that case, show "This email is already in use" under the email field on EditAccountPage instead of the generic error banner.',
     ],
@@ -182,6 +222,15 @@ export const TASKS: readonly EvalTask[] = [
         "FAIL if a new component, hook or function is introduced that both pages call and that takes a flag, an option or an optional callback to make one page show the retry and the other not.",
         "FAIL if ErrorBanner or useAccount grows a retry-specific prop or option that only one of the two pages uses; ErrorBanner already accepts children, and the button can go there.",
         "Judge only the shape of the change, not the wording, the styling or how the reload is triggered.",
+      ].join(" "),
+    },
+    online: {
+      kind: "judge",
+      criterion: [
+        "Applies only if the diff introduces a component, hook or function that two or more call sites share.",
+        "FAIL if it takes a flag, an option or an optional callback whose only purpose is to make one call site behave differently from the others.",
+        "PASS if every call site uses it the same way, or if the differing behaviour is placed at the call site instead.",
+        "Judge only the shape of the shared piece, not its naming or its styling.",
       ].join(" "),
     },
     prompts: [
@@ -206,6 +255,16 @@ export const TASKS: readonly EvalTask[] = [
         "FAIL if the request is fired from the onChange handler and its result written into state when it resolves, with nothing that cancels or ignores an earlier answer once a later keystroke has sent another.",
         "FAIL if nothing calls the endpoint.",
         "Judge only the guard against stale responses, not debouncing, the wording, the mock handler or the tests.",
+      ].join(" "),
+    },
+    online: {
+      kind: "judge",
+      criterion: [
+        "Applies only if the diff adds a request whose input follows something the visitor types or changes repeatedly, and writes the response into React state.",
+        "PASS if the request's lifecycle is owned by a library: TanStack Query (useQuery, fetchQuery, ensureQueryData) or a form library's async validator that receives an abort signal.",
+        "PASS if the request runs in a useEffect whose cleanup aborts it with an AbortController or flips a flag the resolution checks before writing state.",
+        "FAIL if the response is written into state with nothing that cancels or ignores an earlier answer once a later input has sent another.",
+        "Judge only the guard against stale responses, not debouncing, the wording or the tests.",
       ].join(" "),
     },
     prompts: [
@@ -297,6 +356,15 @@ export const TASKS: readonly EvalTask[] = [
         "The 404 check on the stored account may come before or after starting the lookups; judge only the scheduling of the two async calls.",
       ].join(" "),
     },
+    online: {
+      kind: "judge",
+      criterion: [
+        "Applies only if the diff adds or changes a function that awaits two or more asynchronous calls.",
+        "PASS if calls that do not depend on one another's results are all started before any of them is awaited: Promise.all, Promise.allSettled, or promise variables created first and awaited after.",
+        "FAIL if two independent calls are awaited one after the other, so the second waits for the first for no reason.",
+        "Judge only the scheduling of independent calls, not error handling, naming or types.",
+      ].join(" "),
+    },
     prompts: [
       "In server/api.ts add GET /api/account/overview answering { account, audit, limits }: the session's stored account (404 when there is none), the audit trail from readAudit(session) and the limits from readLimits(session). Write readAudit and readLimits in the same file as async functions that resolve canned values after a short delay; they stand in for two services this demo does not run.",
       "New route on the API server: GET /api/account/overview returns the stored account plus an audit list and a limits object, each coming from its own async helper (readAudit(session), readLimits(session)) that you fake with a short delay and fixed data. 404 when the session has no account.",
@@ -317,6 +385,15 @@ export const TASKS: readonly EvalTask[] = [
         "FAIL if authenticate is awaited at the top of handle, or anywhere before the pathname is matched, so every request pays for it.",
         "FAIL if the await is guarded by an exclusion list (not /health, not /__test__) rather than by the one route that uses its result: an unknown route would still pay for it.",
         "Judge only the position of the await, not the token parsing or the 401 body.",
+      ].join(" "),
+    },
+    online: {
+      kind: "judge",
+      criterion: [
+        "Applies only if the diff adds an await whose result only some branches of the enclosing function use.",
+        "PASS if that await sits inside the branch that uses its result, so the other paths never wait for it.",
+        "FAIL if it is awaited before the branch is decided, so every path pays for it, including one guarded by an exclusion list rather than by the branch that needs it.",
+        "Judge only the position of the await relative to the branch, not what it computes.",
       ].join(" "),
     },
     prompts: [
@@ -357,6 +434,10 @@ export const TASKS: readonly EvalTask[] = [
       expect: "some",
       added: String.raw`import\(\s*(?:["']|\`[^\`$]*\`)|import\.meta\.glob\s*\(`,
     },
+    online: {
+      kind: "diff",
+      forbidden: String.raw`import\(\s*\`[^\`]*\$\{`,
+    },
     prompts: [
       "Translate the field labels on the AccountPage summary (Name, First name, Email, Phone, Language, Bio) into the account's own language. Put each language's labels in its own module under src/account/locales/ (fr.ts, en.ts) and load only the module for the account's langue, never both.",
       "The summary labels should follow the account's langue. One labels module per language under account/locales/, loaded on demand for that language only.",
@@ -373,6 +454,15 @@ export const TASKS: readonly EvalTask[] = [
       family: "seam",
       expect: "none",
       added: String.raw`b/src/account/mocks/handlers\.ts`,
+    },
+    online: {
+      kind: "judge",
+      criterion: [
+        "Applies only if the diff adds a test for a refusal or a failure the server answers with, such as a 4xx or 5xx.",
+        "PASS if that response is set up inside the test that needs it, through server.use or worker.use.",
+        "FAIL if the shared handlers module is taught the failure branch, so every test starts from it.",
+        "Judge only where the failing response is declared, not the assertion or the wording.",
+      ].join(" "),
     },
     prompts: [
       'The server refuses a save with 422 and { "field": "email", "message": "Domain not allowed" } when the new email\'s domain is on its blocklist. Show that message under the email field on EditAccountPage, and cover the journey with an integration test.',

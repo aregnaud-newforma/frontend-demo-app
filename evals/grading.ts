@@ -64,6 +64,36 @@ export type Grader =
     };
 
 /**
+ * The same rule, asked of a diff nobody wrote a task for: a real pull request,
+ * scored by `online.ts`. A task's own grader cannot be reused there. Its
+ * criterion names the component the prompt pointed at, and its diff pattern
+ * says "expect some", which no arbitrary diff can be asked for.
+ *
+ * So an online grader is written without the task: a forbidden signature, or a
+ * criterion that first says when it applies. It has no `family` of its own —
+ * the score lands under the task's, so the line online is the line offline.
+ */
+export type OnlineGrader =
+  | {
+      readonly kind: "diff";
+      /**
+       * A signature the rule forbids, as a regular expression source. Counted
+       * on added lines like a task's `added`, and always expected absent: a
+       * pull request can be told what not to add, never what it must add.
+       */
+      readonly forbidden: string;
+    }
+  | {
+      readonly kind: "judge";
+      /**
+       * The question, written for a diff with no prompt behind it. It says
+       * when it applies, because most pull requests are about something else,
+       * and a criterion that could not say "not this one" would fail them all.
+       */
+      readonly criterion: string;
+    };
+
+/**
  * Whether the trial lets the agent run the project's own checks before it
  * finishes, as that project's `AGENTS.md` asks of every agent working in it.
  */
@@ -90,6 +120,14 @@ export type EvalTask = {
   readonly gate: string;
   /** How the answer is scored, and what a correct one looks like. */
   readonly grader: Grader;
+  /**
+   * How a real pull request is scored for the same rule, when it can be. A
+   * task without one is measured offline only: a rule whose wrong answer needs
+   * the prompt to be recognised has nothing to say about a diff it never saw
+   * the prompt of. One per family is enough — two tasks of one family both
+   * carrying one would score the same name twice on one pull request.
+   */
+  readonly online?: OnlineGrader;
   /**
    * Handed to the agent verbatim, one trial per entry. Never names a rule, a
    * hook or a skill. Several entries are one need in several voices — precise,
