@@ -22,17 +22,20 @@ export type Expectation = (typeof EXPECTATIONS)[number];
  * rules that do not — where the same code can be right or wrong depending on why
  * it was written, and the reason is in the agent's summary rather than the diff.
  *
- * Both name their score `${family}_gate`, so a judged task is a line on the same
- * chart as a counted one and neither is privileged. A task whose grader was
- * converted from one kind to the other keeps the family it had —
- * `effects-reset-state-with-key` and `modern-set-operations` were both counted
- * before they were judged — so the score stays one line on a chart instead of
- * starting a second under a new name.
+ * Both write the one score `RULE_GATE`, so a judged task is a line on the same
+ * chart as a counted one and neither is privileged — and so every run, whatever
+ * its gate, has the same columns in Langfuse. The `family` is metadata: it goes
+ * on the dataset item and in front of the score's comment, where it groups
+ * tasks without becoming a column of its own. Scores used to be named after it,
+ * and a project with five gates already showed eleven mostly empty columns;
+ * fifteen families would have made the list unreadable. A task whose grader is
+ * converted from one kind to the other keeps the family it had, so the
+ * grouping survives the conversion.
  */
 export type Grader =
   | {
       readonly kind: "diff";
-      /** Names the score, exactly as a judged grader's family does. */
+      /** The rule group this task belongs to, for the item's metadata and the score's comment. */
       readonly family: string;
       readonly expect: Expectation;
       /**
@@ -51,7 +54,7 @@ export type Grader =
     }
   | {
       readonly kind: "judge";
-      /** Names the score, exactly as a diff grader's family does. */
+      /** The rule group this task belongs to, as on a diff grader. */
       readonly family: string;
       /**
        * The question, in prose, that the judge answers about the diff and the
@@ -142,10 +145,11 @@ export type Grade = {
 };
 
 /**
- * One rule for both graders, so `effects_gate` keeps its history and a judged
- * task cannot quietly land on a differently-shaped name.
+ * The one score every task writes. One name so that Langfuse's own mean of it
+ * over a run's items is the run's pass rate, in the same column for every gate;
+ * the family that used to name it is in the comment and the item metadata.
  */
-export const scoreName = (grader: Grader): string => `${grader.family}_gate`;
+export const RULE_GATE = "rule_gate";
 
 /**
  * Anchors a family's call pattern to the lines the diff *adds*, so a task that

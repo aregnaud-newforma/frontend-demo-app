@@ -411,9 +411,10 @@ neither answers the question — the movement is indistinguishable from the dice
 
 Repeating turns the per-task score into a mean over its trials, so a task that
 passes once in two reads as **0.5** rather than as whichever trial happened to be
-graded. `pass_rate` is then the mean of those means: every task weighs the same
-whatever happened inside its repetitions, so a task cannot count twice for having
-been sampled twice.
+graded. The run's pass rate is then the mean of those means, which Langfuse
+computes itself as the `Ø rule_gate` column of the runs list: every task weighs
+the same whatever happened inside its repetitions, so a task cannot count twice
+for having been sampled twice.
 
 So the default answers the cheap question — did this edit break something
 obvious — and nothing more. It is 1 because that is the run people actually type,
@@ -467,27 +468,28 @@ recorded rather than what the agent is given, so it runs every gate in
 `with-skills` alone. `README.md` changes nothing and triggers nothing.
 
 A gate is deliberately coarser than a rule, so a `react` run averages effects and
-re-render alike. Nothing diagnostic is lost, because the per-task score is named
-after the task's `api` — `effects_gate`, `memoization_gate` — not after the gate,
-and each stays its own line in Langfuse.
+re-render alike. Nothing diagnostic is lost, because the score is per task and the
+Compare view reads it task by task, with the grader's `family` in front of each
+comment and in the item's metadata. The score itself is `rule_gate` for every
+task: it used to be named after the family, and five gates already made eleven
+mostly empty columns of the runs list.
 
 `intentional-tests/` is not a gate. It is not one of the five skills `AGENTS.md`
 declares, and no task gates it.
 
 ## What lands in Langfuse
 
-| Langfuse noun          | Here                                                          |
-| ---------------------- | ------------------------------------------------------------- |
-| Dataset `react`        | one gate, one skill                                           |
-| Dataset item           | one task, keyed by its id                                     |
-| Dataset run            | one execution of that gate                                    |
-| Trace                  | one trial                                                     |
-| Score `effects_gate`   | the grader's verdict, meaned over the task's trials           |
-| Score `trial_error`    | no answer: rate limit, timeout, out of turns on a judged task |
-| Score `judge_error`    | how many trials the judge could not answer                    |
-| Score `skill_invoked`  | whether the gate's skill was loaded, meaned over its trials   |
-| Score `trial_cost_usd` | what that task cost, trials summed                            |
-| Run score `pass_rate`  | the number to watch over time                                 |
+| Langfuse noun          | Here                                                                              |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| Dataset `react`        | one gate, one skill                                                               |
+| Dataset item           | one task, keyed by its id                                                         |
+| Dataset run            | one execution of that gate                                                        |
+| Trace                  | one trial                                                                         |
+| Score `rule_gate`      | the grader's verdict, meaned over the task's trials; its Ø is the run's pass rate |
+| Score `trial_error`    | no answer: rate limit, timeout, out of turns on a judged task                     |
+| Score `judge_error`    | how many trials the judge could not answer                                        |
+| Score `skill_invoked`  | whether the gate's skill was loaded, meaned over its trials                       |
+| Score `trial_cost_usd` | what that task cost, trials summed                                                |
 
 Each run carries the commit SHA and branch as metadata, so a run can be traced
 back to the state of `.claude/skills/` that produced it.
@@ -514,7 +516,7 @@ down for a task that never ran.
 
 The same holds for a trial the harness could not run. `claude -p` killed by a
 rate limit, by the fifteen-minute timeout, or by a CLI that would not start
-writes `trial_error` and no `*_gate` score — a zero there reads, on the chart,
+writes `trial_error` and no `rule_gate` score — a zero there reads, on the chart,
 exactly like a skill that regressed. Only one non-zero exit is an answer, and
 only half of one: an agent that ran out of `--max-turns` left a diff, and a diff
 grader reads it. It never wrote its closing summary, because the CLI kills it
@@ -569,7 +571,7 @@ Three things keep it honest:
   means without leaving a trace. Effort stays high because the judge costs a cent
   and a verdict that flips on a borderline diff costs a gate score.
 - **A judge that fails does not score zero.** It writes `judge_error` instead and
-  no `*_gate` score at all. A zero from an unreachable model is indistinguishable
+  no `rule_gate` score at all. A zero from an unreachable model is indistinguishable
   from a skill that regressed, and unattributable numbers are what this suite
   exists to stop producing.
 - **A judge adapter is held to a higher bar than an agent one.** A subject

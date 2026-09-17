@@ -23,7 +23,7 @@ import {
   gatesWithTasks,
   gradeAdded,
   graderSchema,
-  scoreName,
+  RULE_GATE,
   type EvalTask,
   type Grader,
 } from "./grading.ts";
@@ -407,7 +407,9 @@ await Promise.all(
       expectedOutput: task.grader,
       // The task id travels in metadata because the runner hands a task nothing
       // else it could use to find the trial it is supposed to spawn.
-      metadata: { taskId: task.id, rationale: task.rationale },
+      // `family` beside it so the item can be grouped in Langfuse: it used to name
+      // the score, and a column per family is what that produced.
+      metadata: { taskId: task.id, family: task.grader.family, rationale: task.rationale },
     }),
   ),
 );
@@ -648,7 +650,7 @@ const result = await dataset.runExperiment({
 
       const grader = graderOf(expectedOutput);
       if (grader === undefined) {
-        return { name: "rule_gate", value: 0, comment: "item carries no grader" };
+        return { name: RULE_GATE, value: 0, comment: "item carries no grader" };
       }
 
       const prompts = (input as { prompts?: readonly string[] }).prompts ?? [];
@@ -686,18 +688,22 @@ const result = await dataset.runExperiment({
       return [
         ...errors,
         {
-          name: scoreName(grader),
+          name: RULE_GATE,
           // The mean over the repetitions, so a task that passes once in two
           // reads as 0.5 rather than as whichever trial happened to be graded.
+          // Langfuse then means this over the run's items, and that is the
+          // run's pass rate: one column, the same for every gate.
           value: passed / graded.length,
-          comment: `${passed}/${graded.length} passed. ${graded
+          // The family first, so the group a task belongs to is readable where
+          // the verdict is, now that it no longer names the score.
+          comment: `${grader.family} · ${passed}/${graded.length} passed. ${graded
             .map((verdict) => verdict.comment)
             .join(" | ")}`,
         },
       ];
     },
     /**
-     * Whether the gate's own skill was loaded at all. A `*_gate` score that
+     * Whether the gate's own skill was loaded at all. A `rule_gate` score that
      * moves is otherwise two hypotheses in one number — the rule stopped
      * working, or the agent never reached for it — and until now the evidence
      * sat unread in the agent's tool calls.
@@ -750,24 +756,6 @@ const result = await dataset.runExperiment({
 
       const costUsd = costs.reduce((total, cost) => total + cost, 0);
       return { name: "trial_cost_usd", value: costUsd, comment: `$${costUsd.toFixed(2)}` };
-    },
-  ],
-  runEvaluators: [
-    async ({ itemResults }) => {
-      const gates = itemResults
-        .flatMap((item) => item.evaluations)
-        .filter((evaluation) => evaluation.name.endsWith("_gate"))
-        .map((evaluation) => Number(evaluation.value));
-      // No score at all beats a zero: an empty run must not look like a failure.
-      if (gates.length === 0) return [];
-      // The mean of means: every task weighs the same whatever happened inside
-      // its repetitions, so a task cannot count twice for having been sampled.
-      const rate = gates.reduce((sum, value) => sum + value, 0) / gates.length;
-      return {
-        name: "pass_rate",
-        value: rate,
-        comment: `${rate.toFixed(2)} over ${gates.length} task(s), ${repeat} pass(es) over each one's prompts`,
-      };
     },
   ],
 });
