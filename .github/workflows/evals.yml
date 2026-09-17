@@ -14,7 +14,10 @@
 # the score in the run summary, in Langfuse, or on the pull request: once every
 # gate has finished, the `report` job posts them all as one comment, edited in
 # place on every push.
-name: Evals
+#
+# "Skill benchmark" on the pull request, `evals` everywhere else: the name a
+# developer reads says what it measures, the name in the code says how.
+name: Skill benchmark
 
 on:
   pull_request:
@@ -477,26 +480,25 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           # shellcheck disable=SC2086 -- $BASELINE is a flag and its value, or nothing.
+          mkdir -p "$RUNNER_TEMP/reports"
           yarn evals --agent '${{ matrix.agent }}' --gate '${{ matrix.gate }}' --arm '${{ matrix.arm }}' \
             --repeat "$REPEAT" --max-concurrency "$CONCURRENCY" $BASELINE \
-            | tee -a "$GITHUB_STEP_SUMMARY" "$RUNNER_TEMP/report.txt"
+            --report-file "$RUNNER_TEMP/reports/${{ matrix.agent }}-${{ matrix.gate }}-${{ matrix.arm }}.json" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       # For the `report` job below, which posts every gate's report as one
-      # comment. `always()`: a gate that broke is a report too, and the reasons
-      # are in what `run.ts` printed before it exited.
+      # comment. `always()`: a gate that broke is a report too. `run.ts` writes
+      # its report even when it exits non-zero; a job that died before that
+      # point leaves one here that says so, so the comment has a line for it.
       - name: Keep the report for the comment
         if: always() && github.event_name == 'pull_request'
-        env:
-          OUTCOME: ${{ job.status }}
         run: |
+          report="$RUNNER_TEMP/reports/${{ matrix.agent }}-${{ matrix.gate }}-${{ matrix.arm }}.json"
           mkdir -p "$RUNNER_TEMP/reports"
-          {
-            echo '### `${{ matrix.agent }}` · `${{ matrix.gate }}` · `${{ matrix.arm }}` · `'"$OUTCOME"'`'
-            echo '```'
-            cat "$RUNNER_TEMP/report.txt" 2>/dev/null || echo "(no report: the job stopped before the harness printed one)"
-            echo '```'
-          } > "$RUNNER_TEMP/reports/${{ matrix.agent }}-${{ matrix.gate }}-${{ matrix.arm }}.md"
+          if [ ! -f "$report" ]; then
+            printf '%s\n' '{"kind":"benchmark","agent":"${{ matrix.agent }}","gate":"${{ matrix.gate }}","arm":"${{ matrix.arm }}","model":"","commit":"${{ github.event.pull_request.head.sha }}","tasks":[],"unreachable":["the job stopped before the harness wrote a report; see the job log"]}' > "$report"
+          fi
       - if: always() && github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
@@ -518,7 +520,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      # For the composite action below; nothing else in this job reads the tree.
+      # For the composite action and the renderer below.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
@@ -527,17 +529,17 @@ jobs:
           pattern: report-*
           path: ${{ runner.temp }}/reports
           merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
       - env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          {
-            echo "## Evals · [run]($RUN_URL)"
-            echo
-            echo "Informative, not blocking: a red gate is a harness that could not measure, not a rule that regressed. The numbers are in Langfuse."
-            echo
-            cat "$RUNNER_TEMP"/reports/*.md
-          } > "$RUNNER_TEMP/comment-body.md"
+          yarn --silent evals:comment --benchmark "$RUNNER_TEMP/reports" --job-url "$JOB_URL" \
+            > "$RUNNER_TEMP/comment.md"
       - uses: ./.github/actions/pr-comment
         with:
-          marker: evals-report
-          body-file: ${{ runner.temp }}/comment-body.md
+          marker: skill-benchmark
+          body-file: ${{ runner.temp }}/comment.md

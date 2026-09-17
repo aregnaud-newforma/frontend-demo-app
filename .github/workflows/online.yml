@@ -1,5 +1,6 @@
-# The online tier: every pull request's diff, scored against the rules that
-# have an online grader, reported to Langfuse as one trace tagged `online`.
+# The rules check: every pull request's diff, scored against the rules that
+# have an online grader, reported to Langfuse as one trace tagged `online` and
+# to the pull request as one comment.
 #
 # `evals.yml` asks whether a rule is well written, by giving an agent an
 # exercise. This asks whether the agents people actually use follow it, by
@@ -8,9 +9,8 @@
 # Informative, not blocking: `evals/online.ts` exits zero whatever the score,
 # so a red gate never stops a merge. A red job is a broken harness — a missing
 # secret, a judge that could not be reached — and the reasons are in the job
-# summary. The report is also posted as one comment on the pull request,
-# edited in place on every push, so a reviewer reads it where they review.
-name: Online
+# summary.
+name: Rules check
 
 on:
   pull_request:
@@ -26,8 +26,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  online:
-    name: score the diff
+  # Whether the diff holds a source file at all. A pull request about docs or
+  # config has nothing to score, and the scoring job below is skipped rather
+  # than run to say so: a skipped check reads as "not about this" on the pull
+  # request, where a green one with an empty report would read as a pass.
+  changes:
+    name: anything to check?
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      files: ${{ steps.list.outputs.files }}
+    steps:
+      # Full history: the diff is taken from the merge base, which a shallow
+      # clone does not hold.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - id: list
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -o pipefail
+          # The same filter `online.ts` scores with, so this job and that one
+          # cannot disagree about what a source file is.
+          files=$(yarn --silent evals:online --base "origin/$BASE" --list-files | wc -l | tr -d ' ')
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          echo "$files source file(s) changed against $BASE" >> "$GITHUB_STEP_SUMMARY"
+
+  score:
+    needs: changes
+    if: needs.changes.outputs.files != '0'
+    name: check this PR's diff
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # `write` for the comment below; nothing else here needs more than reading.
@@ -73,7 +108,7 @@ jobs:
           printf '%s' "$PR_BODY" > "$RUNNER_TEMP/body.md"
 
           {
-            echo '## Online · `#'"$PR_NUMBER"'`'
+            echo '## Rules check · `#'"$PR_NUMBER"'`'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           # Whether the judge runs is `onlineJudge` in evals.config.ts, not a
@@ -81,26 +116,30 @@ jobs:
           # request rather than set in a settings page.
           yarn evals:online --base "origin/$BASE" --pr "$PR_NUMBER" \
             --title "$PR_TITLE" --body-file "$RUNNER_TEMP/body.md" \
-            | tee -a "$GITHUB_STEP_SUMMARY" "$RUNNER_TEMP/report.txt"
+            --report-file "$RUNNER_TEMP/report.json" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      # `always()`: a broken harness is the report most worth reading on the
-      # pull request, and its reasons are in what the run printed before it
-      # stopped.
-      - name: Comment on the pull request
+      # `always()`: a broken harness is worth a comment too, and the job link
+      # is where its reasons are. Without a report there is nothing else to
+      # say, and the comment says that.
+      - name: Write the comment
         if: always()
         env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          OUTCOME: ${{ job.status }}
+          JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          {
-            echo "## Online · \`$OUTCOME\` · [run]($RUN_URL)"
-            echo '```'
-            cat "$RUNNER_TEMP/report.txt" 2>/dev/null || echo "(no report: the job stopped before the harness printed one)"
-            echo '```'
-          } > "$RUNNER_TEMP/comment-body.md"
+          if [ -f "$RUNNER_TEMP/report.json" ]; then
+            yarn --silent evals:comment --rules-check "$RUNNER_TEMP/report.json" --job-url "$JOB_URL" \
+              > "$RUNNER_TEMP/comment.md"
+          else
+            {
+              echo '## Rules check'
+              echo
+              echo "The check could not run on this diff. What stopped it is in the [job]($JOB_URL); it is a broken harness, not a verdict on this pull request."
+            } > "$RUNNER_TEMP/comment.md"
+          fi
       - if: always()
         uses: ./.github/actions/pr-comment
         with:
-          marker: online-report
-          body-file: ${{ runner.temp }}/comment-body.md
+          marker: rules-check
+          body-file: ${{ runner.temp }}/comment.md

@@ -32,6 +32,7 @@ import { config, configuredDefaults, repoRoot } from "./config.ts";
 import { sourceDiff } from "./diff.ts";
 import { gradeAdded, scoreName, type EvalTask, type OnlineGrader } from "./grading.ts";
 import { judgeOnline, judgeNamed, DEFAULT_JUDGE, JUDGES, type OnlineVerdict } from "./judge.ts";
+import { writeReport, type RuleVerdict } from "./report.ts";
 import type { Effort } from "./agents.ts";
 
 const run = promisify(execFile);
@@ -50,6 +51,12 @@ const { values } = parseArgs({
     "judge-agent": { type: "string" },
     "judge-model": { type: "string" },
     "judge-effort": { type: "string" },
+    // Print the source files the diff touches and stop, before Langfuse or a
+    // judge is reached: CI asks this first, and skips the scoring job when
+    // there is nothing to score.
+    "list-files": { type: "boolean", default: false },
+    // Where to write the report as data, for the pull request comment.
+    "report-file": { type: "string" },
   },
 });
 
@@ -120,6 +127,11 @@ const git = async (args: readonly string[]): Promise<string> => {
 // otherwise read as part of the pull request.
 const range = `${base}...HEAD`;
 const { diff, changedFiles } = await sourceDiff(range, repoRoot);
+
+if (values["list-files"]) {
+  for (const file of changedFiles) console.log(file);
+  process.exit(0);
+}
 
 const headSha = await git(["rev-parse", "HEAD"]);
 const baseSha = await git(["merge-base", base, "HEAD"]);
@@ -290,6 +302,26 @@ console.log(
     : `Scores: ${scores.map((s) => `${s.name}=${s.value.toFixed(2)}`).join(", ")}`,
 );
 console.log(traceUrl ?? `Trace ${traceId}`);
+
+if (values["report-file"] !== undefined) {
+  const named = ({ verdict }: Outcome): RuleVerdict["verdict"] => {
+    if (verdict.kind === "graded") return verdict.passed ? "pass" : "fail";
+    if (verdict.kind === "skipped") return "not-judged";
+    return verdict.kind;
+  };
+  await writeReport(values["report-file"], {
+    kind: "rules-check",
+    base,
+    changedFiles: changedFiles.length,
+    traceUrl,
+    verdicts: outcomes.map((outcome) => ({
+      gate: outcome.task.gate,
+      task: outcome.task.id,
+      verdict: named(outcome),
+      reason: "reason" in outcome.verdict ? outcome.verdict.reason : "",
+    })),
+  });
+}
 
 // The line `run.ts` draws: a verdict the harness could not reach is the
 // harness failing to measure, and the job should be red for it. The scores it

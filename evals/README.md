@@ -533,8 +533,10 @@ trial that would not run, a judge that would not answer, a judged task cut off
 before its summary — makes `run.ts` delete its dataset run from Langfuse and
 exit non-zero: the job is red because it failed to measure, not because of what
 it measured, and the chart holds only runs that measured. The reasons are in the
-report `run.ts` prints, which CI copies into the job summary and, once every
-gate has finished, into one comment on the pull request. The traces stay,
+report `run.ts` prints, which CI copies into the job summary. Once every gate
+has finished, CI also renders the reports `--report-file` wrote into one
+comment on the pull request, "Skill benchmark", through `evals/comment.ts`;
+`online.ts` does the same for its "Rules check". The traces stay,
 with what the failed trials cost. A gate that scores 0 exits zero and stays on
 the chart; that is an answer.
 

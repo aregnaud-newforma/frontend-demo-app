@@ -40,6 +40,7 @@ import { agentNamed, AGENTS, DEFAULT_AGENT, type Effort } from "./agents.ts";
 import { judge, judgeNamed, DEFAULT_JUDGE, JUDGES } from "./judge.ts";
 import { resolveSkills } from "./skills.ts";
 import { pin } from "./pin.ts";
+import { writeReport } from "./report.ts";
 
 const run = promisify(execFile);
 
@@ -84,6 +85,9 @@ const { values } = parseArgs({
     "judge-effort": { type: "string" },
     "list-gates": { type: "boolean", default: false },
     "list-agents": { type: "boolean", default: false },
+    // Where to write the run's report as data, for the pull request comment.
+    // No default: a local run has nobody to comment to.
+    "report-file": { type: "string" },
   },
 });
 
@@ -779,6 +783,29 @@ const result = await dataset.runExperiment({
 
 console.log(await result.format());
 await otel.shutdown();
+
+// Written before the exit below, whichever way it goes: a run that could not
+// measure is a report too, and the comment says why in place of a number.
+if (values["report-file"] !== undefined) {
+  const passRate = result.runEvaluations.find((evaluation) => evaluation.name === "pass_rate");
+  await writeReport(values["report-file"], {
+    kind: "benchmark",
+    agent: agent.id,
+    gate,
+    arm,
+    model,
+    commit: commitSha,
+    runUrl: result.datasetRunUrl,
+    passRate: passRate === undefined ? undefined : Number(passRate.value),
+    tasks: result.itemResults.flatMap((item) => {
+      const task = findTask(item.item.metadata);
+      const score = item.evaluations.find((evaluation) => evaluation.name.endsWith("_gate"));
+      if (task === undefined || score === undefined) return [];
+      return [{ id: task.id, score: Number(score.value), comment: score.comment ?? "" }];
+    }),
+    unreachable: [...new Set(unreachable)],
+  });
+}
 
 // A run that could not reach every verdict is not a measurement, and it does
 // not stay on the chart: the dataset run is deleted and the process exits
