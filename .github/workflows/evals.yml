@@ -400,6 +400,19 @@ jobs:
           chmod 600 ~/.git-credentials
 
           git clone "https://dev.azure.com/$org/$project/_git/$repo" "$RUNNER_TEMP/skills"
+
+          # Checked here rather than left to the harness, because this is where
+          # the answer is: a clone that came back without the pinned ref is a
+          # credential or a branch problem, and three steps later it reads as a
+          # revision that does not exist.
+          ref=$(jq -r .ref evals/skills.pin.json)
+          echo "Cloned $(git -C "$RUNNER_TEMP/skills" rev-list --count HEAD) commit(s); refs:"
+          git -C "$RUNNER_TEMP/skills" branch -r
+          if ! git -C "$RUNNER_TEMP/skills" rev-parse --verify --quiet "origin/$ref^{commit}" >/dev/null; then
+            echo "::error::The clone has no branch '$ref', which evals/skills.pin.json pins. The remote branches it does have are listed above." >&2
+            exit 1
+          fi
+
           echo "EVALS_SKILLS_DIR=$RUNNER_TEMP/skills" >> "$GITHUB_ENV"
 
       - name: Run gate

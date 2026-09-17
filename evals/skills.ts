@@ -81,7 +81,16 @@ let checkout: Promise<string> | undefined;
 export const skillsCheckout = async (): Promise<string> => {
   checkout ??= (async () => {
     const fromEnv = process.env.EVALS_SKILLS_DIR;
-    if (fromEnv !== undefined) return fromEnv;
+    if (fromEnv !== undefined) {
+      // Checked rather than trusted. A path that is not a clone produces a
+      // worktree with no rules in it, which is the one failure this module
+      // exists to make impossible — and the error it would otherwise raise
+      // arrives three calls later, naming a revision instead of a directory.
+      if (!(await exists(join(fromEnv, ".git")))) {
+        throw new Error(`EVALS_SKILLS_DIR is not a git clone: ${fromEnv}`);
+      }
+      return fromEnv;
+    }
 
     if (!(await exists(join(CACHE_DIR, ".git")))) {
       // Full history, not a shallow clone: a baseline reaches for a commit older
@@ -119,13 +128,26 @@ export const resolveSkills = async (
   ref: string = pin.ref,
 ): Promise<SkillSet> => {
   const dir = await skillsCheckout();
-  // `origin/<ref>` first: a fetched branch has no local head in a clone this
-  // harness never checks out, and `rev-parse main` there would fail.
-  const commit = (
-    await git(["rev-parse", `origin/${ref}^{commit}`], dir).catch(() =>
-      git(["rev-parse", `${ref}^{commit}`], dir),
-    )
-  ).trim();
+  // `origin/<ref>` first, then the ref as given: a branch has no local head in a
+  // clone this harness never checks out, while a commit or a tag has no
+  // `origin/` form. Both failures are reported, not just the second — the two
+  // say different things, and a `--baseline-ref` typo and an unfetched branch
+  // are not the same problem.
+  const commit = await git(["rev-parse", `origin/${ref}^{commit}`], dir)
+    .catch(async (viaOrigin: unknown) => {
+      return await git(["rev-parse", `${ref}^{commit}`], dir).catch((direct: unknown) => {
+        const refs = ["remote -v", "branch -r"];
+        throw new Error(
+          [
+            `"${ref}" names nothing in ${dir}.`,
+            `  as origin/${ref}: ${String(viaOrigin).split("\n")[0]}`,
+            `  as ${ref}: ${String(direct).split("\n")[0]}`,
+            `  check with: ${refs.map((command) => `git -C ${dir} ${command}`).join(" && ")}`,
+          ].join("\n"),
+        );
+      });
+    })
+    .then((stdout) => stdout.trim());
 
   const trees = await Promise.all(
     [...gates].sort().map(async (gate) => `${gate}:${await gateTree(gate, commit)}`),
