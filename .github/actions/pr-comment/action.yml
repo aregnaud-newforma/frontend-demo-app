@@ -1,0 +1,48 @@
+# One comment per workflow on a pull request, edited in place on every run.
+#
+# A new comment per push would bury the conversation under reports of commits
+# that no longer exist; editing keeps one comment per report and the job
+# summary keeps the history. The comment is found again by the marker, an
+# HTML comment GitHub does not render, so a second workflow with its own
+# marker owns its own comment.
+#
+# Shared by `evals.yml` and `online.yml`; the shell lives here so both post
+# the same way and a fix reaches both.
+name: Pull request comment
+description: Create or update the workflow's comment on the pull request.
+
+inputs:
+  marker:
+    description: A string unique to this workflow, which identifies the comment to edit.
+    required: true
+  body-file:
+    description: A markdown file with the comment body.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        MARKER: ${{ inputs.marker }}
+        BODY_FILE: ${{ inputs.body-file }}
+        REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -o pipefail
+
+        marker="<!-- $MARKER -->"
+        { echo "$marker"; cat "$BODY_FILE"; } > "$RUNNER_TEMP/comment.md"
+
+        # `--paginate` because a long review has more than one page of
+        # comments, and the marker may be on the last one.
+        existing=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+          --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
+
+        if [ -n "$existing" ]; then
+          gh api -X PATCH "repos/$REPO/issues/comments/$existing" \
+            -F body=@"$RUNNER_TEMP/comment.md" --silent
+        else
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"
+        fi

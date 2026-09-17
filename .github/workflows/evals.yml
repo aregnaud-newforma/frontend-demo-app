@@ -10,8 +10,10 @@
 # broken harness — a missing secret, a CLI that would not install or would not
 # authenticate, a judge it could not reach — not a skill that regressed. The
 # line is drawn by `run.ts`: a verdict it could not reach deletes the run from
-# Langfuse and exits non-zero, a trial that ran and failed does neither. Read the score in the run summary or in
-# Langfuse.
+# Langfuse and exits non-zero, a trial that ran and failed does neither. Read
+# the score in the run summary, in Langfuse, or on the pull request: once every
+# gate has finished, the `report` job posts them all as one comment, edited in
+# place on every push.
 name: Evals
 
 on:
@@ -477,5 +479,65 @@ jobs:
           # shellcheck disable=SC2086 -- $BASELINE is a flag and its value, or nothing.
           yarn evals --agent '${{ matrix.agent }}' --gate '${{ matrix.gate }}' --arm '${{ matrix.arm }}' \
             --repeat "$REPEAT" --max-concurrency "$CONCURRENCY" $BASELINE \
-            | tee -a "$GITHUB_STEP_SUMMARY"
+            | tee -a "$GITHUB_STEP_SUMMARY" "$RUNNER_TEMP/report.txt"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # For the `report` job below, which posts every gate's report as one
+      # comment. `always()`: a gate that broke is a report too, and the reasons
+      # are in what `run.ts` printed before it exited.
+      - name: Keep the report for the comment
+        if: always() && github.event_name == 'pull_request'
+        env:
+          OUTCOME: ${{ job.status }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/reports"
+          {
+            echo '### `${{ matrix.agent }}` · `${{ matrix.gate }}` · `${{ matrix.arm }}` · `'"$OUTCOME"'`'
+            echo '```'
+            cat "$RUNNER_TEMP/report.txt" 2>/dev/null || echo "(no report: the job stopped before the harness printed one)"
+            echo '```'
+          } > "$RUNNER_TEMP/reports/${{ matrix.agent }}-${{ matrix.gate }}-${{ matrix.arm }}.md"
+      - if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.agent }}-${{ matrix.gate }}-${{ matrix.arm }}
+          path: ${{ runner.temp }}/reports/
+          retention-days: 1
+
+  # One comment for the whole run, once every gate has finished — not one per
+  # gate, which on an `AGENTS.md` edit would be ten comments on one push.
+  report:
+    needs: [changes, evals]
+    # `always()` because a broken gate is the report most worth reading, and
+    # `needs.evals` is then `failure`, which would otherwise skip this job.
+    if: always() && github.event_name == 'pull_request' && needs.changes.outputs.jobs != '[]'
+    name: comment on the pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # For the composite action below; nothing else in this job reads the tree.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: report-*
+          path: ${{ runner.temp }}/reports
+          merge-multiple: true
+      - env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "## Evals · [run]($RUN_URL)"
+            echo
+            echo "Informative, not blocking: a red gate is a harness that could not measure, not a rule that regressed. The numbers are in Langfuse."
+            echo
+            cat "$RUNNER_TEMP"/reports/*.md
+          } > "$RUNNER_TEMP/comment-body.md"
+      - uses: ./.github/actions/pr-comment
+        with:
+          marker: evals-report
+          body-file: ${{ runner.temp }}/comment-body.md

@@ -8,7 +8,8 @@
 # Informative, not blocking: `evals/online.ts` exits zero whatever the score,
 # so a red gate never stops a merge. A red job is a broken harness — a missing
 # secret, a judge that could not be reached — and the reasons are in the job
-# summary.
+# summary. The report is also posted as one comment on the pull request,
+# edited in place on every push, so a reviewer reads it where they review.
 name: Online
 
 on:
@@ -29,6 +30,10 @@ jobs:
     name: score the diff
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # `write` for the comment below; nothing else here needs more than reading.
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       # The head branch, not the merge commit, so the scored sha is one that
       # exists and the branch name is the real one. Full history: the diff is
@@ -76,5 +81,26 @@ jobs:
           # request rather than set in a settings page.
           yarn evals:online --base "origin/$BASE" --pr "$PR_NUMBER" \
             --title "$PR_TITLE" --body-file "$RUNNER_TEMP/body.md" \
-            | tee -a "$GITHUB_STEP_SUMMARY"
+            | tee -a "$GITHUB_STEP_SUMMARY" "$RUNNER_TEMP/report.txt"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # `always()`: a broken harness is the report most worth reading on the
+      # pull request, and its reasons are in what the run printed before it
+      # stopped.
+      - name: Comment on the pull request
+        if: always()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          OUTCOME: ${{ job.status }}
+        run: |
+          {
+            echo "## Online · \`$OUTCOME\` · [run]($RUN_URL)"
+            echo '```'
+            cat "$RUNNER_TEMP/report.txt" 2>/dev/null || echo "(no report: the job stopped before the harness printed one)"
+            echo '```'
+          } > "$RUNNER_TEMP/comment-body.md"
+      - if: always()
+        uses: ./.github/actions/pr-comment
+        with:
+          marker: online-report
+          body-file: ${{ runner.temp }}/comment-body.md
