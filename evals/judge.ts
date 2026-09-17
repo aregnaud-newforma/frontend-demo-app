@@ -340,42 +340,72 @@ export type Verdict =
   | { readonly kind: "unavailable"; readonly reason: string };
 
 /**
- * Tolerates what a model does to JSON despite being told not to: a fence around
- * it, prose before or after it, or a literal newline inside the `reason` string,
- * which `JSON.parse` rejects and a model writing a paragraph produces. The
- * verdict is the `passed` boolean; everything else is the reason, and a reason
- * that had to be read out of a broken reply is still that reply.
+ * What a judge's reply says, read as tolerantly as the reply allows.
  *
- * A judge that says neither `true` nor `false` is unavailable, not failed, and
- * the reply travels whole in the reason so the next such failure can be read
- * rather than guessed at — the first one showed 200 characters and nothing else.
+ * A model does things to JSON despite being told not to: a fence around it,
+ * prose before or after it, or a literal newline inside the `reason` string,
+ * which `JSON.parse` rejects and a model writing a paragraph produces. When the
+ * whole does not parse, each boolean is read out of the text by its key, and
+ * the reason is the `reason` string when it can be found and the whole reply
+ * otherwise, so a reason that had to be read out of a broken reply is still
+ * that reply.
+ *
+ * Both judges read through here: the one grading a trial and the one grading a
+ * pull request. The first fix to this reading was made to one of two copies,
+ * and the other kept the bug for a commit.
  */
-const parseVerdict = (raw: string): Verdict => {
+type Reply = {
+  readonly applies: boolean | undefined;
+  readonly passed: boolean | undefined;
+  readonly reason: string;
+};
+
+const readReply = (raw: string): Reply => {
   const unfenced = raw
     .replace(/^```(?:json)?\n?/, "")
     .replace(/\n?```$/, "")
     .trim();
 
   try {
-    const parsed = JSON.parse(unfenced) as { passed?: unknown; reason?: unknown } | null;
-    if (typeof parsed?.passed === "boolean") {
+    const parsed = JSON.parse(unfenced) as {
+      applies?: unknown;
+      passed?: unknown;
+      reason?: unknown;
+    } | null;
+    if (parsed !== null && typeof parsed === "object") {
       return {
-        kind: "graded",
-        passed: parsed.passed,
+        applies: typeof parsed.applies === "boolean" ? parsed.applies : undefined,
+        passed: typeof parsed.passed === "boolean" ? parsed.passed : undefined,
         reason: typeof parsed.reason === "string" ? parsed.reason : "",
       };
     }
   } catch {
-    // Not JSON as a whole; read the verdict out of it below.
+    // Not JSON as a whole; read each field out of the text below.
   }
 
-  const verdict = /"passed"\s*:\s*(true|false)/.exec(unfenced);
-  if (verdict === null) {
+  const flag = (key: string): boolean | undefined => {
+    const match = new RegExp(`"${key}"\\s*:\\s*(true|false)`).exec(unfenced);
+    return match === null ? undefined : match[1] === "true";
+  };
+  const reason = /"reason"\s*:\s*"([\s\S]*?)"\s*\}?\s*$/.exec(unfenced)?.[1];
+  return { applies: flag("applies"), passed: flag("passed"), reason: reason ?? unfenced };
+};
+
+/**
+ * A judge that says neither `true` nor `false` is unavailable, not failed, and
+ * the reply travels whole in the reason so the next such failure can be read
+ * rather than guessed at — the first one showed 200 characters and nothing else.
+ *
+ * Exported for its tests; nothing outside this file calls it.
+ */
+const verdictOf = (reply: Reply, raw: string): Verdict => {
+  if (reply.passed === undefined) {
     return { kind: "unavailable", reason: `judge returned no verdict: ${raw.slice(0, 2000)}` };
   }
-  const reason = /"reason"\s*:\s*"([\s\S]*?)"\s*\}?\s*$/.exec(unfenced)?.[1];
-  return { kind: "graded", passed: verdict[1] === "true", reason: reason ?? unfenced };
+  return { kind: "graded", passed: reply.passed, reason: reply.reason };
 };
+
+export const parseVerdict = (raw: string): Verdict => verdictOf(readReply(raw), raw);
 
 /**
  * Everything the judge sees. The criterion comes first because it is the
@@ -465,30 +495,11 @@ const ONLINE_SYSTEM_PROMPT = [
 
 export type OnlineVerdict = Verdict | { readonly kind: "inapplicable"; readonly reason: string };
 
-const parseOnlineVerdict = (raw: string): OnlineVerdict => {
-  const json = raw
-    .replace(/^```(?:json)?\n?/, "")
-    .replace(/\n?```$/, "")
-    .trim();
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    return { kind: "unavailable", reason: `judge did not return JSON: ${raw.slice(0, 200)}` };
-  }
-
-  const { applies, passed, reason } = (parsed ?? {}) as {
-    applies?: unknown;
-    passed?: unknown;
-    reason?: unknown;
-  };
-  const why = typeof reason === "string" ? reason : "";
-  if (applies === false) return { kind: "inapplicable", reason: why };
-  if (typeof passed !== "boolean") {
-    return { kind: "unavailable", reason: `judge returned no verdict: ${json.slice(0, 200)}` };
-  }
-  return { kind: "graded", passed, reason: why };
+/** Exported for its tests; nothing outside this file calls it. */
+export const parseOnlineVerdict = (raw: string): OnlineVerdict => {
+  const reply = readReply(raw);
+  if (reply.applies === false) return { kind: "inapplicable", reason: reply.reason };
+  return verdictOf(reply, raw);
 };
 
 const onlinePayload = (input: {
