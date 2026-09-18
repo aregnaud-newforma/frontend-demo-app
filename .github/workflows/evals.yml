@@ -217,8 +217,10 @@ jobs:
                 base_print=absent
               fi
               [ "$head_print" = "$base_print" ] || config_moved=yes
+              # `tee`, as `online.yml` does it: the summary is what a reviewer
+              # reads, the log is where somebody asking "why did this run?" looks.
               echo "Trial fingerprint: base \`$base_print\`, head \`$head_print\` (moved: $config_moved)" \
-                >> "$GITHUB_STEP_SUMMARY"
+                | tee -a "$GITHUB_STEP_SUMMARY"
             fi
 
             # Nothing here names a gate any more: the rules are another
