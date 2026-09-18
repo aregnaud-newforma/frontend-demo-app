@@ -167,7 +167,12 @@ export function ActivityPage() {
               {entries.map((entry) => (
                 <li key={entry.id}>
                   <ActivityRow
-                    entry={entry}
+                    id={entry.id}
+                    kind={entry.kind}
+                    at={entry.at}
+                    summary={entry.summary}
+                    device={entry.device}
+                    hasNote={entry.note.trim() !== ""}
                     selected={entry.id === selectedId}
                     onSelect={setSelectedId}
                   />

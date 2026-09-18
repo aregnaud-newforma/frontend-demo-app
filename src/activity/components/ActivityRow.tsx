@@ -1,7 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { formatWhen } from "../helpers/activity";
-import { KIND_LABELS } from "../helpers/kinds";
-import type { ActivityEntry } from "../helpers/api";
+import { KIND_LABELS, type ActivityKind } from "../helpers/kinds";
 import { colors, radius, space, text } from "../../tokens.stylex";
 
 const styles = stylex.create({
@@ -68,29 +67,47 @@ const styles = stylex.create({
 /**
  * One line of the log.
  *
- * Takes the whole `ActivityEntry` rather than the four fields it renders. The
- * row exists to show an entry and nothing else, so its props have no life of
- * their own: a field added to the server's shape is a field this row may have
- * to show, and spelling out a private four-field type here would only mean
- * editing two places to find that out. Decoupling is for props that were never
- * going to follow the entity — a `selected` flag and an `onSelect`, which the
- * list owns and the server has never heard of.
+ * The props are this component's own, named for what it renders, rather than
+ * `entry: ActivityEntry`. A row is a UI concern and the entry is a data type:
+ * they change for different reasons, and handing over the server's record binds
+ * every field rename on the wire to a component that only ever paints four
+ * strings and a flag.
+ *
+ * `hasNote` is the clearest case. The row shows THAT there is a note, never the
+ * text of one, so the text is not this component's business — and a prop that
+ * said `note: string` would quietly invite it to become so.
  *
  * Presentational, and strictly so: it fetches nothing and stores nothing. Which
  * entry is selected and what happens on a click both belong to the list, and
  * that is what keeps this renderable from a fixture in isolation.
  */
 export interface ActivityRowProps {
-  entry: ActivityEntry;
+  /** Reported back on click; the row itself never reads it. */
+  id: string;
+  kind: ActivityKind;
+  /** ISO 8601, formatted for reading here. */
+  at: string;
+  summary: string;
+  /** Null when the request carried nothing to say where from. */
+  device: string | null;
+  hasNote: boolean;
   selected: boolean;
   onSelect: (entryId: string) => void;
 }
 
-export function ActivityRow({ entry, selected, onSelect }: ActivityRowProps) {
+export function ActivityRow({
+  id,
+  kind,
+  at,
+  summary,
+  device,
+  hasNote,
+  selected,
+  onSelect,
+}: ActivityRowProps) {
   // Derived on each render from what this row was handed. Nothing to store, so
-  // nothing that can disagree with the entry beside it.
-  const where = entry.device ?? "an unrecognised device";
-  const hasNote = entry.note.trim() !== "";
+  // nothing that can disagree with the row beside it.
+  const where = device ?? "an unrecognised device";
 
   return (
     <button
@@ -99,14 +116,14 @@ export function ActivityRow({ entry, selected, onSelect }: ActivityRowProps) {
       // buttons, not an option in a listbox, and claiming the second would
       // promise keyboard semantics this markup does not implement.
       aria-pressed={selected}
-      onClick={() => onSelect(entry.id)}
+      onClick={() => onSelect(id)}
       {...stylex.props(styles.row, selected && styles.rowSelected)}
     >
-      <span {...stylex.props(styles.badge)}>{KIND_LABELS[entry.kind]}</span>
+      <span {...stylex.props(styles.badge)}>{KIND_LABELS[kind]}</span>
       <span {...stylex.props(styles.body)}>
-        <span {...stylex.props(styles.summary)}>{entry.summary}</span>
+        <span {...stylex.props(styles.summary)}>{summary}</span>
         <span {...stylex.props(styles.meta)}>
-          {formatWhen(entry.at)} · {where}
+          {formatWhen(at)} · {where}
           {hasNote && <span {...stylex.props(styles.noted)}> · noted</span>}
         </span>
       </span>

@@ -186,17 +186,28 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   }
 
   if (url.pathname === "/api/account/activity" && method === "GET") {
-    // Both reads start together. Neither needs the other's answer — the account
-    // decides whether there is anything to show, the log is what gets shown —
-    // so awaiting them one after the other would add a round trip to every
-    // request for nothing. `Promise.all` also means one rejection fails the
-    // request rather than leaving a half-read answer.
-    const [account, entries] = await Promise.all([readAccount(session), readActivity(session)]);
+    // Both reads START together: neither needs the other's answer, so stacking
+    // them would add a round trip to every request for nothing.
+    //
+    // Only the account is AWAITED before the decision, though. A `Promise.all`
+    // over the pair would be parallel and still make a session with no account
+    // wait for a log it is never going to send — the 404 discards it. Starting
+    // both and awaiting each where its value is first needed is what gets the
+    // parallelism without paying for the unused half.
+    const accountRead = readAccount(session);
+    const activityRead = readActivity(session);
 
+    const account = await accountRead;
     if (!account) {
+      // The log is already in flight and nothing below will await it. Left
+      // alone, a rejection would surface as an unhandled one, outside the catch
+      // wrapped around `handle`.
+      void activityRead.catch(() => undefined);
       sendJson(response, 404, { error: "No account for this session" });
       return;
     }
+
+    const entries = await activityRead;
 
     const search = url.searchParams.get("search") ?? "";
     // Unknown kinds are dropped rather than rejected: the parameter is a filter,
