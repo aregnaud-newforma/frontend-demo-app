@@ -19,7 +19,8 @@ export default {
   // server/ too: the API process is where an API-route rule can be broken, and
   // the javascript gate carries three tasks that ask for a change there.
   sourcePaths: ["src/**", "server/**"],
-  // Diff graders only on real pull requests, for now. The online criteria are
-  // new; flip this once their verdicts have been read against a few real diffs.
-  onlineJudge: false,
+  // The judge too, on real pull requests: the online criteria are new, and the
+  // way to read their verdicts against real diffs is to let them run. Flip back
+  // to `false` if a verdict proves noisier than it is worth.
+  onlineJudge: true,
 } satisfies EvalsConfig;

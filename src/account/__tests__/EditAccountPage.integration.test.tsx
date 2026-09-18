@@ -31,6 +31,7 @@ async function renderEditAccountPage() {
     phoneInput: () => screen.getByLabelText("Phone (optional)"),
     languageSelect: () => screen.getByLabelText("Language"),
     bioInput: () => screen.getByLabelText("Bio (optional)"),
+    bioRemaining: () => screen.getByText(/characters remaining/),
 
     loadingIndicator: () => screen.getByRole("status"),
     errorBanner: () => screen.getByRole("alert"),
@@ -169,6 +170,24 @@ it("edits every field of an account with no phone, saves, and lands on the summa
 
   // And the store holds the phone in E.164
   expect(accounts.findFirst()).toMatchObject({ telephone: phone.e164 });
+});
+
+// Use case: Editing your account — Default render
+it("counts down the characters remaining under the bio as the user types", async () => {
+  // Given a loaded form for an account with a 20-character bio
+  await seedAccount({ bio: "Twenty characters..." });
+  const form = await renderEditAccountPage();
+  await expect.element(form.bioInput()).toHaveValue("Twenty characters...");
+
+  // Then the counter reflects the stored bio
+  await expect.element(form.bioRemaining()).toHaveTextContent("180 of 200 characters remaining");
+
+  // When the user rewrites the bio
+  await form.changeBio("Short.");
+
+  // Then the counter follows, with nothing saved
+  await expect.element(form.bioRemaining()).toHaveTextContent("194 of 200 characters remaining");
+  expect(accounts.findFirst()).toMatchObject({ bio: "Twenty characters..." });
 });
 
 // Use case: Editing your account — Edge case

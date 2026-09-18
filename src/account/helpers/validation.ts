@@ -9,6 +9,9 @@ export const LANGUAGE_LABELS: Record<Language, string> = {
   en: "English",
 };
 
+/** One number for the schema and the counter under the field, so they agree. */
+export const BIO_MAX_LENGTH = 200;
+
 export const accountSchema = z.object({
   nom: z.string().trim().min(1, "Name is required"),
   prenom: z.string().trim().min(1, "First name is required"),
@@ -28,7 +31,7 @@ export const accountSchema = z.object({
     }
     return value;
   }),
-  bio: z.string().trim().max(200, "Bio must be 200 characters or less"),
+  bio: z.string().trim().max(BIO_MAX_LENGTH, `Bio must be ${BIO_MAX_LENGTH} characters or less`),
 });
 
 export type AccountValues = z.input<typeof accountSchema>;

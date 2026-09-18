@@ -582,10 +582,10 @@ hand-written under one gate is the comparison this tier exists to draw.
 
 `.github/workflows/online.yml` runs it on every pull request, report-only.
 Whether the judge runs is `onlineJudge` in `evals.config.ts` — `--judge on|off`
-wins over it, and absent it means yes. This repository sets it to `false` for
-now: the online criteria are new and should be read against a handful of real
-diffs before their verdicts are trusted, and flipping the key is a change
-somebody reviews. A pull request that fails a gate online is a task waiting to
+wins over it, and absent it means yes. This repository sets it to `true`: the
+online criteria are new, and reading their verdicts against real diffs is how
+they earn trust — flipping the key back is a change somebody reviews, not a
+setting. A pull request that fails a gate online is a task waiting to
 be written — that is how this suite grows past the cases its authors thought of.
 
 ## The judge

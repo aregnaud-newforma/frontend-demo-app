@@ -6,7 +6,7 @@ import { FieldError, errorProps } from "./components/FieldError";
 import { ErrorBanner, LoadingStatus } from "./components/PageState";
 import { toValues, updateAccount, type Account } from "./helpers/api";
 import { accountQueryKey, useAccount } from "./hooks/use-account";
-import { LANGUAGES, LANGUAGE_LABELS, accountSchema } from "./helpers/validation";
+import { BIO_MAX_LENGTH, LANGUAGES, LANGUAGE_LABELS, accountSchema } from "./helpers/validation";
 import { colors, radius, shadow, space, text } from "../tokens.stylex";
 
 const styles = stylex.create({
@@ -57,6 +57,11 @@ const styles = stylex.create({
   textarea: {
     minHeight: "5.5rem",
     resize: "vertical",
+  },
+  hint: {
+    margin: 0,
+    fontSize: text.sm,
+    color: colors.textMuted,
   },
   actions: {
     display: "flex",
@@ -289,6 +294,10 @@ function AccountFields({ account }: { account: Account }) {
               {...textareaProps(field)}
               {...errorProps(field)}
             />
+            {/* Derived from the field's value on each render: nothing to store. */}
+            <p {...stylex.props(styles.hint)}>
+              {BIO_MAX_LENGTH - field.state.value.length} of {BIO_MAX_LENGTH} characters remaining
+            </p>
             <FieldError field={field} />
           </div>
         )}
