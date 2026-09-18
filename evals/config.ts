@@ -33,6 +33,7 @@
  * conditions nobody can read off the run.
  */
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -281,3 +282,72 @@ const loaded = await import(pathToFileURL(configPath).href).catch((error: unknow
 );
 
 export const config = validated((loaded as { default?: unknown }).default);
+
+/**
+ * The keys of this file that no trial can read, and so cannot move a score.
+ *
+ * A DENYLIST, and the direction is the whole safety of `trialFingerprint`
+ * below. Naming the keys that DO reach a trial would mean a key added later and
+ * forgotten here reads as "nothing changed" — CI skipping the run that would
+ * have caught the regression, which is the plausible, false answer this harness
+ * exists not to give. Named this way round, a key forgotten here costs a run
+ * nobody needed: money, once, and visibly.
+ *
+ * `maxConcurrency` is how fast this machine may go rather than what is being
+ * measured, and CI passes `--max-concurrency` over it anyway. `onlineJudge` is
+ * read in `online.ts` alone — the tier that grades a pull request's own diff,
+ * which no benchmark gate touches.
+ *
+ * Typed as keys on the way in so a renamed key is a type error here, and read
+ * as strings on the way out so the filter below needs no cast.
+ */
+const NOT_A_TRIAL: ReadonlySet<string> = new Set<keyof EvalsConfig>([
+  "maxConcurrency",
+  "onlineJudge",
+]);
+
+/** Key order is how a file was typed, not what it says, so it is sorted away. */
+const stable = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map((entry) => stable(entry));
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .toSorted(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, stable(entry)]),
+  );
+};
+
+/**
+ * A hash of everything in a config that decides what a trial IS: the tasks with
+ * their prompts and graders, what counts as an answer, who runs, who grades, and
+ * on what model.
+ *
+ * It exists because CI cannot ask that question of a filename. `evals.yml` used
+ * to widen to every gate in both arms — ten paid jobs — whenever `evals.config.ts`
+ * was touched at all, on the reasoning that it decides what a trial is. Most of
+ * it does. `onlineJudge` does not, and flipping that one key bought ten trials
+ * to re-measure an unchanged constant. The workflow compares this hash across
+ * the merge base instead, which is the question it was always asking.
+ *
+ * Short on purpose: it is read in a job summary beside the base's, and sixteen
+ * hex characters is far past collision for a comparison with two sides.
+ *
+ * Takes the config rather than reading the loaded one, so the invariant it
+ * exists for — that `onlineJudge` cannot move it — is a unit test rather than a
+ * claim. `trialFingerprint` below is what CI calls.
+ */
+export const fingerprintOf = (candidate: EvalsConfig): string =>
+  createHash("sha256")
+    .update(
+      JSON.stringify(
+        stable(
+          Object.fromEntries(Object.entries(candidate).filter(([key]) => !NOT_A_TRIAL.has(key))),
+        ),
+      ),
+    )
+    .digest("hex")
+    .slice(0, 16);
+
+/** This repository's own, printed by `yarn evals --trial-fingerprint`. */
+export const trialFingerprint = (): string => fingerprintOf(config);

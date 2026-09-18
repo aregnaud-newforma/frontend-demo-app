@@ -35,6 +35,7 @@ yarn evals --judge-model gpt-5.4         # the model it grades with (the judge's
 yarn evals --judge-effort high           # its effort level (the judge's own, by default)
 yarn evals --list-gates                 # the gates that have a task, as JSON
 yarn evals --list-agents                # the agents and the default one, as JSON
+yarn evals --trial-fingerprint          # a hash of the config keys a trial reads (CI compares it)
 ```
 
 Requires Node 22 (`.nvmrc`) and `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`,
@@ -467,6 +468,21 @@ change to one runs every gate in **both** arms: the ablation stopped being a
 constant, and the baseline has to be re-measured. `run.ts` decides what is
 recorded rather than what the agent is given, so it runs every gate in
 `with-skills` alone. `README.md` changes nothing and triggers nothing.
+
+`evals.config.ts` is the one of those the workflow does not settle by name. It
+holds what a trial is **and** `onlineJudge`, which only `online.ts` reads, and a
+filename cannot tell the two apart: flipping that key alone once bought ten jobs
+to re-measure a constant. So the `changes` job asks the file what it says
+instead. `yarn evals --trial-fingerprint` hashes every key a trial can read and
+no key it cannot, the job prints it at the merge base and at `HEAD`, and only a
+difference widens the matrix. Both hashes land in the job summary, so a run
+nobody expected can be read back.
+
+That list is a **denylist** in `evals/config.ts`, not an allowlist, and the
+direction is the safety. A key added later and forgotten there is hashed, so it
+costs a run nobody needed — visible, once. An allowlist that forgot one would
+skip the run that would have caught the regression, and report the stale pass
+rate as current.
 
 A gate is deliberately coarser than a rule, so a `react` run averages effects and
 re-render alike. Nothing diagnostic is lost, because the per-task score is named

@@ -195,6 +195,32 @@ jobs:
             baseline=$REQUESTED_BASELINE
           else
             changed=$(git diff --name-only "origin/$BASE...HEAD")
+
+            # `evals.config.ts` is not a yes or no on its own. It holds what a
+            # trial is AND `onlineJudge`, which only the online tier reads, so
+            # "the file moved" is the wrong question — it answered yes to a
+            # one-key flip and bought ten jobs to re-measure a constant. Ask the
+            # file what it SAYS instead: `trialFingerprint` in `evals/config.ts`
+            # hashes every key a trial can read and no key it cannot, and the
+            # hash at the merge base is compared with the hash here. Both are
+            # printed to the summary, so a run nobody expected can be read back.
+            config_moved=no
+            if echo "$changed" | grep -qE '^evals\.config\.ts$'; then
+              head_print=$(yarn --silent evals --trial-fingerprint)
+              # A config the base did not have, or one this checkout cannot
+              # load, is not a hash to compare against — and the safe answer to
+              # "cannot tell" is to measure, not to skip.
+              if git checkout "origin/$BASE" -- evals.config.ts 2>/dev/null; then
+                base_print=$(yarn --silent evals --trial-fingerprint 2>/dev/null || echo unreadable)
+                git checkout HEAD -- evals.config.ts
+              else
+                base_print=absent
+              fi
+              [ "$head_print" = "$base_print" ] || config_moved=yes
+              echo "Trial fingerprint: base \`$base_print\`, head \`$head_print\` (moved: $config_moved)" \
+                >> "$GITHUB_STEP_SUMMARY"
+            fi
+
             # Nothing here names a gate any more: the rules are another
             # repository's, and this diff can only show that the pin moved, not
             # which rule moved with it. `touched` therefore stays empty and the
@@ -223,15 +249,17 @@ jobs:
             # Whatever changes what a trial *is* moves any gate — there is no
             # subset to narrow to — and moves both arms with it, so the
             # ablation is no longer a constant and the baseline has to be
-            # re-measured. That is: what this repository asks to be measured
-            # and what counts as an answer (`evals.config.ts`), the prompts and
-            # criteria it points at (`tasks.ts`), the agent, its pinned model
+            # re-measured. That is: what this repository asks to be measured and
+            # what counts as an answer (`evals.config.ts`, by its fingerprint
+            # above rather than by its name — the rest of this list has no key
+            # that reaches only the online tier, so a name is answer enough for
+            # them), the prompts and criteria it points at (`tasks.ts`), the agent, its pinned model
             # and the strip itself (`agents.ts`), the isolation around them
             # (`trial.ts`), the judge and its own pin (`judge.ts`), the CLI pin
             # (here), and the two files every agent in this repo reads — the
             # strip removes only the Skills section of `AGENTS.md`, so the rest
             # of it reaches both arms.
-            if echo "$changed" | grep -qE '^(AGENTS\.md|CLAUDE\.md|evals\.config\.ts|evals/(tasks|trial|judge|agents|skills|pin)\.ts|\.github/workflows/evals\.yml)$'; then
+            if [ "$config_moved" = yes ] || echo "$changed" | grep -qE '^(AGENTS\.md|CLAUDE\.md|evals/(tasks|trial|judge|agents|skills|pin)\.ts|\.github/workflows/evals\.yml)$'; then
               gates=$all
               arms=$both
             # A pin bump is a rule edit arriving from the other repository, and
