@@ -8,7 +8,7 @@
  *                   [--repeat <n>] [--max-concurrency <n>] [--reuse] [--run-name <name>]
  *                   [--max-turns <n>] [--agent <id>] [--model <id>] [--effort <level>]
  *                   [--judge-agent <id>] [--judge-model <id>] [--judge-effort <level>]
- *                   [--list-gates] [--list-agents]
+ *                   [--list-gates] [--list-agents] [--trial-fingerprint]
  *
  * One gate per invocation: a gate is a Langfuse dataset, and two skills sharing
  * a pass rate would move it for reasons nobody can read.
@@ -18,7 +18,7 @@ import { parseArgs, promisify } from "node:util";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { LangfuseClient } from "@langfuse/client";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
-import { config, configuredDefaults } from "./config.ts";
+import { config, configuredDefaults, trialFingerprint } from "./config.ts";
 import {
   gatesWithTasks,
   gradeAdded,
@@ -85,6 +85,7 @@ const { values } = parseArgs({
     "judge-effort": { type: "string" },
     "list-gates": { type: "boolean", default: false },
     "list-agents": { type: "boolean", default: false },
+    "trial-fingerprint": { type: "boolean", default: false },
     // Where to write the run's report as data, for the pull request comment.
     // No default: a local run has nobody to comment to.
     "report-file": { type: "string" },
@@ -109,6 +110,15 @@ if (values["list-gates"]) {
 // together rather than leaving the two disagreeing.
 if (values["list-agents"]) {
   console.log(JSON.stringify({ agents: AGENTS.map(({ id }) => id), default: defaultAgentId }));
+  process.exit(0);
+}
+
+// Printed for CI for the same reason the two above are, and answering the
+// question neither of them can: not what this repository declares, but whether
+// a branch changed it. The workflow prints this at the merge base and at HEAD,
+// and only pays for a run when the two differ. See `trialFingerprint`.
+if (values["trial-fingerprint"]) {
+  console.log(trialFingerprint());
   process.exit(0);
 }
 
