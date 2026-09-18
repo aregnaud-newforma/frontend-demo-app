@@ -21,5 +21,5 @@ export default {
   sourcePaths: ["src/**", "server/**"],
   // Diff graders only on real pull requests, for now. The online criteria are
   // new; flip this once their verdicts have been read against a few real diffs.
-  onlineJudge: false,
+  onlineJudge: true,
 } satisfies EvalsConfig;
