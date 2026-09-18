@@ -1,6 +1,7 @@
 import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import { AccountPage } from "@account/AccountPage";
 import { EditAccountPage } from "@account/EditAccountPage";
+import { ActivityPage } from "@activity/ActivityPage";
 import { HomePage } from "@home/HomePage";
 import { RootLayout } from "@layout/RootLayout";
 
@@ -45,13 +46,24 @@ const editAccountRoute = createRoute({
   component: EditAccountPage,
 });
 
+const activityRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/activity",
+  component: ActivityPage,
+});
+
 /**
  * Exported so the integration tests can build their own router over the same
  * tree with a memory history - the pages navigate, so testing one means giving
  * it somewhere to navigate TO. A fresh router per test, like the fresh
  * QueryClient, so no test inherits another's history.
  */
-export const routeTree = rootRoute.addChildren([indexRoute, accountRoute, editAccountRoute]);
+export const routeTree = rootRoute.addChildren([
+  indexRoute,
+  accountRoute,
+  editAccountRoute,
+  activityRoute,
+]);
 
 export const router = createRouter({ routeTree });
 
