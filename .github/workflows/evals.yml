@@ -1,0 +1,549 @@
+# The skill evals, run when the rules themselves change.
+#
+# `yarn verify && yarn test` in ci.yml checks the code. Nothing in it can check
+# whether an agent still applies the ~75 rules no linter reaches — that is what
+# this suite is for, and it only has an answer worth reading when a rule moved.
+# So: the paths below, plus a manual button.
+#
+# Informative, not blocking. `evals/run.ts` prints the pass rate and exits zero
+# whatever the score, so a red gate never stops a merge. A failing job here is a
+# broken harness — a missing secret, a CLI that would not install or would not
+# authenticate, a judge it could not reach — not a skill that regressed. The
+# line is drawn by `run.ts`: a verdict it could not reach deletes the run from
+# Langfuse and exits non-zero, a trial that ran and failed does neither. Read
+# the score in the run summary, in Langfuse, or on the pull request: once every
+# gate has finished, the `report` job posts them all as one comment, edited in
+# place on every push.
+#
+# "Skill benchmark" on the pull request, `evals` everywhere else: the name a
+# developer reads says what it measures, the name in the code says how.
+name: Skill benchmark
+
+on:
+  pull_request:
+    # `labeled` so that adding an `evals:<agent>` label re-runs a pull request
+    # that has already been scored, and `unlabeled` so that removing one does
+    # too. The path filter still applies: labelling a branch that touched no
+    # rule runs nothing, which is the right answer.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      # The rules themselves live in another repository now. What reaches this
+      # one is the pin naming the revision under test, so bumping it is how a
+      # rule change arrives here — and the only path filter that still stands in
+      # for "a rule moved".
+      - "evals/skills.pin.json"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      # The suite is also under test when the suite itself changes. Its prose
+      # is not: `evals/README.md` explains the harness without being able to
+      # change what it does, and a documentation edit is not worth a suite.
+      - "evals/**"
+      - "!evals/README.md"
+      # What this repository asks the suite to measure, and so also a trial.
+      - "evals.config.ts"
+      - ".github/workflows/evals.yml"
+  # Puts a "Run workflow" button in the Actions tab. It only appears once this
+  # file is on the default branch.
+  workflow_dispatch:
+    inputs:
+      gate:
+        description: "Which skill to gate"
+        required: false
+        type: choice
+        # A dropdown cannot be computed, so this list is the one place a gate is
+        # named twice. `yarn evals --list-gates` is the source; a name that has
+        # drifted out of it fails the run rather than scoring nothing. "all" is
+        # every gate that has a task.
+        options: ["all", "react", "javascript", "typescript", "testing", "engineer"]
+        default: "all"
+      arm:
+        description: "with-skills measures the repository as it stands, without-skills ablates the rules, previous-skill restores the skill from `baseline`; both runs with-skills and without-skills"
+        required: false
+        type: choice
+        options: ["both", "with-skills", "without-skills", "previous-skill"]
+        default: "both"
+      baseline:
+        description: "For previous-skill: a ref of the SKILLS repository whose rules are the baseline, not of this one. Refused when they equal the pinned revision's."
+        required: false
+        type: string
+        default: ""
+      agent:
+        description: "Which agent to measure. Codex has never been run — see evals/README.md before trusting a score from it."
+        required: false
+        type: choice
+        options: ["claude", "codex", "copilot", "both"]
+        default: "copilot"
+      repeat:
+        description: "Trials per task. More samples, less noise, proportionally more money."
+        required: false
+        type: string
+        # One, like the automatic runs, because a manual run that wants a
+        # measurement rather than a smoke test says so by raising this.
+        default: "1"
+
+# A new push supersedes the run already in flight: a trial costs real money, and
+# the score of a commit that has been replaced is not worth paying for.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # A gate is named after a skill directory, so a pull request that touches one
+  # skill can pay for one gate. Before this job existed, editing a single react
+  # rule ran the javascript gate too — six trials and real money to score rules
+  # nobody had changed.
+  changes:
+    name: which gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      jobs: ${{ steps.pick.outputs.jobs }}
+      baseline: ${{ steps.pick.outputs.baseline }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          # Full history: the diff below needs a merge base with the target
+          # branch, which a shallow clone does not have.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+
+      - id: pick
+        env:
+          REQUESTED: ${{ inputs.gate }}
+          REQUESTED_ARM: ${{ inputs.arm }}
+          REQUESTED_AGENT: ${{ inputs.agent }}
+          REQUESTED_BASELINE: ${{ inputs.baseline }}
+          # The opt-in. Labels, not paths, because no file in this repository
+          # says "measure Codex too" — that is a question somebody asks of a
+          # branch, not a property of what the branch changed. Every label is
+          # passed and the agent names are matched below, so a repository that
+          # labels for anything else is not misread.
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          BASE: ${{ github.base_ref }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          # Same reason as the gate step below: this one pipes through sed and
+          # jq, and a broken pipe here would silently pick no gates at all.
+          set -o pipefail
+
+          all=$(yarn --silent evals --list-gates)
+          # The two arm names are `ARMS` in `evals/run.ts`; one that has drifted
+          # fails the run rather than scoring nothing.
+          both='["with-skills","without-skills"]'
+
+          # `evals/run.ts` is the source of the agent names, as it is of the
+          # gate names: an agent named here instead would be a declaration wired
+          # into half the system, which is the failure `alias.ts` and the
+          # tsconfig `paths` warn about.
+          known=$(yarn --silent evals --list-agents)
+
+          # An `evals:<agent>` label selects that agent; no label means the
+          # default alone. A second agent multiplies the matrix against the
+          # gates and the arms, and it answers a different question — does this
+          # rule travel? — from the one a pull request touching a rule is
+          # asking, which is whether the rule still holds. So it is asked for
+          # explicitly or not at all.
+          #
+          # A run of one agent is readable on its own only as a pass rate. The
+          # with/without delta of two agents is not comparable across them, so
+          # `evals:codex` without `evals:claude` scores Codex against nothing
+          # from this commit. That is a choice the label makes deliberately, not
+          # one the workflow prevents. `evals/README.md` says why it matters.
+          case "$LABELS" in "" | null) LABELS='[]' ;; esac
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$REQUESTED_AGENT" = "both" ]; then
+              agents=$(jq -nc --argjson known "$known" '$known.agents')
+            else
+              agents=$(jq -nc --arg agent "$REQUESTED_AGENT" '[$agent]')
+            fi
+          else
+            named=$(jq -nc --argjson labels "$LABELS" \
+              '[$labels[] | select(startswith("evals:")) | ltrimstr("evals:")]')
+
+            # A misspelt label fails the run rather than quietly scoring the
+            # default, for the reason the gate dropdown does: somebody asked for
+            # a measurement and a green job saying nothing is the worst answer.
+            unknown=$(jq -nc --argjson known "$known" --argjson named "$named" \
+              '$named - $known.agents')
+            if [ "$unknown" != "[]" ]; then
+              echo "Unknown agent label(s): $unknown. Known: $(echo "$known" | jq -c .agents)" >&2
+              exit 1
+            fi
+
+            # Intersected in the registry's order, so the matrix reads the same
+            # whatever order the labels were added in.
+            agents=$(jq -nc --argjson known "$known" --argjson named "$named" \
+              '($known.agents - ($known.agents - $named)) as $selected
+               | if ($selected | length) > 0 then $selected else [$known.default] end')
+          fi
+
+          # The gates whose skill directory the branch touched. On a pull
+          # request these get a third arm: `previous-skill`, the skill as it
+          # was at the merge base, in a worktree that is otherwise the branch.
+          # That is the only baseline measured under the same CLI, model and
+          # hour as the branch, so the delta between the two jobs is the edit's
+          # effect and nothing else — `with-skills` alone was read against a
+          # nightly run that shared none of those.
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            touched='[]'
+            baseline=$REQUESTED_BASELINE
+          else
+            changed=$(git diff --name-only "origin/$BASE...HEAD")
+            # Nothing here names a gate any more: the rules are another
+            # repository's, and this diff can only show that the pin moved, not
+            # which rule moved with it. `touched` therefore stays empty and the
+            # pin branch below carries what it used to.
+            touched='[]'
+            # The baseline was this repository's merge base, which named a
+            # commit of this repository's skills. There is no such thing now —
+            # `--baseline-ref` takes a ref of the skills repository, which only
+            # a person or that repository's own pipeline can supply.
+            baseline=''
+          fi
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            # A manual run says what it wants: one gate or "all", one arm or "both".
+            if [ "$REQUESTED" = "all" ]; then
+              gates=$all
+            else
+              gates=$(jq -nc --arg gate "$REQUESTED" '[$gate]')
+            fi
+            if [ "$REQUESTED_ARM" = "both" ]; then
+              arms=$both
+            else
+              arms=$(jq -nc --arg arm "$REQUESTED_ARM" '[$arm]')
+            fi
+          else
+            # Whatever changes what a trial *is* moves any gate — there is no
+            # subset to narrow to — and moves both arms with it, so the
+            # ablation is no longer a constant and the baseline has to be
+            # re-measured. That is: what this repository asks to be measured
+            # and what counts as an answer (`evals.config.ts`), the prompts and
+            # criteria it points at (`tasks.ts`), the agent, its pinned model
+            # and the strip itself (`agents.ts`), the isolation around them
+            # (`trial.ts`), the judge and its own pin (`judge.ts`), the CLI pin
+            # (here), and the two files every agent in this repo reads — the
+            # strip removes only the Skills section of `AGENTS.md`, so the rest
+            # of it reaches both arms.
+            if echo "$changed" | grep -qE '^(AGENTS\.md|CLAUDE\.md|evals\.config\.ts|evals/(tasks|trial|judge|agents|skills|pin)\.ts|\.github/workflows/evals\.yml)$'; then
+              gates=$all
+              arms=$both
+            # A pin bump is a rule edit arriving from the other repository, and
+            # it moves one arm only: `without-skills` installs nothing, so its
+            # score cannot follow a rule it never received. Running it here
+            # would be paying to re-measure a constant — the same reasoning the
+            # gate-level branch below applies to a local skill edit.
+            elif echo "$changed" | grep -qE '^evals/skills\.pin\.json$'; then
+              gates=$all
+              arms='["with-skills"]'
+            # The rest of the harness — `run.ts`, which orchestrates and scores
+            # — decides what is recorded, not what the agent is given: it
+            # cannot move one arm relative to the other, and a comparison whose
+            # two sides shifted together does not need re-measuring. One arm
+            # across every gate still exercises both grader kinds, which is what
+            # a harness edit needs proving, at half the money.
+            # `README.md` excluded as it is in `paths` above: it changes
+            # nothing the suite does, and a pull request that edits it beside a
+            # rule should still pay for that rule's gate alone.
+            elif echo "$changed" | grep -vE '^evals/README\.md$' | grep -qE '^evals/'; then
+              gates=$all
+              arms='["with-skills"]'
+            else
+              # Intersection: a skill with no task is not a gate, and a gate
+              # whose rules nobody touched has nothing new to say.
+              gates=$(jq -nc --argjson all "$all" --argjson touched "$touched" '$all - ($all - $touched)')
+              # A skill edit cannot move the ablation: `without-skills` strips
+              # the skill before the agent starts, so that arm would re-measure
+              # a constant and pay for it. It is the nightly's job to watch the
+              # baseline drift; a pull request asks whether the rule still
+              # holds — and, through `previous-skill` below, whether the edit
+              # is why.
+              arms='["with-skills"]'
+            fi
+          fi
+
+          # One job per agent, gate and arm — as a list of triplets rather than
+          # three matrix axes, because `previous-skill` belongs to the touched
+          # gates alone: `run.ts` refuses it for a gate whose skill equals the
+          # baseline's, and a refused job is a red job that says nothing.
+          jobs=$(jq -nc --argjson agents "$agents" --argjson gates "$gates" \
+            --argjson arms "$arms" --argjson touched "$touched" \
+            '[ $agents[] as $agent
+               | $gates[] as $gate
+               | ($arms + (if ($touched | index($gate)) != null then ["previous-skill"] else [] end))[] as $arm
+               | { agent: $agent, gate: $gate, arm: $arm } ]')
+
+          echo "jobs=$jobs" >> "$GITHUB_OUTPUT"
+          echo "baseline=$baseline" >> "$GITHUB_OUTPUT"
+          echo "Jobs: \`$jobs\`, baseline: \`$baseline\`" >> "$GITHUB_STEP_SUMMARY"
+
+  evals:
+    needs: changes
+    # Nothing to score: a pull request that touched no skill under gate.
+    if: needs.changes.outputs.jobs != '[]'
+    # One job per gate and arm, because one gate in one arm is one Langfuse
+    # dataset run and one pass rate. Running them in parallel also keeps the wall
+    # clock near the slowest job rather than the sum of all of them.
+    name: ${{ matrix.agent }} ${{ matrix.gate }} ${{ matrix.arm }}
+    runs-on: ubuntu-latest
+    # The largest gate is five tasks, each repeated `repeat` times, at 1-4 minutes
+    # a trial and three tasks abreast — and `claude -p` is given 15 minutes of
+    # its own per trial. The 15-minute cap the other jobs use would kill this
+    # one mid-suite.
+    timeout-minutes: 90
+    strategy:
+      # One job's harness failure says nothing about the others, and their runs
+      # are already paid for.
+      fail-fast: false
+      # Every Claude job in the matrix draws on the same subscription token, and
+      # each runs three trials abreast: six jobs is eighteen concurrent
+      # `claude -p`, which exhausts the five-hour window and returns
+      # `trial_error` — a trial that never ran, and a gate that scores nothing —
+      # rather than a score. Two jobs is six, which the window holds. It costs
+      # wall clock, and the 90-minute timeout is per job, so a queued job is not
+      # a timing out one. Kept at two whatever the agent axis holds: the other
+      # CLIs draw on their own quotas, but every job runs the same Copilot judge
+      # against one Copilot subscription.
+      max-parallel: 2
+      matrix:
+        # Usually one agent, `claude`. An `evals:<agent>` label on a pull
+        # request, or the manual button, is what puts a second one in here —
+        # and multiplies the list against the arms and the gates, so it is
+        # opt-in.
+        include: ${{ fromJSON(needs.changes.outputs.jobs) }}
+    steps:
+      # The branch under test, by name. On a pull request that is the head
+      # branch, not the merge commit `actions/checkout` would pick by default:
+      # the score belongs to a commit that exists, and HEAD stays attached, so
+      # `run.ts` reads the real branch name for the run. Empty everywhere else,
+      # which leaves the default — the branch a manual run was started from.
+      # Full history: a `previous-skill` job checks the skill out of the merge
+      # base, which a shallow clone does not hold.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+
+      # Pinned like the model is: `run.ts` records the CLI version with every
+      # score, and a version that moves on its own reads as a skill regression.
+      #
+      # Installed in every job, whichever agent is under test, because this
+      # repository's `defaultJudge` is Copilot: `judge.ts` shells out to it for
+      # every judged task. Move that key and this condition moves with it — a
+      # judge whose CLI is missing makes every judged task `judge_error`.
+      - name: Install Copilot
+        run: npm install -g @github/copilot@1.0.83
+
+      # Pinned for the same reason, and installed only when it is the subject.
+      - name: Install Claude Code
+        if: matrix.agent == 'claude'
+        run: npm install -g @anthropic-ai/claude-code@2.1.258
+
+      # Same pin, and never yet run by this workflow: written from the docs. A
+      # wrong pin fails the job rather than scoring something else, and only a
+      # job that asked for Codex can hit it.
+      - name: Install Codex
+        if: matrix.agent == 'codex'
+        run: npm install -g @openai/codex@0.153.4
+
+      # The rules under test, which this repository does not hold: they live in
+      # the repository `evals/skills.pin.json` names, and a job without them
+      # would fill no worktree, score 0 on every task, and read as a skill that
+      # stopped working. `skills.ts` refuses to run rather than let that happen,
+      # so a missing token fails the job loudly instead.
+      #
+      # Cloned here rather than left to the harness because the harness has no
+      # credentials: `EVALS_SKILLS_DIR` is how a checkout made with them is
+      # handed over. Full history, because `--baseline-ref` reaches for a commit
+      # older than the pin.
+      #
+      # Over HTTPS with a token, where the pin names SSH, and the asymmetry is
+      # the point. Azure DevOps has no per-repository deploy keys — an SSH key
+      # there belongs to an account and carries everything that account can do,
+      # across the whole organisation, writes included. A PAT scoped to
+      # Code (Read) is the only credential that can be narrowed to what this job
+      # actually needs. The pin keeps the SSH url because that is what a
+      # developer's own machine clones with.
+      - name: Clone the rules under test
+        env:
+          SKILLS_REPO_TOKEN: ${{ secrets.SKILLS_REPO_TOKEN }}
+        run: |
+          if [ -z "$SKILLS_REPO_TOKEN" ]; then
+            echo "::error::SKILLS_REPO_TOKEN is not set. It is an Azure DevOps PAT scoped to Code (Read) for the repository named in evals/skills.pin.json, without which no job can read the rules under test." >&2
+            exit 1
+          fi
+
+          # Derived rather than configured, so the pin stays the one place the
+          # repository is named. `git@ssh.dev.azure.com:v3/<org>/<project>/<repo>`
+          # is the same repository as
+          # `https://dev.azure.com/<org>/<project>/_git/<repo>`.
+          ssh_url=$(jq -r .url evals/skills.pin.json)
+          path=${ssh_url#*:v3/}
+          org=${path%%/*}
+          rest=${path#*/}
+          project=${rest%%/*}
+          repo=${rest#*/}
+
+          if [ "$org" = "$path" ] || [ "$project" = "$rest" ] || [ -z "$repo" ]; then
+            echo "::error::Could not read an org/project/repo out of the pin url '$ssh_url'. This step derives the https url from it." >&2
+            exit 1
+          fi
+
+          # The token goes in the credential helper's input rather than the url,
+          # so it never reaches the command line, the process table, or a log
+          # line that git echoes back on failure.
+          git config --global credential.helper store
+          printf 'https://pat:%s@dev.azure.com\n' "$SKILLS_REPO_TOKEN" > ~/.git-credentials
+          chmod 600 ~/.git-credentials
+
+          git clone "https://dev.azure.com/$org/$project/_git/$repo" "$RUNNER_TEMP/skills"
+
+          # Checked here rather than left to the harness, because this is where
+          # the answer is: a clone that came back without the pinned ref is a
+          # credential or a branch problem, and three steps later it reads as a
+          # revision that does not exist.
+          ref=$(jq -r .ref evals/skills.pin.json)
+          echo "Cloned $(git -C "$RUNNER_TEMP/skills" rev-list --count HEAD) commit(s); refs:"
+          git -C "$RUNNER_TEMP/skills" branch -r
+          # Both forms, as `skills.ts` resolves them: a branch has no local head
+          # in a clone nobody checks out, and a commit has no `origin/` form.
+          if ! git -C "$RUNNER_TEMP/skills" rev-parse --verify --quiet "origin/$ref^{commit}" >/dev/null \
+            && ! git -C "$RUNNER_TEMP/skills" rev-parse --verify --quiet "$ref^{commit}" >/dev/null; then
+            echo "::error::The clone holds no '$ref', which evals/skills.pin.json pins. Its remote branches are listed above; a branch merged and deleted upstream looks exactly like this." >&2
+            exit 1
+          fi
+
+          echo "EVALS_SKILLS_DIR=$RUNNER_TEMP/skills" >> "$GITHUB_ENV"
+
+      - name: Run gate
+        env:
+          # A subscription token from `claude setup-token`, not an API key: the
+          # trials are billed to the plan, as the local ones are. Rate limits
+          # apply per five-hour window, and a trial killed by one writes
+          # `trial_error` rather than a score — read a burst of those as an
+          # exhausted limit, not as a skill regression.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Codex bills per token against an API key rather than a plan, so a
+          # `codex` job spends money the Claude jobs do not. Absent, the trials
+          # return `trial_error` — the harness saying it could not run, which is
+          # what it should say, rather than a zero.
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Copilot bills against a Copilot subscription and reads its token from
+          # here. Absent, its trials are `trial_error` for the same reason.
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
+          # One trial per task, against the harness default of two. This tier
+          # answers "did I break something obvious", and a single trial answers
+          # it: a task that flips between runs is visible as a gate that moves,
+          # and the run that has to distinguish flake from regression is the
+          # scheduled one, where the repetitions are worth their money. Two here
+          # doubles the bill of every push that touches a rule — and an
+          # `AGENTS.md` edit, which runs every gate in both arms, most of all.
+          REPEAT: ${{ inputs.repeat || '1' }}
+          # Tasks at once within this job. Nobody reads the log while it runs,
+          # so the interleaving `run.ts` defaults to one to avoid costs nothing
+          # here; the wall clock does. Three, not five: every job in the matrix
+          # draws on the same token, and this many `claude -p` across all of
+          # them is already a burst.
+          CONCURRENCY: "3"
+          # Passed to the `previous-skill` arm alone: `run.ts` refuses it on
+          # the others, so nothing is recorded that was not applied.
+          BASELINE: ${{ (matrix.arm == 'previous-skill' && needs.changes.outputs.baseline != '') && format('--baseline-ref {0}', needs.changes.outputs.baseline) || '' }}
+        # The suite's own report is the summary: it already carries the pass
+        # rate, the cost and the Langfuse run URL.
+        run: |
+          # Without this the job is green whatever happens: `bash -e` reads a
+          # pipeline's status from its last command, which is `tee`, and `tee`
+          # always succeeds. A Langfuse 409 that killed `run.ts` before the first
+          # trial still reported success — the exact inversion of what this
+          # workflow claims, where a red job means a broken harness. A red score
+          # still exits zero, because `run.ts` decides that, not the shell — and
+          # it exits non-zero when a trial could not be run or graded at all,
+          # which is the other way this job can say nothing while looking green.
+          set -o pipefail
+
+          {
+            echo '## `${{ matrix.agent }}` · `${{ matrix.gate }}` · `${{ matrix.arm }}`'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # shellcheck disable=SC2086 -- $BASELINE is a flag and its value, or nothing.
+          mkdir -p "$RUNNER_TEMP/reports"
+          yarn evals --agent '${{ matrix.agent }}' --gate '${{ matrix.gate }}' --arm '${{ matrix.arm }}' \
+            --repeat "$REPEAT" --max-concurrency "$CONCURRENCY" $BASELINE \
+            --report-file "$RUNNER_TEMP/reports/${{ matrix.agent }}-${{ matrix.gate }}-${{ matrix.arm }}.json" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # For the `report` job below, which posts every gate's report as one
+      # comment. `!cancelled()`: a gate that broke is a report too, a gate a
+      # newer push cancelled is not — the run it belonged to was superseded, and
+      # the first one to comment said "could not measure" about a commit nobody
+      # was measuring any more. `run.ts` writes its report even when it exits
+      # non-zero; a job that died before that point leaves one here that says
+      # so, so the comment has a line for it.
+      - name: Keep the report for the comment
+        if: "!cancelled() && github.event_name == 'pull_request'"
+        run: |
+          report="$RUNNER_TEMP/reports/${{ matrix.agent }}-${{ matrix.gate }}-${{ matrix.arm }}.json"
+          mkdir -p "$RUNNER_TEMP/reports"
+          if [ ! -f "$report" ]; then
+            printf '%s\n' '{"kind":"benchmark","agent":"${{ matrix.agent }}","gate":"${{ matrix.gate }}","arm":"${{ matrix.arm }}","model":"","commit":"${{ github.event.pull_request.head.sha }}","tasks":[],"unreachable":["the job stopped before the harness wrote a report; see the job log"]}' > "$report"
+          fi
+      - if: "!cancelled() && github.event_name == 'pull_request'"
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.agent }}-${{ matrix.gate }}-${{ matrix.arm }}
+          path: ${{ runner.temp }}/reports/
+          retention-days: 1
+
+  # One comment for the whole run, once every gate has finished — not one per
+  # gate, which on an `AGENTS.md` edit would be ten comments on one push.
+  report:
+    needs: [changes, evals]
+    # `!cancelled()` rather than the default: a broken gate is the report most
+    # worth reading, and `needs.evals` is then `failure`, which would otherwise
+    # skip this job. A cancelled run posts nothing — see the gate step above.
+    if: "!cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.jobs != '[]'"
+    name: comment on the pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # For the composite action and the renderer below.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: report-*
+          path: ${{ runner.temp }}/reports
+          merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - env:
+          JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          yarn --silent evals:comment --benchmark "$RUNNER_TEMP/reports" --job-url "$JOB_URL" \
+            > "$RUNNER_TEMP/comment.md"
+      - uses: ./.github/actions/pr-comment
+        with:
+          marker: skill-benchmark
+          body-file: ${{ runner.temp }}/comment.md

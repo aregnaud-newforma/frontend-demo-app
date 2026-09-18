@@ -11,19 +11,13 @@ looks surprising, the explanation is in the file that does it (`alias.ts`,
 
 ## Skills
 
-`.claude/skills/` holds the rules this repo expects you to follow, and they are
-not optional context — read the skill **before** writing the code, not as a
-review pass afterwards. Most changes here touch more than one:
-
-- `react` — components, hooks, JSX/TSX, state, effects, context, re-render work
-- `javascript` — any JS/TS at all, React included: functions, variables, comments, conditionals, modern APIs
-- `typescript` — declaring or reviewing types: type vs interface, generics, unions, `any`, enums
-- `engineer` — design and architecture: a new module or layer, an abstraction, where code lives, the shape of props, a hook signature, an exported API
-- `testing` — any test written while building: which tier, the msw seam, the mount and queries, the file shape, fixtures
-
-Invoke them by name with the Skill tool. Writing one component is already three
-of them — `react` for the component, `javascript` for what is inside it,
-`typescript` for its props.
+A rule has one source, and it is the skill. Nothing outside `.claude/skills/`
+restates one — not this file, not a comment — because `evals/` measures a skill
+by removing it, and a copy that survives the removal makes that measurement read
+zero effect where there is one. A rule that seems worth repeating here belongs in
+the skill instead. Facts about how this repository is built are different: they
+live in the config file that decides them, where a skill's `requires:` check can
+find them.
 
 ## Verticals
 
@@ -43,11 +37,10 @@ type-check or in the browser tests.
 
 ## Writing components
 
-- The **React Compiler** runs on every build and every test. Write plain
-  components and let it memoize; `useMemo`, `useCallback` and `memo` written by
-  hand are noise on top of what it already does.
-- Styles are StyleX, declared in the component file, built from the tokens in
-  `src/tokens.stylex.ts`. No raw hex, no magic `rem`, no hand-built `className`.
+Styles are StyleX, declared in the component file, built from the tokens in
+`src/tokens.stylex.ts`. No raw hex, no magic `rem`, no hand-built `className`.
+StyleX is a choice of this repository and lives here; anything a skill already
+states does not.
 
 ## Tests
 

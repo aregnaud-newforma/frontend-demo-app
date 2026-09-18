@@ -1,0 +1,5 @@
+{
+  "url": "git@ssh.dev.azure.com:v3/BIMOneOnline/BIMOne/NKCopilotCustomAgents",
+  "ref": "7588dc041224a965ba8940913d53eba263e7108e",
+  "path": "plugins/frontend-skills/skills"
+}

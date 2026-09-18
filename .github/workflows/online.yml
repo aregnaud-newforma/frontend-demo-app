@@ -1,0 +1,118 @@
+# The rules check: every pull request's diff, scored against the rules that
+# have an online grader, reported to Langfuse as one trace tagged `online` and
+# to the pull request as one comment.
+#
+# `evals.yml` asks whether a rule is well written, by giving an agent an
+# exercise. This asks whether the agents people actually use follow it, by
+# reading what they shipped. See evals/README.md, "Online".
+#
+# Informative, not blocking: `evals/online.ts` exits zero whatever the score,
+# so a red gate never stops a merge. A red job is a broken harness — a missing
+# secret, a judge that could not be reached — and the reasons are in the job
+# summary.
+name: Rules check
+
+on:
+  pull_request:
+    # Everything but the suite itself: a change to `evals/` is measured by
+    # `evals.yml`, and its diff holds no source file to grade anyway.
+    paths-ignore:
+      - "evals/**"
+      - "evals.config.ts"
+      - ".github/workflows/evals.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  online:
+    name: score the diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # `write` for the comment below; nothing else here needs more than reading.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # The head branch, not the merge commit, so the scored sha is one that
+      # exists and the branch name is the real one. Full history: the diff is
+      # taken from the merge base, which a shallow clone does not hold.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+
+      # Pinned as `evals.yml` pins it, for the same reason: the judge's CLI
+      # version travels nowhere a score can read, so it must not move on its
+      # own. Move `defaultJudge` in `evals.config.ts` and this step moves too.
+      - name: Install Copilot
+        run: npm install -g @github/copilot@1.0.83
+
+      - name: Score
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
+          # Through the environment, not the command line: a title or a body
+          # is text somebody typed, and a quote in it must not end the command.
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          # `tee` would otherwise hide a non-zero exit — see evals.yml.
+          set -o pipefail
+
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/body.md"
+
+          {
+            echo '## Rules check · `#'"$PR_NUMBER"'`'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Whether the judge runs is `onlineJudge` in evals.config.ts, not a
+          # flag here: a decision about this repository, reviewed in a pull
+          # request rather than set in a settings page.
+          yarn evals:online --base "origin/$BASE" --pr "$PR_NUMBER" \
+            --title "$PR_TITLE" --body-file "$RUNNER_TEMP/body.md" \
+            --report-file "$RUNNER_TEMP/report.json" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # `!cancelled()`: a broken harness is worth a comment too, and the job
+      # link is where its reasons are; a run a newer push cancelled is not, and
+      # says nothing. A green job with no report is a diff with no source file
+      # in it — `online.ts` said so and exited zero — and that gets no comment
+      # at all: a pull request about docs has nothing to read.
+      - name: Write the comment
+        id: comment
+        if: "!cancelled()"
+        env:
+          JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          OUTCOME: ${{ job.status }}
+        run: |
+          if [ -f "$RUNNER_TEMP/report.json" ]; then
+            yarn --silent evals:comment --rules-check "$RUNNER_TEMP/report.json" --job-url "$JOB_URL" \
+              > "$RUNNER_TEMP/comment.md"
+          elif [ "$OUTCOME" != "success" ]; then
+            {
+              echo '## Rules check'
+              echo
+              echo "The check could not run on this diff. What stopped it is in the [job]($JOB_URL); it is a broken harness, not a verdict on this pull request."
+            } > "$RUNNER_TEMP/comment.md"
+          else
+            echo "No source file in the diff: nothing to say on the pull request."
+            exit 0
+          fi
+          echo "post=true" >> "$GITHUB_OUTPUT"
+      - if: "!cancelled() && steps.comment.outputs.post == 'true'"
+        uses: ./.github/actions/pr-comment
+        with:
+          marker: rules-check
+          body-file: ${{ runner.temp }}/comment.md

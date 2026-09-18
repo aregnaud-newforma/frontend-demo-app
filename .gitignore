@@ -37,3 +37,20 @@ coverage/
 
 # Local teaching workspace, not part of the app
 docs/course/
+
+# Captured eval trial outcomes: large, machine-written, and re-creatable by a run.
+evals/.runs/
+
+# The suite's clone of the repository that holds the rules under test, named by
+# `evals/skills.pin.json`. A checkout of somebody else's repository is build
+# output: re-creatable, and not this repository's to version.
+evals/.skills/
+
+# The eval suite's answer key. It maps each rule to what checks it, which states
+# in one line what a task is graded on — no hand-written `useMemo`, `Set` methods
+# need ES2025. A trial's worktree is a checkout of HEAD, so a tracked copy would
+# sit in front of the agent being measured, in both arms at once: not a
+# difference between them, but a floor raised under both that flattens the delta
+# the suite exists to measure. Untracked, it stays readable by whoever is writing
+# the tasks and invisible to whoever is being asked to answer them.
+docs/lint-coverage.md

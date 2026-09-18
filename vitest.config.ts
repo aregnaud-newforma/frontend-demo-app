@@ -56,7 +56,10 @@ export default defineConfig({
           // Injects describe/it/expect as globals so test files need no imports.
           globals: true,
           environment: "node",
-          include: ["src/**/*.unit.test.{ts,tsx}"],
+          // `evals/` is the harness, not the app: its pure helpers (how a
+          // judge's reply is read) are unit tests like any other, and it has
+          // no browser half.
+          include: ["src/**/*.unit.test.{ts,tsx}", "evals/**/*.unit.test.ts"],
         },
       },
       {
