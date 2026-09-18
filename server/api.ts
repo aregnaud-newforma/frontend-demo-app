@@ -34,6 +34,9 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Account, AccountPayload } from "../src/account/helpers/api.ts";
+import type { ActivityEntry, NotePayload } from "../src/activity/helpers/api.ts";
+import { matchesKinds, matchesSearch } from "../src/activity/helpers/filtering.ts";
+import { isActivityKind, type ActivityKind } from "../src/activity/helpers/kinds.ts";
 
 const PORT = Number(process.env.PORT ?? 3001);
 
@@ -68,6 +71,54 @@ accountsBySession.set(DEMO_SESSION, {
   langue: "fr",
   bio: "Designs things, occasionally writes about them.",
 });
+
+/** session id -> that session's activity log, newest order not guaranteed. */
+const activityBySession = new Map<string, ActivityEntry[]>();
+
+activityBySession.set(DEMO_SESSION, [
+  {
+    id: "demo-1",
+    kind: "sign-in",
+    at: "2026-01-01T12:00:00.000Z",
+    summary: "Signed in from a new device",
+    device: "Chrome on macOS",
+    note: "",
+  },
+  {
+    id: "demo-2",
+    kind: "profile-change",
+    at: "2025-12-30T09:12:00.000Z",
+    summary: "Changed your email address",
+    device: "Safari on iPhone",
+    note: "",
+  },
+  {
+    id: "demo-3",
+    kind: "security",
+    at: "2025-12-24T18:45:00.000Z",
+    summary: "Two-factor authentication enabled",
+    device: null,
+    note: "",
+  },
+]);
+
+/**
+ * The two stores, read the way a store is read: asynchronously.
+ *
+ * They are Maps today and a `Promise.resolve` away from being synchronous, and
+ * that is exactly why they are written like this. The route below has to fetch
+ * an account and a log to answer one request, and whether it does so in
+ * sequence or side by side is a property of the route, not of how fast this
+ * particular store happens to be. Written synchronously, the shape of the
+ * handler would silently stop being the shape a real backend needs.
+ */
+async function readAccount(session: string): Promise<Account | undefined> {
+  return accountsBySession.get(session);
+}
+
+async function readActivity(session: string): Promise<ActivityEntry[]> {
+  return activityBySession.get(session) ?? [];
+}
 
 function readSession(request: IncomingMessage): string {
   const fromHeader = request.headers[SESSION_HEADER];
@@ -121,6 +172,80 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     const account = await readJsonBody<Account>(request);
     accountsBySession.set(session, account);
     sendJson(response, 201, account);
+    return;
+  }
+
+  // Test-only, and separate from the account above: a spec that wants a log
+  // says so, and one that does not gets an empty one rather than three rows it
+  // never asked for.
+  if (url.pathname === "/__test__/activity" && method === "PUT") {
+    const entries = await readJsonBody<ActivityEntry[]>(request);
+    activityBySession.set(session, entries);
+    sendJson(response, 201, entries);
+    return;
+  }
+
+  if (url.pathname === "/api/account/activity" && method === "GET") {
+    // Both reads START together: neither needs the other's answer, so stacking
+    // them would add a round trip to every request for nothing.
+    //
+    // Only the account is AWAITED before the decision, though. A `Promise.all`
+    // over the pair would be parallel and still make a session with no account
+    // wait for a log it is never going to send — the 404 discards it. Starting
+    // both and awaiting each where its value is first needed is what gets the
+    // parallelism without paying for the unused half.
+    const accountRead = readAccount(session);
+    const activityRead = readActivity(session);
+
+    const account = await accountRead;
+    if (!account) {
+      // The log is already in flight and nothing below will await it. Left
+      // alone, a rejection would surface as an unhandled one, outside the catch
+      // wrapped around `handle`.
+      void activityRead.catch(() => undefined);
+      sendJson(response, 404, { error: "No account for this session" });
+      return;
+    }
+
+    const entries = await activityRead;
+
+    const search = url.searchParams.get("search") ?? "";
+    // Unknown kinds are dropped rather than rejected: the parameter is a filter,
+    // and a name this server does not have simply matches nothing. An empty set
+    // means every kind, which is what "no filter" has to mean.
+    const kinds = new Set<ActivityKind>(
+      (url.searchParams.get("kinds") ?? "").split(",").filter((value) => isActivityKind(value)),
+    );
+
+    sendJson(
+      response,
+      200,
+      entries.filter((entry) => matchesSearch(entry, search) && matchesKinds(entry, kinds)),
+    );
+    return;
+  }
+
+  const noteMatch = /^\/api\/account\/activity\/([^/]+)\/note$/.exec(url.pathname);
+  if (noteMatch) {
+    if (method !== "PUT") {
+      sendJson(response, 405, { error: `${method} not allowed on ${url.pathname}` });
+      return;
+    }
+
+    const entries = await readActivity(session);
+    const entry = entries.find((candidate) => candidate.id === decodeURIComponent(noteMatch[1]));
+
+    // The body is read only once there is something to write it to. Parsing it
+    // first would mean draining a request stream for an entry this session does
+    // not have, and the 404 is the same either way.
+    if (!entry) {
+      sendJson(response, 404, { error: "No such activity entry" });
+      return;
+    }
+
+    const payload = await readJsonBody<NotePayload>(request);
+    entry.note = payload.note;
+    sendJson(response, 200, entry);
     return;
   }
 

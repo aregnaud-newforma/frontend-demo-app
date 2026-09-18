@@ -13,6 +13,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import type { Account } from "@account/helpers/api";
+import type { ActivityEntry } from "@activity/helpers/api";
 
 /** Where the API actually listens. */
 const API_ORIGIN = "http://localhost:3001";
@@ -30,6 +31,11 @@ const SESSION_HEADER = "x-e2e-session";
  *
  *   await startSession(page, request, account);
  *
+ * The activity log is optional and defaults to empty, because most specs have
+ * nothing to say about it: a session that never seeds one gets no entries
+ * rather than a fixture it did not ask for, which is the same bargain the
+ * server's own `/__test__/activity` route makes.
+ *
  * Returns nothing: the id it generates is the browser's business, carried in a
  * cookie the app never sees. A spec that later wants to read the stored record
  * back out of the API is the reason to hand it out - and the reason to add a
@@ -39,6 +45,7 @@ export async function startSession(
   page: Page,
   request: APIRequestContext,
   account: Account,
+  activity: readonly ActivityEntry[] = [],
 ): Promise<void> {
   const id = randomUUID();
 
@@ -54,4 +61,14 @@ export async function startSession(
   // Asserted rather than assumed: a failed seed would otherwise surface much
   // later, as a page that renders an error, and read as an app bug.
   expect(seeded.status(), "seeding the account should succeed").toBe(201);
+
+  // Only when there is one: an empty PUT would still be a request, and a spec
+  // that seeds nothing should leave the log as the server's own empty default.
+  if (activity.length > 0) {
+    const seededActivity = await request.put(`${API_ORIGIN}/__test__/activity`, {
+      headers: { [SESSION_HEADER]: id },
+      data: activity,
+    });
+    expect(seededActivity.status(), "seeding the activity log should succeed").toBe(201);
+  }
 }

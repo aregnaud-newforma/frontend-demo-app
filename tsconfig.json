@@ -23,6 +23,7 @@
     // which is what `baseUrl: "."` used to mean anyway.
     "paths": {
       "@account/*": ["./src/account/*"],
+      "@activity/*": ["./src/activity/*"],
       "@home/*": ["./src/home/*"],
       "@layout/*": ["./src/layout/*"],
       "@testing/*": ["./src/testing/*"]

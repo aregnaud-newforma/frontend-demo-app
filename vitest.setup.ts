@@ -14,6 +14,7 @@ import "./src/global.css";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { worker } from "@testing/worker";
 import { accounts } from "@account/mocks/db";
+import { activity } from "@activity/mocks/db";
 
 beforeAll(() =>
   worker.start({
@@ -31,6 +32,7 @@ beforeAll(() =>
 afterEach(() => {
   worker.resetHandlers(); // drop per-test handler overrides
   accounts.clear(); // each test seeds its own account
+  activity.clear(); // and its own activity log
 });
 
 afterAll(() => worker.stop());

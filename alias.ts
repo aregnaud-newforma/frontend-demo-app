@@ -21,6 +21,7 @@ const folder = (name: string) => fileURLToPath(new URL(`./src/${name}`, import.m
 
 export const alias = {
   "@account": folder("account"),
+  "@activity": folder("activity"),
   "@home": folder("home"),
   "@layout": folder("layout"),
   "@testing": folder("testing"),

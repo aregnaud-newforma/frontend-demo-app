@@ -91,6 +91,16 @@ export function Navigation() {
             Your account
           </Link>
         </li>
+        <li>
+          <Link
+            to="/activity"
+            activeOptions={{ exact: true }}
+            activeProps={currentLinkProps}
+            inactiveProps={linkProps}
+          >
+            Activity
+          </Link>
+        </li>
       </ul>
     </nav>
   );
