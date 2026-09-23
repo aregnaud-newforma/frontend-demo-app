@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { Outlet } from "@tanstack/react-router";
+import { Outlet } from "react-router";
 import { Navigation } from "./Navigation";
 import { colors, radius, shadow, space, text } from "../tokens.stylex";
 

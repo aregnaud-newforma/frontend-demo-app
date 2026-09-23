@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { revalidateLogic, useForm, type AnyFieldApi } from "@tanstack/react-form";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FieldError, errorProps } from "./components/FieldError";
 import { ErrorBanner, LoadingStatus } from "./components/PageState";
@@ -132,7 +132,7 @@ function AccountFields({ account }: { account: Account }) {
     onSuccess: (saved) => {
       // Write the server's response straight into the cache, THEN leave.
       queryClient.setQueryData(accountQueryKey, saved);
-      void navigate({ to: "/account" });
+      void navigate("/account");
     },
   });
 

@@ -1,8 +1,8 @@
 # AGENTS.md
 
-A React 19 demo app for the frontend standards we are adopting: TanStack Router,
-Query and Form over Zod, StyleX for styling, and a testing trophy over Vitest,
-MSW and Playwright. `README.md` lists the commands; this file holds the
+A React 19 demo app for the frontend standards we are adopting: React Router,
+TanStack Query and Form over Zod, StyleX for styling, and a testing trophy over
+Vitest, MSW and Playwright. `README.md` lists the commands; this file holds the
 conventions no config states.
 
 Use `yarn`. Every config file carries its reasoning in comments — when something

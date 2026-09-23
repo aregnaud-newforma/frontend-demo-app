@@ -70,6 +70,14 @@ test("visitor navigates to their account, edits every field and is returned to t
   // When they follow the edit link
   await page.getByRole("link", { name: "Edit your account" }).click();
 
+  // Then they are on the form. Asserted before the fields rather than left
+  // implicit: a client-side navigation moves the URL before React repaints, so
+  // without this line the first field assertion can still be looking at the
+  // summary's <dd aria-label="Name">, and `toHaveValue` fails outright on "Not
+  // an input element" instead of retrying its way to the real input.
+  await expect(page).toHaveURL(/\/account\/edit$/);
+  await expect(page.getByRole("heading", { name: "Edit your account" })).toBeVisible();
+
   // Then every input is seeded with the stored value.
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue(account.nom);
   await expect(page.getByLabel("First name")).toHaveValue(account.prenom);

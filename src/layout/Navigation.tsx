@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { Link } from "@tanstack/react-router";
+import { NavLink, type NavLinkRenderProps } from "react-router";
 import { colors, radius, space, text } from "../tokens.stylex";
 
 /**
@@ -57,9 +57,15 @@ const styles = stylex.create({
  * `props()` call is resolved by argument order, but two class names arriving on
  * the same element from different places are resolved by CSS source order,
  * which is the specificity guessing game StyleX exists to remove.
+ *
+ * NavLink takes `className` and `style` as separate callbacks, so the pair is
+ * picked once and then read twice - StyleX hands back both halves together and
+ * they have to stay together.
  */
 const linkProps = stylex.props(styles.link);
 const currentLinkProps = stylex.props(styles.link, styles.linkCurrent);
+
+const propsFor = ({ isActive }: NavLinkRenderProps) => (isActive ? currentLinkProps : linkProps);
 
 export function Navigation() {
   return (
@@ -67,29 +73,31 @@ export function Navigation() {
       <ul {...stylex.props(styles.list)}>
         <li>
           {/*
-           * `exact` on both, because the active link is marked `aria-current="page"`
+           * `end` on both, because the active link is marked `aria-current="page"`
            * by the router and that attribute claims to BE the current page. Without
-           * it "/" prefix-matches every route and would announce itself as current
-           * everywhere, and "/account" would keep claiming the page on /account/edit.
+           * it "/account" would keep claiming the page on /account/edit. ("/" is
+           * the exception React Router already makes for you - it would otherwise
+           * prefix-match every route - but saying it out loud keeps the two links
+           * reading the same way.)
            */}
-          <Link
+          <NavLink
             to="/"
-            activeOptions={{ exact: true }}
-            activeProps={currentLinkProps}
-            inactiveProps={linkProps}
+            end
+            className={(state) => propsFor(state).className}
+            style={(state) => propsFor(state).style}
           >
             Home
-          </Link>
+          </NavLink>
         </li>
         <li>
-          <Link
+          <NavLink
             to="/account"
-            activeOptions={{ exact: true }}
-            activeProps={currentLinkProps}
-            inactiveProps={linkProps}
+            end
+            className={(state) => propsFor(state).className}
+            style={(state) => propsFor(state).style}
           >
             Your account
-          </Link>
+          </NavLink>
         </li>
       </ul>
     </nav>

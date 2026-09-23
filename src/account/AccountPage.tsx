@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { Link } from "@tanstack/react-router";
+import { Link } from "react-router";
 import { toValues } from "./helpers/api";
 import { useAccount } from "./hooks/use-account";
 import { LANGUAGE_LABELS } from "./helpers/validation";

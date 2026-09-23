@@ -1,4 +1,4 @@
-import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
+import { createBrowserRouter, type RouteObject } from "react-router";
 import { AccountPage } from "@account/AccountPage";
 import { EditAccountPage } from "@account/EditAccountPage";
 import { HomePage } from "@home/HomePage";
@@ -7,11 +7,17 @@ import { RootLayout } from "@layout/RootLayout";
 /**
  * The whole route tree, written out rather than generated.
  *
- * Code-based routing on purpose: a file-based tree would add a Vite plugin and
- * a committed `routeTree.gen.ts` that has to stay in sync with the filenames.
+ * Data mode on purpose - plain route objects handed to `createBrowserRouter`,
+ * not framework mode. Framework mode would add a Vite plugin and a generated
+ * `.react-router/types` directory that has to stay in sync with the filenames.
  * For three routes, the tree is shorter read as code than inferred from paths -
  * and nothing generated lands in the repo, which is the same reason the browser
  * tests do not write screenshots.
+ *
+ * The cost of that choice is worth naming: framework mode is where React Router
+ * types `<Link to="...">`, so here a typo in a path is a click that goes
+ * nowhere rather than a compile error. `@layout/Navigation` and the integration
+ * tests are what catch it instead.
  *
  * Data loading is deliberately NOT here. Routes could fetch through `loader`,
  * but then the account would arrive by a route mechanism and the components
@@ -19,49 +25,27 @@ import { RootLayout } from "@layout/RootLayout";
  * inside the components is what lets eleven integration tests mount the form
  * with no router in the tree at all.
  */
-
-const rootRoute = createRootRoute({ component: RootLayout });
-
-/**
- * "/" is a page now, not a forward. It used to `throw redirect({ to: "/account" })`
- * because there was nothing to land on; the welcome is that something, and the
- * nav in RootLayout is how you leave it.
- */
-const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/",
-  component: HomePage,
-});
-
-const accountRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/account",
-  component: AccountPage,
-});
-
-const editAccountRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/account/edit",
-  component: EditAccountPage,
-});
+export const routes: RouteObject[] = [
+  {
+    // Pathless, so the shell wraps every route without owning a URL segment.
+    Component: RootLayout,
+    children: [
+      /**
+       * "/" is a page now, not a forward. It used to redirect to "/account"
+       * because there was nothing to land on; the welcome is that something,
+       * and the nav in RootLayout is how you leave it.
+       */
+      { index: true, Component: HomePage },
+      { path: "account", Component: AccountPage },
+      { path: "account/edit", Component: EditAccountPage },
+    ],
+  },
+];
 
 /**
- * Exported so the integration tests can build their own router over the same
- * tree with a memory history - the pages navigate, so testing one means giving
- * it somewhere to navigate TO. A fresh router per test, like the fresh
- * QueryClient, so no test inherits another's history.
+ * `routes` is exported above so the integration tests can build their own
+ * router over the same tree with a memory history - the pages navigate, so
+ * testing one means giving it somewhere to navigate TO. A fresh router per
+ * test, like the fresh QueryClient, so no test inherits another's history.
  */
-export const routeTree = rootRoute.addChildren([indexRoute, accountRoute, editAccountRoute]);
-
-export const router = createRouter({ routeTree });
-
-/**
- * Registering the router's type globally is what makes `<Link to="...">` and
- * `navigate({ to: "..." })` check their paths: a typo in a route string is a
- * compile error, not a click that goes nowhere.
- */
-declare module "@tanstack/react-router" {
-  interface Register {
-    router: typeof router;
-  }
-}
+export const router = createBrowserRouter(routes);
