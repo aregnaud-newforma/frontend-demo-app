@@ -5,6 +5,9 @@
     "dist/**",
     "test-results/**",
     "public/mockServiceWorker.js",
+    // drizzle-kit's output: the SQL and its snapshots are regenerated, never
+    // edited, and a formatter pass would only diff against the next run.
+    "server/migrations/**",
     // Prose the agents read, not code: the skill tables are aligned by hand
     // and re-padding them on every edit is churn with no reader.
     ".claude/**",

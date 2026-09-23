@@ -59,7 +59,7 @@ field that never reaches the backend still type-checks and still passes the
 integration suite.
 
 Seeing a visual change in the browser is part of finishing it: `yarn dev`, with
-`yarn api:start` running alongside for data.
+`yarn db:start` and then `yarn api:start` running alongside for data.
 
 ## Agent docs
 

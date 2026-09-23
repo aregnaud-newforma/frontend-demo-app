@@ -69,6 +69,25 @@ jobs:
     runs-on: ubuntu-latest
     # The whole job is a minute or two; a hang is the runner, not the code.
     timeout-minutes: 15
+    # The API stores its accounts in Postgres (server/db.ts), so this tier
+    # needs one. The same image and credentials as compose.yaml, declared here
+    # rather than read from it because Actions has no `docker compose` service
+    # runner; the health check makes the runner wait for it before checkout.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: frontend_demo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/frontend_demo
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
