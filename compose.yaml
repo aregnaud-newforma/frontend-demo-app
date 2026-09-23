@@ -1,0 +1,25 @@
+# The Postgres behind `yarn api:start`, and so behind `yarn dev` and `yarn e2e`.
+# `yarn db:start` brings it up and waits for it to answer; the data survives
+# restarts in the named volume, which is the point of having a database at all
+# (see docs/adr/0001-postgres-and-drizzle-behind-the-api.md).
+#
+# The credentials are the ones DATABASE_URL in .env.example spells out. CI does
+# not read this file: the e2e job declares the same service in ci.yml.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: frontend_demo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  postgres-data:

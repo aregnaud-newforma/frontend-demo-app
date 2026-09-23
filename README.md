@@ -5,6 +5,8 @@ This project is a demo reference for the frontend standards we are adopting acro
 ```bash
 yarn install
 yarn browsers:install   # one-time: Chromium, used by Vitest and Playwright
+cp .env.example .env    # one-time: where the API finds its database
+yarn db:start           # Postgres, in Docker; the API and the e2e suite need it
 yarn test               # unit + integration
 yarn e2e                # end-to-end, against a real API
 ```
@@ -30,7 +32,9 @@ yarn e2e                # end-to-end, against a real API
 
 ```bash
 yarn dev           # Vite dev server (proxies /api to the API, if it is running)
-yarn api:start     # the account API on its own
+yarn db:start      # the Postgres behind the API (compose.yaml), and wait for it
+yarn api:start     # the account API on its own; migrates the database on start
+yarn db:generate   # a new migration into server/migrations/, from server/schema.ts
 yarn test          # unit + integration   (yarn test:watch to keep it open)
 yarn e2e           # end-to-end; starts the API and the preview build itself
 yarn verify        # oxlint + oxfmt --check + both tsc projects - the CI gate

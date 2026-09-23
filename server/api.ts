@@ -1,6 +1,7 @@
 /**
- * The account API, for real. A tiny in-memory HTTP server so the E2E tier has
- * an actual backend to talk to instead of an interceptor standing in for one.
+ * The account API, for real. A small HTTP server over Postgres so the E2E tier
+ * has an actual backend to talk to instead of an interceptor standing in for
+ * one, and so `yarn dev` shows data that outlives a restart.
  *
  * WHY IT EXISTS: every other tier mocks the network on purpose - the unit tests
  * never touch it, the integration tests put MSW at the boundary so a component
@@ -11,29 +12,31 @@
  * a header, or how a JSON body is shaped, because it IS the frontend's own
  * assumptions being played back at it.
  *
- * WHY IT IS THIS SMALL: it is not a product server. It stores accounts in a Map
- * and forgets them when the process dies. What matters is that it is a separate
- * process, reached over real HTTP, that the frontend cannot reach into - so
- * every claim the E2E specs make about the round trip is a claim about two
- * programs agreeing.
+ * WHAT IT IS MADE OF: this file is the HTTP surface only. The tables are in
+ * schema.ts, the queries in store.ts, the connection and startup migration in
+ * db.ts - see docs/adr/0001-postgres-and-drizzle-behind-the-api.md for why a
+ * demo carries a database at all.
  *
  * PER-TEST ISOLATION: Playwright runs specs in parallel (`fullyParallel`), and
  * one shared backend would mean one spec's PUT changing what another spec's GET
- * returns. So the store is keyed by a session id, which each test generates and
+ * returns. So every row is keyed by a session id, which each test generates and
  * puts in a cookie on its own browser context (see e2e/session.ts). The browser
  * sends it with every request; the server reads it and sees only that test's
  * data. This is the part a mocked backend never has to solve, and the part real
  * E2E against a shared environment always does.
  *
- * A request that names no session gets DEMO_SESSION, which is seeded at startup
- * - that is what makes `yarn dev` show an account rather than an error, since
- * nothing outside the specs ever sets the cookie.
+ * A request that names no session gets DEMO_SESSION, which is seeded on first
+ * start - that is what makes `yarn dev` show an account rather than an error,
+ * since nothing outside the specs ever sets the cookie.
  *
- * Run it with `yarn api:start`. Playwright starts it itself (see the webServer
- * array in playwright.config.ts), so no one has to remember to.
+ * Run it with `yarn api:start`, with the database from `yarn db:start` up.
+ * Playwright starts the API itself (see the webServer array in
+ * playwright.config.ts), so no one has to remember to.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Account, AccountPayload } from "../src/account/helpers/api.ts";
+import { connect } from "./db.ts";
+import { findAccount, saveAccount, updateAccount } from "./store.ts";
 
 const PORT = Number(process.env.PORT ?? 3001);
 
@@ -47,8 +50,9 @@ export const SESSION_HEADER = "x-e2e-session";
  * cookie. Without it `yarn dev` has no way to reach any data at all: the store
  * starts empty and `/__test__/account` is the only thing that fills it.
  *
- * Seeded at startup (below) so the app has something to show, and mutable like
- * any other session, so the form saves and the summary comes back changed.
+ * Seeded once, the first time the API starts against an empty database, and
+ * mutable like any other session: the form saves, the summary comes back
+ * changed, and the change is still there after a restart.
  *
  * A spec that forgets `startSession` lands here rather than on an error - but
  * it still fails, and at the right place: its assertions name the random values
@@ -56,10 +60,7 @@ export const SESSION_HEADER = "x-e2e-session";
  */
 const DEMO_SESSION = "demo";
 
-/** session id -> that session's single account. */
-const accountsBySession = new Map<string, Account>();
-
-accountsBySession.set(DEMO_SESSION, {
+const DEMO_ACCOUNT: Account = {
   id: "demo-account",
   nom: "Durand",
   prenom: "Camille",
@@ -67,7 +68,13 @@ accountsBySession.set(DEMO_SESSION, {
   telephone: "+33612345678", // stored in E.164, shown as 0612345678
   langue: "fr",
   bio: "Designs things, occasionally writes about them.",
-});
+};
+
+const db = await connect();
+
+if (!(await findAccount(db, DEMO_SESSION))) {
+  await saveAccount(db, DEMO_SESSION, DEMO_ACCOUNT);
+}
 
 function readSession(request: IncomingMessage): string {
   const fromHeader = request.headers[SESSION_HEADER];
@@ -106,9 +113,10 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   const method = request.method ?? "GET";
 
-  // Playwright's webServer polls this to know the process is up.
+  // Playwright's webServer polls this to know the process is up. Listening
+  // already means the database answered and the migrations ran (see db.ts).
   if (url.pathname === "/health") {
-    sendJson(response, 200, { ok: true, sessions: accountsBySession.size });
+    sendJson(response, 200, { ok: true });
     return;
   }
 
@@ -119,15 +127,13 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   // surface the specs are exercising.
   if (url.pathname === "/__test__/account" && method === "PUT") {
     const account = await readJsonBody<Account>(request);
-    accountsBySession.set(session, account);
-    sendJson(response, 201, account);
+    sendJson(response, 201, await saveAccount(db, session, account));
     return;
   }
 
   if (url.pathname === "/api/account") {
-    const stored = accountsBySession.get(session);
-
     if (method === "GET") {
+      const stored = await findAccount(db, session);
       if (!stored) {
         sendJson(response, 404, { error: "No account for this session" });
         return;
@@ -137,26 +143,12 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     }
 
     if (method === "PUT") {
-      if (!stored) {
+      const payload = await readJsonBody<AccountPayload>(request);
+      const updated = await updateAccount(db, session, payload);
+      if (!updated) {
         sendJson(response, 404, { error: "No account for this session" });
         return;
       }
-
-      // The server owns the id: it is not in the payload and must not be
-      // overwritten by one. Everything else the client sent replaces what
-      // is stored, which is what makes the GET after a PUT meaningful.
-      const payload = await readJsonBody<AccountPayload>(request);
-      const updated: Account = {
-        id: stored.id,
-        nom: payload.nom,
-        prenom: payload.prenom,
-        email: payload.email,
-        telephone: payload.telephone,
-        langue: payload.langue,
-        bio: payload.bio,
-      };
-
-      accountsBySession.set(session, updated);
       sendJson(response, 200, updated);
       return;
     }
