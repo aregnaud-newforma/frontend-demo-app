@@ -42,6 +42,7 @@
     ]
   },
   "dependencies": {
+    "@sentry/react": "^11.0.0",
     "@stylexjs/stylex": "^0.19.0",
     "@tanstack/react-form": "^1.33.3",
     "@tanstack/react-query": "^5.101.4",
@@ -63,6 +64,7 @@
     "@opentelemetry/sdk-node": "^0.222.0",
     "@playwright/test": "^1.49.1",
     "@rolldown/plugin-babel": "^0.2.3",
+    "@sentry/vite-plugin": "^5.4.0",
     "@stylexjs/babel-plugin": "^0.19.0",
     "@stylexjs/postcss-plugin": "^0.19.0",
     "@types/babel__core": "^7.20.5",

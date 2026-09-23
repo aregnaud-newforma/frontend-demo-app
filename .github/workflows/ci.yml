@@ -64,6 +64,38 @@ jobs:
       - run: yarn browsers:install
       - run: yarn test
 
+  build:
+    name: build (bundle + source maps)
+    runs-on: ubuntu-latest
+    # The whole job is a minute or two; a hang is the runner, not the code.
+    timeout-minutes: 15
+    # `verify` type-checks the app against tsconfig.app.json, which is the half
+    # of `yarn build` that `tsc` does. This job runs the other half - the one
+    # that actually bundles - because a StyleX or React Compiler failure only
+    # shows up there, and nothing else in CI ever produced a dist/.
+    #
+    # The token is what turns the same command into a source-map upload: set, it
+    # generates the maps, sends them to Sentry and deletes them; unset - which is
+    # every pull request from a fork, since secrets are withheld there - the
+    # build runs unchanged and emits no map at all. See vite.config.ts.
+    env:
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The plugin names the release after the commit it built, and reads
+          # that from git. A shallow clone of depth 1 has the commit but not the
+          # history, so the associated commits would be empty.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          # `.nvmrc` pins Node 22: `server/api.ts` runs on
+          # --experimental-strip-types, which Node 20 rejects outright.
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn build
+
   e2e:
     name: e2e (playwright)
     runs-on: ubuntu-latest

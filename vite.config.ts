@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { alias } from "./alias.ts";
 import { stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
 
@@ -32,11 +33,49 @@ const apiProxy = { "/api": { target: "http://localhost:3001", changeOrigin: fals
 // a browser at the floor, and works in `vite dev`, which always runs esnext.
 const browserTargets = ["chrome111", "edge111", "firefox114", "safari16.4", "ios16.4"];
 
+// Source maps, and the upload that makes them worth generating - both together
+// or neither, keyed on the token.
+//
+// A production bundle with no map gives Sentry minified frames: `t.default` at
+// column 4831, which names nothing. The maps fix that, but they are the source
+// code, so shipping them alongside the bundle publishes it. The plugin closes
+// that gap by uploading them to Sentry and DELETING them from dist/ afterwards -
+// Sentry can un-minify the stack, the browser is served nothing extra.
+//
+// `hidden` is what stops the `//# sourceMappingURL=` comment being emitted: the
+// map is written, but nothing in the shipped file points at a file that is about
+// to be deleted.
+//
+// Without the token there is nowhere to upload to, so no map is generated
+// either - a plain `yarn build` leaves nothing behind to leak.
+//
+// `url` is NOT optional here. The plugin defaults to sentry.io, and this
+// organisation is hosted in the EU region, where an upload to the default host
+// is accepted by nothing.
+const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN;
+
+const sentrySourcemaps = sentryAuthToken
+  ? [
+      sentryVitePlugin({
+        org: "alexisregnaud",
+        project: "frontend-demo-app",
+        url: "https://de.sentry.io",
+        authToken: sentryAuthToken,
+        sourcemaps: { filesToDeleteAfterUpload: ["./dist/**/*.map"] },
+      }),
+    ]
+  : [];
+
 export default defineConfig({
-  build: { target: browserTargets },
+  build: { target: browserTargets, sourcemap: sentryAuthToken ? "hidden" : false },
   // StyleX joins the Babel pass the React Compiler already needs, rather than
   // adding a second one. See ./stylex.config.ts for why the postcss half exists.
-  plugins: [react(), babel({ presets: [reactCompilerPreset()], plugins: [stylexBabelPlugin] })],
+  // The Sentry plugin goes last: it reads what the others emitted.
+  plugins: [
+    react(),
+    babel({ presets: [reactCompilerPreset()], plugins: [stylexBabelPlugin] }),
+    ...sentrySourcemaps,
+  ],
   css: { postcss: { plugins: [stylexPostcss()] } },
   resolve: { alias },
   server: { port: 5173, strictPort: true, proxy: apiProxy },
