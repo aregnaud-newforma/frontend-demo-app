@@ -34,11 +34,12 @@ yarn e2e                # end-to-end, against a real API
 yarn start         # the three below in one terminal: db:start, then api:start and dev
 yarn dev           # Vite dev server (proxies /api to the API, if it is running)
 yarn db:start      # the Postgres behind the API (compose.yaml), and wait for it
-yarn api:start     # the account API on its own; migrates the database on start
-yarn db:generate   # a new migration into server/migrations/, from server/schema.ts
+yarn api:start     # the account API (.NET) on its own; migrates the database on start
+yarn api:test      # the API's own tests (xunit); starts a Postgres container itself
+yarn db:generate   # a new migration into server/Api/Migrations/ - name it: yarn db:generate AddX
 yarn test          # unit + integration   (yarn test:watch to keep it open)
 yarn e2e           # end-to-end; starts the API and the preview build itself
-yarn verify        # oxlint + oxfmt --check + both tsc projects - the CI gate
+yarn verify        # oxlint + oxfmt --check + both tsc projects + dotnet build - the CI gate
 yarn lint          # oxlint  (yarn lint:fix to apply what it can)
 yarn format        # oxfmt   (yarn format:check to only report)
 ```

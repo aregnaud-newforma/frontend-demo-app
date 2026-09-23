@@ -1,0 +1,29 @@
+<!-- The Node tier of the API: xunit, against a Postgres that Testcontainers
+     starts for the run (see StoreTests.cs). `yarn api:test` runs it. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Api.Tests</RootNamespace>
+    <!-- xunit.v3 as a Microsoft.Testing.Platform app, which is the runner
+         ../../global.json tells `dotnet test` to use: SDK 10 still defaults to
+         VSTest, and xunit.v3 no longer answers to that one. -->
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.15.0" />
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Api/Api.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -21,7 +21,9 @@ export default defineConfig({
       command: "yarn api:start",
       url: "http://localhost:3001/health",
       reuseExistingServer: !process.env.CI,
-      timeout: 30_000,
+      // `dotnet run` restores and compiles before it listens, which on a cold
+      // CI runner is most of a minute before the first /health answers.
+      timeout: 120_000,
     },
     {
       command: "yarn build && yarn preview",

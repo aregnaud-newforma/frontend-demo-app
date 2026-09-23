@@ -58,13 +58,9 @@ export default defineConfig({
           environment: "node",
           // `evals/` is the harness, not the app: its pure helpers (how a
           // judge's reply is read) are unit tests like any other, and it has
-          // no browser half. `server/` is the API: its store runs against
-          // PGlite, which is Postgres in WebAssembly and needs no service.
-          include: [
-            "src/**/*.unit.test.{ts,tsx}",
-            "evals/**/*.unit.test.ts",
-            "server/**/*.unit.test.ts",
-          ],
+          // no browser half. `server/` is not here: the API is .NET, and its
+          // own tests run under xunit (`yarn api:test`).
+          include: ["src/**/*.unit.test.{ts,tsx}", "evals/**/*.unit.test.ts"],
         },
       },
       {

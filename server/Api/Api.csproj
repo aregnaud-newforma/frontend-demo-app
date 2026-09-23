@@ -1,0 +1,40 @@
+<!--
+  The account API: ASP.NET Core minimal APIs over Postgres through EF Core, see
+  Program.cs for what it serves and docs/adr/0002 for why it is .NET at all.
+
+  The SDK version is pinned in ../../global.json, which is to `dotnet` what
+  .nvmrc is to Node; `rollForward: latestFeature` accepts any newer 10.0.x patch.
+  The same file names the test runner, see ../Api.Tests/Api.Tests.csproj.
+-->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The same bar as `tsc` with `noEmit` under `strict`: a warning is a failure. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- No culture-aware formatting anywhere in this API, so no ICU to ship. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RootNamespace>Api</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reads the repo's .env into the process, so DATABASE_URL and SENTRY_DSN
+         reach `dotnet run` the way Node's env-file flag carried them before. -->
+    <PackageReference Include="DotNetEnv" Version="3.2.0" />
+    <!-- Named outright, at the version Design below carries, rather than left to
+         Npgsql's older transitive floor: the two would otherwise disagree in
+         every project that references this one (../Api.Tests), which the build
+         reports as an unresolvable conflict. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
+    <!-- Design-time only: what `dotnet ef migrations add` needs (see ../../.config). -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="Sentry.AspNetCore" Version="6.11.1" />
+  </ItemGroup>
+
+</Project>

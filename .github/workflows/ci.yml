@@ -26,10 +26,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          # `.nvmrc` pins Node 22: `server/api.ts` runs on
-          # --experimental-strip-types, which Node 20 rejects outright.
           node-version-file: .nvmrc
           cache: yarn
+      # `yarn verify` ends on `dotnet build`: the API is .NET (server/), and
+      # global.json is its .nvmrc.
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
       - run: yarn install --frozen-lockfile
       - run: yarn verify
 
@@ -42,10 +45,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          # `.nvmrc` pins Node 22: `server/api.ts` runs on
-          # --experimental-strip-types, which Node 20 rejects outright.
           node-version-file: .nvmrc
           cache: yarn
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
       - run: yarn install --frozen-lockfile
       # Chromium is ~150 MB fetched fresh on every job, and it cost more than the
       # suite it exists for: 41s to install against 10s of tests here, 21s
@@ -63,6 +67,10 @@ jobs:
       # Playwright provider, so the browser has to exist before `yarn test`.
       - run: yarn browsers:install
       - run: yarn test
+      # The API's own tests. They start a Postgres through Testcontainers, which
+      # is why they run here, where the runner's Docker is, and not under
+      # `yarn test`, whose Node tier has no service to lean on.
+      - run: yarn api:test
 
   build:
     name: build (bundle + source maps)
@@ -89,8 +97,6 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          # `.nvmrc` pins Node 22: `server/api.ts` runs on
-          # --experimental-strip-types, which Node 20 rejects outright.
           node-version-file: .nvmrc
           cache: yarn
       - run: yarn install --frozen-lockfile
@@ -101,8 +107,8 @@ jobs:
     runs-on: ubuntu-latest
     # The whole job is a minute or two; a hang is the runner, not the code.
     timeout-minutes: 15
-    # The API stores its accounts in Postgres (server/db.ts), so this tier
-    # needs one. The same image and credentials as compose.yaml, declared here
+    # The API stores its accounts in Postgres (server/Api/AccountsDb.cs), so
+    # this tier needs one. The same image and credentials as compose.yaml, declared here
     # rather than read from it because Actions has no `docker compose` service
     # runner; the health check makes the runner wait for it before checkout.
     services:
@@ -119,15 +125,17 @@ jobs:
           --health-timeout 5s
           --health-retries 15
     env:
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/frontend_demo
+      DATABASE_URL: Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=frontend_demo
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          # `.nvmrc` pins Node 22: `server/api.ts` runs on
-          # --experimental-strip-types, which Node 20 rejects outright.
           node-version-file: .nvmrc
           cache: yarn
+      # Playwright starts the API with `yarn api:start`, which is `dotnet run`.
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
       - run: yarn install --frozen-lockfile
       # Chromium is ~150 MB fetched fresh on every job, and it cost more than the
       # suite it exists for: 41s to install against 10s of tests here, 21s

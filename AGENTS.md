@@ -54,9 +54,9 @@ MSW, `e2e/*.spec.ts` in Playwright against the real API process.
 yarn verify && yarn test
 ```
 
-Both green, every time. Add `yarn e2e` when the change crosses the wire — a
-field that never reaches the backend still type-checks and still passes the
-integration suite.
+Both green, every time. Add `yarn api:test` when the change touches `server/`,
+and `yarn e2e` when it crosses the wire — a field that never reaches the
+backend still type-checks and still passes the integration suite.
 
 Seeing a visual change in the browser is part of finishing it: `yarn dev`, with
 `yarn db:start` and then `yarn api:start` running alongside for data.

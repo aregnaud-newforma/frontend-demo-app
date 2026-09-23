@@ -54,3 +54,7 @@ evals/.skills/
 # the suite exists to measure. Untracked, it stays readable by whoever is writing
 # the tasks and invisible to whoever is being asked to answer them.
 docs/lint-coverage.md
+
+# .NET build output (server/)
+bin/
+obj/
