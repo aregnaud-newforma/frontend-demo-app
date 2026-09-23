@@ -5,6 +5,7 @@
   "description": "Practical testing-trophy example: static (oxlint/tsc) + unit (Vitest) + integration (Vitest Browser Mode/MSW) + E2E (Playwright).",
   "type": "module",
   "scripts": {
+    "start": "yarn db:start && concurrently -k -n api,web -c blue,green \"yarn api:start\" \"yarn dev\"",
     "dev": "vite",
     "build": "tsc -p tsconfig.app.json && vite build",
     "preview": "vite preview --port 4173 --strictPort",
@@ -72,6 +73,7 @@
     "@vitest/browser-playwright": "^4.1.10",
     "@vitest/coverage-v8": "^4.1.10",
     "babel-plugin-react-compiler": "^1.0.0",
+    "concurrently": "^10.0.5",
     "drizzle-kit": "^0.31.11",
     "enforce-unique": "^1.3.0",
     "fishery": "^2.4.0",

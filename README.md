@@ -31,6 +31,7 @@ yarn e2e                # end-to-end, against a real API
 ## Scripts
 
 ```bash
+yarn start         # the three below in one terminal: db:start, then api:start and dev
 yarn dev           # Vite dev server (proxies /api to the API, if it is running)
 yarn db:start      # the Postgres behind the API (compose.yaml), and wait for it
 yarn api:start     # the account API on its own; migrates the database on start
