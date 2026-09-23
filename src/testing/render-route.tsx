@@ -1,6 +1,7 @@
 import { render } from "vitest-browser-react";
-import { RouterProvider, createMemoryHistory, createRouter } from "@tanstack/react-router";
-import { routeTree } from "../routes";
+import { createMemoryRouter } from "react-router";
+import { RouterProvider } from "react-router/dom";
+import { routes } from "../routes";
 import { AppProviders } from "./app-providers";
 
 /**
@@ -26,10 +27,7 @@ import { AppProviders } from "./app-providers";
  * in each file, where the test can see what it is driving.
  */
 export async function renderRoute(initialPath: string) {
-  const router = createRouter({
-    routeTree,
-    history: createMemoryHistory({ initialEntries: [initialPath] }),
-  });
+  const router = createMemoryRouter(routes, { initialEntries: [initialPath] });
 
   return await render(
     <AppProviders>
