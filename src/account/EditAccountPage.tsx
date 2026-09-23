@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/react";
 import * as stylex from "@stylexjs/stylex";
 import { revalidateLogic, useForm, type AnyFieldApi } from "@tanstack/react-form";
 import { Link, useNavigate } from "react-router";
@@ -132,6 +133,15 @@ function AccountFields({ account }: { account: Account }) {
     onSuccess: (saved) => {
       // Write the server's response straight into the cache, THEN leave.
       queryClient.setQueryData(accountQueryKey, saved);
+      // The SHAPE of what was saved, never the contents - the same line
+      // `dataCollection.userInfo` draws in ../sentry.ts. Which language someone
+      // picked and whether they left the phone empty is what says the form
+      // works; their name and email would only say who they are.
+      Sentry.logger.info("Account updated", {
+        langue: saved.langue,
+        hasTelephone: saved.telephone !== null,
+        bioLength: saved.bio.length,
+      });
       void navigate("/account");
     },
   });

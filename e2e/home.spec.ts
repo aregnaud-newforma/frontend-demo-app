@@ -15,12 +15,21 @@ import { startSession } from "./session";
  */
 const mainNav = (page: Page) => page.getByRole("navigation", { name: "Main" });
 
-test("the root serves the welcome", async ({ page }) => {
+test("the root serves the welcome", async ({ page, baseURL }) => {
   // Given a visitor about to arrive, and a record of every API call they cause.
+  //
+  // Matched on the ORIGIN as well as the path, because "/api/" on its own is not
+  // this app's API - it is a prefix, and Sentry's ingest endpoint happens to
+  // share it (`POST /api/<projectId>/envelope/`). With a DSN set, the browser
+  // reporting the pageload would be counted here as a fetch the page made.
+  // `baseURL` comes from playwright.config.ts, which is where the app's origin
+  // is already decided.
   const apiCalls: string[] = [];
   page.on("request", (request) => {
-    const { pathname } = new URL(request.url());
-    if (pathname.startsWith("/api/")) apiCalls.push(`${request.method()} ${pathname}`);
+    const { origin, pathname } = new URL(request.url());
+    if (origin === baseURL && pathname.startsWith("/api/")) {
+      apiCalls.push(`${request.method()} ${pathname}`);
+    }
   });
 
   // When they open the root

@@ -52,6 +52,13 @@ const browserTargets = ["chrome111", "edge111", "firefox114", "safari16.4", "ios
 // `url` is NOT optional here. The plugin defaults to sentry.io, and this
 // organisation is hosted in the EU region, where an upload to the default host
 // is accepted by nothing.
+//
+// The token is read from `process.env`, and package.json's `build` runs Vite through
+// `node --env-file-if-exists=.env` for it: Vite reads .env into
+// `import.meta.env` for the CLIENT bundle and deliberately leaves `process.env`
+// alone, so a token sitting in .env is invisible here without that flag - the
+// build succeeds, uploads nothing, and says nothing about it. CI passes the
+// same variable its own way and needs no .env at all.
 const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN;
 
 const sentrySourcemaps = sentryAuthToken

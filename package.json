@@ -7,7 +7,7 @@
   "scripts": {
     "start": "yarn db:start && concurrently -k -n api,web -c blue,green \"yarn api:start\" \"yarn dev\"",
     "dev": "vite",
-    "build": "tsc -p tsconfig.app.json && vite build",
+    "build": "tsc -p tsconfig.app.json && node --env-file-if-exists=.env node_modules/vite/bin/vite.js build",
     "preview": "vite preview --port 4173 --strictPort",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
