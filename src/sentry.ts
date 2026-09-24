@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/react";
 import { reactRouterBrowserTracingIntegration } from "@sentry/react/react-router";
+import { ownerOf } from "./sentry-owner";
 
 /**
  * Error and performance reporting, started by ./routes.tsx rather than by the
@@ -45,6 +46,18 @@ import { reactRouterBrowserTracingIntegration } from "@sentry/react/react-router
  * Note what logs are NOT subject to: `tracesSampleRate` governs traces, not
  * logs. A trace that was dropped still sends everything it logged.
  *
+ * ONE init, here, for three builds. The remotes never call this: they reach
+ * the client it creates through the `@sentry/react` singleton
+ * (../federation.config.ts), and a second init - or a second copy of the SDK
+ * at another version, which since 8.7 refuses to cooperate with the first -
+ * would leave their spans and logs reporting to nothing. What tells the
+ * remotes apart is the transport, not the init: `makeMultiplexedTransport`
+ * sends each error to the project of the build that threw it - the one
+ * `beforeSend` below names, as ./sentry-owner reads it off the stack - and
+ * to this DSN when it cannot tell. `moduleMetadataIntegration` is the half
+ * that puts the build's stamp on the frames for it to read. Errors only:
+ * a trace crosses every build and stays in this project, the app's.
+ *
  * `dataCollection.userInfo` is off by choice. Sentry v11 flipped this default:
  * v10 collected nothing personal unless `sendDefaultPii: true` said so, v11
  * collects it unless told otherwise, and the app's subject is somebody's account
@@ -60,7 +73,26 @@ export function initSentry() {
     // `vite build` says "production", `vite dev` says "development", so the two
     // are separable in Sentry without a second variable to keep in step.
     environment: import.meta.env.MODE,
-    integrations: [reactRouterBrowserTracingIntegration(), Sentry.browserProfilingIntegration()],
+    integrations: [
+      reactRouterBrowserTracingIntegration(),
+      Sentry.browserProfilingIntegration(),
+      Sentry.moduleMetadataIntegration(),
+    ],
+    transport: Sentry.makeMultiplexedTransport(Sentry.makeFetchTransport),
+    // Where the owner is decided. Here and not in the transport, because the
+    // stamps are gone by then: `moduleMetadataIntegration` puts
+    // `module_metadata` on the frames for event processors and this hook to
+    // read, and strips it again as the envelope is built, so a transport
+    // matcher reading frames finds nothing - measured, every crash then went
+    // to the default project. The transport's own contract is this key in
+    // `extra`, which is why the SDK exports it.
+    beforeSend(event) {
+      const owners = ownerOf(event);
+      if (owners.length > 0) {
+        event.extra = { ...event.extra, [Sentry.MULTIPLEXED_TRANSPORT_EXTRA_KEY]: owners };
+      }
+      return event;
+    },
     // Every transaction, because this is a demo with demo traffic. A real app
     // samples here, or swaps in `tracesSampler` to keep the routes that matter.
     tracesSampleRate: 1,

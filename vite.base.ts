@@ -89,18 +89,49 @@ const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN;
 
 export const sourcemap = sentryAuthToken ? ("hidden" as const) : false;
 
-export const sentrySourcemaps = (outDir: string): PluginOption[] =>
+/** The shell's Sentry project, and every build's until it is given its own. */
+const defaultSentryProject = { project: "frontend-demo-app", dsn: process.env.VITE_SENTRY_DSN };
+
+/**
+ * A remote's own Sentry project - `frontend-demo-<name>`, opted into by
+ * setting `SENTRY_DSN_<NAME>` (see .env.example) - so its errors land in an
+ * issue stream its team owns, with releases and source maps of its own. Unset,
+ * the remote reports into the shell's project like everything else: nothing
+ * to create in Sentry before a remote can build, and nothing that breaks the
+ * build when a project does not exist yet.
+ */
+const sentryProjectFor = (name: RemoteName) => {
+  const dsn = process.env[`SENTRY_DSN_${name.toUpperCase()}`];
+  return dsn ? { project: `frontend-demo-${name}`, dsn } : defaultSentryProject;
+};
+
+/**
+ * `moduleMetadata` is the micro-frontend half of the plugin: it stamps every
+ * bundle of THIS build with the DSN and release of this build's project, so
+ * that at runtime a stack frame can say which build it came from. The shell's
+ * SDK reads the stamps back in src/sentry-owner.ts and sends the error to
+ * that project. Stamped whether or not the project is the remote's own - a
+ * stamp carrying the default DSN routes to the default, which is the same as
+ * no stamp, and keeps every build's frames attributable in the same way.
+ */
+export const sentrySourcemaps = (
+  outDir: string,
+  { project, dsn }: { project: string; dsn?: string },
+): PluginOption[] =>
   sentryAuthToken
     ? [
         sentryVitePlugin({
           org: "alexisregnaud",
-          project: "frontend-demo-app",
+          project,
           url: "https://de.sentry.io",
           authToken: sentryAuthToken,
           sourcemaps: { filesToDeleteAfterUpload: [`./${outDir}/**/*.map`] },
+          moduleMetadata: ({ release }) => ({ dsn, release }),
         }),
       ]
     : [];
+
+export const shellSentryProject = defaultSentryProject;
 
 type RemoteOptions = {
   /** What this remote offers: the key the consumer imports, the file behind it. */
@@ -166,7 +197,7 @@ export const remoteConfig = (
     plugins: [
       ...appPlugins(),
       federation({ name, filename: remoteEntry, exposes, remotes: consumed, shared, dts }),
-      ...sentrySourcemaps(outDir),
+      ...sentrySourcemaps(outDir, sentryProjectFor(name)),
     ],
     css: stylexCss([`src/${name}/**/*.{ts,tsx}`, "src/tokens.stylex.ts"]),
     resolve: { alias },

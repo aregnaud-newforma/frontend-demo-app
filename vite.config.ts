@@ -2,7 +2,14 @@ import { defineConfig } from "vite";
 import { federation } from "@module-federation/vite";
 import { alias } from "./alias.ts";
 import { dts, remoteRef, remotes, shared, type RemoteName } from "./federation.config.ts";
-import { appPlugins, browserTargets, sentrySourcemaps, sourcemap, stylexCss } from "./vite.base.ts";
+import {
+  appPlugins,
+  browserTargets,
+  sentrySourcemaps,
+  shellSentryProject,
+  sourcemap,
+  stylexCss,
+} from "./vite.base.ts";
 
 /**
  * The SHELL: the one build that owns index.html, and the one the browser is
@@ -55,7 +62,7 @@ export default defineConfig(({ command }) => ({
       shared,
       dts,
     }),
-    ...sentrySourcemaps(outDir),
+    ...sentrySourcemaps(outDir, shellSentryProject),
   ],
   // The shell's own stylesheet: the layout, and the tokens every build shares.
   // What a page needs arrives with the page, in the remote's stylesheet.

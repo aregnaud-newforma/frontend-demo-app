@@ -68,6 +68,13 @@ that deploys as one should stay on one build.
   (`remoteEntryUrl` in `federation.config.ts`): the dev server's for
   `vite dev`, the preview server's for a build. A real deployment substitutes
   its own hosts there.
+- Sentry is initialised once, in the shell, and every build's plugin stamps
+  its bundles with its project's DSN (`moduleMetadata`). The shell's
+  transport reads the stamp off the deepest frame (`src/sentry-owner.ts`)
+  and sends the error to that project, so a crash in the account's preview
+  is the account team's even when the home page rendered it. A remote gets
+  its own project by setting `SENTRY_DSN_<NAME>`; until then it reports into
+  the shell's.
 - `react`, `react-dom`, `react-router`, `@tanstack/react-query` and
   `@sentry/react` are shared singletons. A remote that imports a package
   carrying context or a client - a store, an i18n instance - has to add it to

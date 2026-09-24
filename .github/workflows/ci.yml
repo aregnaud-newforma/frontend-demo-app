@@ -88,6 +88,11 @@ jobs:
     # build runs unchanged and emits no map at all. See vite.config.ts.
     env:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      # One Sentry project per remote (vite.base.ts, .env.example). Unset, a
+      # remote's build reports into the shell's project instead; set, its maps
+      # and its stamped DSN go to a project of its own.
+      SENTRY_DSN_ACCOUNT: ${{ secrets.SENTRY_DSN_ACCOUNT }}
+      SENTRY_DSN_HOME: ${{ secrets.SENTRY_DSN_HOME }}
     steps:
       - uses: actions/checkout@v4
         with:
