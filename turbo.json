@@ -1,0 +1,58 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  // What every task's hash has to include no matter which package it belongs
+  // to. `.env` is here because the build scripts read it through node's
+  // `--env-file-if-exists`, which Turborepo cannot see; stylex.config.ts
+  // because its `rootDir` decides the CSS variable names of every build
+  // (packages/tokens/tokens.stylex.ts says why it must stay at the root).
+  "globalDependencies": [".env", "stylex.config.ts", "tsconfig.json"],
+  "globalEnv": ["NODE_ENV", "CI"],
+  "tasks": {
+    // ROOT TASKS (`//#`). A task is one when it answers about the whole
+    // repository rather than about a package:
+    //
+    // - oxlint and oxfmt are a single Rust pass over every file, and splitting
+    //   them per package would be slower and would need the config copied.
+    // - the .NET tasks are driven by server/server.slnx, which is not in the
+    //   npm graph at all.
+    // - e2e starts five processes and a Postgres, and drives the built app
+    //   across all of them.
+    // - the eval harness cuts git worktrees off `git rev-parse --show-toplevel`
+    //   (evals/config.ts), so it only works from the root.
+    "//#lint": {},
+    "//#format:check": {},
+    // Scoped to server/, or any frontend edit would invalidate them: a root
+    // task's default inputs are the whole root package. bin/ and obj/ are
+    // gitignored and therefore already out.
+    "//#server:build": { "inputs": ["server/**", "global.json"] },
+    "//#server:test": { "inputs": ["server/**", "global.json"] },
+
+    // Still root tasks because the split has not reached them yet: `build` is
+    // one tsc gate plus three Vite builds driven from here, and `test` is one
+    // Vitest run whose two projects span the whole tree. Both become per-package
+    // tasks as apps/ and packages/ fill in.
+    "//#build": {
+      "outputs": ["dist/**"],
+      "env": ["SENTRY_AUTH_TOKEN", "VITE_SENTRY_DSN", "SENTRY_DSN_*", "SENTRY_RELEASE"]
+    },
+    "//#test": {
+      "outputs": ["coverage/**"]
+    },
+    "//#e2e": {
+      "dependsOn": ["//#build"],
+      "outputs": ["playwright-report/**", "test-results/**"]
+    },
+
+    // Per-package tasks. Nothing defines them yet - packages/tokens is exported
+    // as TypeScript source and has no build - but they are the shape the apps
+    // will take: `^build` orders a remote's build after what it consumes.
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.env", "$TURBO_ROOT$/stylex.config.ts"],
+      "outputs": ["dist/**"],
+      "env": ["SENTRY_AUTH_TOKEN", "VITE_SENTRY_DSN", "SENTRY_DSN_*", "SENTRY_RELEASE"]
+    },
+    "check-types": { "dependsOn": ["^check-types"] },
+    "dev": { "cache": false, "persistent": true }
+  }
+}

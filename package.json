@@ -4,6 +4,12 @@
   "workspaces": [
     "packages/*"
   ],
+  "devEngines": {
+    "packageManager": {
+      "name": "yarn",
+      "version": "1.22.22"
+    }
+  },
   "version": "1.0.0",
   "description": "Practical testing-trophy example: static (oxlint/tsc) + unit (Vitest) + integration (Vitest Browser Mode/MSW) + E2E (Playwright).",
   "type": "module",
@@ -93,6 +99,7 @@
     "oxfmt": "^0.62.0",
     "oxlint": "^1.77.0",
     "playwright": "^1.49.1",
+    "turbo": "^2.11.3",
     "typescript": "7.0.2",
     "vite": "^8.0.0",
     "vitest": "^4.1.10",

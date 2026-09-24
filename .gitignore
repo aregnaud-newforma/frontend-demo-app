@@ -58,3 +58,8 @@ docs/lint-coverage.md
 # .NET build output (server/)
 bin/
 obj/
+
+# Turborepo's task cache. Also kept OUT of every task's inputs by being
+# ignored: a root task hashes the whole root package, so a cache directory
+# inside it would change the hash on every run and never hit.
+.turbo/
