@@ -93,6 +93,18 @@ jobs:
       # and its stamped DSN go to a project of its own.
       SENTRY_DSN_ACCOUNT: ${{ secrets.SENTRY_DSN_ACCOUNT }}
       SENTRY_DSN_HOME: ${{ secrets.SENTRY_DSN_HOME }}
+      # WHICH BUILD this is, in one word for all five Sentry projects. The Vite
+      # plugin would derive the same sha from git on its own; naming it here is
+      # what makes the three frontend builds and the two backends agree on a
+      # string rather than each deriving one of its own. A release is global to
+      # the organisation and carries events from every project under it, so one
+      # sha is what lets a deploy be compared across them.
+      #
+      # This reaches the BROWSER only, because Vite stamps it into each bundle
+      # at build time. The two backend services read it from their own
+      # environment at startup instead, which is a deployment's job and not
+      # this job's - see .env.example.
+      SENTRY_RELEASE: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
