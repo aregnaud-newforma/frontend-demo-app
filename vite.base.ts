@@ -4,7 +4,14 @@ import babel from "@rolldown/plugin-babel";
 import { federation } from "@module-federation/vite";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { alias } from "./alias.ts";
-import { dts, remoteEntry, remotes, shared, type RemoteName } from "./federation.config.ts";
+import {
+  dts,
+  remoteEntry,
+  remoteRef,
+  remotes,
+  shared,
+  type RemoteName,
+} from "./federation.config.ts";
 import { stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
 
 /**
@@ -95,6 +102,19 @@ export const sentrySourcemaps = (outDir: string): PluginOption[] =>
       ]
     : [];
 
+type RemoteOptions = {
+  /** What this remote offers: the key the consumer imports, the file behind it. */
+  exposes: Record<string, string>;
+  /**
+   * The remotes THIS one embeds a component from, if any. A vertical that
+   * needs another's component consumes it the way the shell consumes pages -
+   * over the wire, by `<remote>/<key>` - and this is where it says so. The
+   * import then names a deployment the vertical depends on, which is the cost
+   * `@account/...` from inside src/home/ would hide.
+   */
+  consumes?: RemoteName[];
+};
+
 /**
  * One remote's whole Vite config (docs/adr/0003). A remote ships no index.html
  * and no entry of its own: its build is the `remoteEntry.js` the shell fetches,
@@ -102,13 +122,23 @@ export const sentrySourcemaps = (outDir: string): PluginOption[] =>
  * around it - the router, the QueryClient, Sentry - is the shell's, reached
  * through the `shared` singletons.
  *
+ * `command` is passed through because a consumed remote's URL differs between
+ * `vite dev` and a build - see `remoteEntryUrl`.
+ *
  * `server.origin` is what makes the remote's dev server name itself in the
  * asset URLs it emits: without it a chunk is requested from the SHELL's origin,
  * which does not have it.
  */
-export const remoteConfig = (name: RemoteName, exposes: Record<string, string>): UserConfig => {
+export const remoteConfig = (
+  name: RemoteName,
+  { exposes, consumes = [] }: RemoteOptions,
+  command: "build" | "serve",
+): UserConfig => {
   const outDir = `dist/${name}`;
   const port = remotes[name];
+  const consumed = Object.fromEntries(
+    consumes.map((remote) => [remote, remoteRef(remote, command)]),
+  );
 
   return {
     // public/ is the shell's: index.html's favicon, the MSW worker the tests
@@ -135,7 +165,7 @@ export const remoteConfig = (name: RemoteName, exposes: Record<string, string>):
     },
     plugins: [
       ...appPlugins(),
-      federation({ name, filename: remoteEntry, exposes, shared, dts }),
+      federation({ name, filename: remoteEntry, exposes, remotes: consumed, shared, dts }),
       ...sentrySourcemaps(outDir),
     ],
     css: stylexCss([`src/${name}/**/*.{ts,tsx}`, "src/tokens.stylex.ts"]),

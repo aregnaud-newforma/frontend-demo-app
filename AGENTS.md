@@ -36,6 +36,11 @@ vertical exposes is its `pages.ts`; the shell reaches it as `account/pages`,
 never as `@account/...`. `federation.config.ts` names the remotes and the
 packages the builds must share one copy of.
 
+A vertical that needs another's component consumes it the same way - over the
+wire, as `account/preview`, declared in `consumes` of its Vite config - never
+as `@account/...`. The import then names a deployment it depends on, which is
+the cost worth seeing. `home/` embedding the account's preview is the one case.
+
 Imports are **relative inside a folder, namespaced across one** — `./helpers/api`,
 but `@testing/render-route`. Namespaces are declared twice, in `alias.ts` and in
 `tsconfig.json` `paths`; one wired into only half of that fails either at

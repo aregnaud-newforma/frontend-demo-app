@@ -1,5 +1,0 @@
-/* Every rule from every `stylex.create` in this vertical, and the tokens they
-   read - the `include` in vite.account.config.ts decides which files. Nothing
-   hand-written: the reset and the page background are the shell's, in
-   ../global.css, and are on the page before any remote is. */
-@stylex;

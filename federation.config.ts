@@ -49,6 +49,18 @@ export const remoteEntryUrl = (name: RemoteName, command: "build" | "serve") =>
   `http://localhost:${remotes[name][command === "build" ? "preview" : "dev"]}/${remoteEntry}`;
 
 /**
+ * One remote as a consumer declares it - the shell for every remote, a remote
+ * for the one it embeds a component from (vite.home.config.ts). `type:
+ * "module"` because the remotes are ESM builds of this same plugin; the
+ * default is the global-variable format webpack emits.
+ */
+export const remoteRef = (name: RemoteName, command: "build" | "serve") => ({
+  type: "module",
+  name,
+  entry: remoteEntryUrl(name, command),
+});
+
+/**
  * Packages the shell and the remotes must share ONE instance of, because each
  * carries state a second copy would not see:
  *

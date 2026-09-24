@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import { federation } from "@module-federation/vite";
 import { alias } from "./alias.ts";
-import { dts, remoteEntryUrl, remotes, shared } from "./federation.config.ts";
+import { dts, remoteRef, remotes, shared, type RemoteName } from "./federation.config.ts";
 import { appPlugins, browserTargets, sentrySourcemaps, sourcemap, stylexCss } from "./vite.base.ts";
 
 /**
@@ -47,13 +47,10 @@ export default defineConfig(({ command }) => ({
     ...appPlugins(),
     federation({
       name: "shell",
+      // Every remote there is: the shell is what the browser is pointed at, so
+      // it is the one build that must know where every page comes from.
       remotes: Object.fromEntries(
-        Object.keys(remotes).map((name) => [
-          name,
-          // `type: "module"` because the remotes are ESM builds of this same
-          // plugin; the default is the global-variable format webpack emits.
-          { type: "module", name, entry: remoteEntryUrl(name as keyof typeof remotes, command) },
-        ]),
+        Object.keys(remotes).map((name) => [name, remoteRef(name as RemoteName, command)]),
       ),
       shared,
       dts,

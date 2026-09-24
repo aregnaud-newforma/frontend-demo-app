@@ -22,6 +22,10 @@ declare module "account/pages" {
   export * from "@account/pages";
 }
 
+declare module "account/preview" {
+  export * from "@account/preview";
+}
+
 declare module "home/pages" {
   export * from "@home/pages";
 }

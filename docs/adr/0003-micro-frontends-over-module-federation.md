@@ -13,11 +13,17 @@ through `src/<name>/pages.ts`, and the shell fetches them over the wire when a
 route first needs them. The wiring is `@module-federation/vite`, the official
 Vite plugin for Module Federation 2.0, on Vite 8 and Rolldown.
 
-The URL is the whole contract. `src/routes.tsx` says where a page lives and
-loads it with React Router's `lazy`; the remote says what the page is. Nothing
-else crosses the boundary: the QueryClient, the router context and the Sentry
-client are the shell's, and reach a remote's page through the packages
+The URL is the contract between the shell and a remote. `src/routes.tsx` says
+where a page lives and loads it with React Router's `lazy`; the remote says
+what the page is. The QueryClient, the router context and the Sentry client are
+the shell's, and reach a remote's page through the packages
 `federation.config.ts` declares as singletons.
+
+A remote may consume another remote, the same way: `home` embeds the account's
+preview as `account/preview`, declared in `consumes` of `vite.home.config.ts`,
+behind `React.lazy` and an error boundary of its own. It is the one such case,
+and it is there to show the cost - the home build depends on the account
+deployment, and the welcome has a slot that can be unavailable.
 
 ## Why
 
