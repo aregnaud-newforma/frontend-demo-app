@@ -1,11 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace Api;
+namespace Accounts;
 
 /// <summary>
 /// The queries, and nothing else: no connection, no HTTP. Each takes the
 /// context as its first argument so the same code runs against the API's
-/// Postgres and against the one the tests start (see ../Api.Tests/StoreTests.cs).
+/// Postgres and against the one the tests start (see ../Accounts.Tests/StoreTests.cs).
 /// </summary>
 public static class Store
 {

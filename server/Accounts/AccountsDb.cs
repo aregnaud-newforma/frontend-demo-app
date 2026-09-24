@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace Api;
+namespace Accounts;
 
 /// <summary>
 /// The tables, and the mapping that names them. `dotnet ef migrations add`

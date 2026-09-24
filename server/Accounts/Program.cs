@@ -26,11 +26,11 @@
 // start - that is what makes `yarn dev` show an account rather than an error,
 // since nothing outside the specs ever sets the cookie.
 //
-// Run it with `yarn api:start`, with the database from `yarn db:start` up and
+// Run it with `yarn accounts:start`, with the database from `yarn db:start` up and
 // the notifications service from `yarn notifications:start` beside it.
 // Playwright starts all of them (see the webServer array in
 // playwright.config.ts), so no one has to remember to.
-using Api;
+using Accounts;
 using Microsoft.EntityFrameworkCore;
 using Observability;
 
@@ -52,7 +52,7 @@ var demoAccount = new Account(
 // `Development` when nothing says otherwise. ASP.NET Core's own fallback is
 // `Production`, which is the one value nearly never true of this process: a
 // Properties/launchSettings.json is what usually sets it, and this project
-// carries none so that `yarn api:start` and Playwright's webServer run the same
+// carries none so that `yarn accounts:start` and Playwright's webServer run the same
 // command in the same environment. The name is what Sentry's `environment` is
 // built from.
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions

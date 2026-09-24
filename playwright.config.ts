@@ -28,7 +28,7 @@ export default defineConfig({
   // `yarn verify`'s half of `yarn build`, and this tier is about the bundle.
   webServer: [
     {
-      command: "yarn api:start",
+      command: "yarn accounts:start",
       url: "http://localhost:3001/health",
       reuseExistingServer: !process.env.CI,
       // `dotnet run` restores and compiles before it listens, which on a cold
@@ -39,7 +39,7 @@ export default defineConfig({
       // The second backend service. Started beside the API rather than by it:
       // they are two deployments, and a save that reaches a process this config
       // forgot to start is a failure worth seeing here rather than a silently
-      // skipped notification (server/Api/NotificationsClient.cs swallows the
+      // skipped notification (server/Accounts/NotificationsClient.cs swallows the
       // error by design).
       command: "yarn notifications:start",
       url: "http://localhost:3002/health",

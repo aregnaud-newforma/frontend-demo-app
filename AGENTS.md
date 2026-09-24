@@ -48,9 +48,10 @@ type-check or in the browser tests.
 
 ## Services
 
-`server/` is two ASP.NET Core processes and one library. `Api/` owns the
-accounts table and the surface the browser reaches; `Notifications/` owns what a
-message to a person says and is reached only by `Api/`, over HTTP. Neither
+`server/` is two ASP.NET Core processes and one library, each named after its
+subject the way `src/` is. `Accounts/` owns the accounts table and the surface
+the browser reaches; `Notifications/` owns what a message to a person says and
+is reached only by `Accounts/`, over HTTP. Neither
 references the other's project - a shape they exchange is declared on both
 sides, and that duplication is the boundary (`docs/adr/0004`).
 
@@ -78,7 +79,7 @@ MSW, `e2e/*.spec.ts` in Playwright against the real API process.
 yarn verify && yarn test
 ```
 
-Both green, every time. Add `yarn api:test` when the change touches `server/`,
+Both green, every time. Add `yarn server:test` when the change touches `server/`,
 and `yarn e2e` when it crosses the wire — a field that never reaches the
 backend still type-checks and still passes the integration suite.
 

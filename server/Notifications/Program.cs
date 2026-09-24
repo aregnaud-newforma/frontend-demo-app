@@ -23,7 +23,7 @@ using Notifications;
 using Observability;
 
 // The repo's .env, walked up to from wherever `dotnet run` put the working
-// directory - the same file and the same call as ../Api/Program.cs, which is
+// directory - the same file and the same call as ../Accounts/Program.cs, which is
 // where the reasoning is. Before anything reads a variable: the DSN and the
 // port below both come from it.
 DotNetEnv.Env.TraversePath().Load();
@@ -34,7 +34,7 @@ DotNetEnv.Env.TraversePath().Load();
 const string SessionHeader = "x-e2e-session";
 const string DemoSession = "demo";
 
-// `Development` when nothing says otherwise, for the reason ../Api/Program.cs
+// `Development` when nothing says otherwise, for the reason ../Accounts/Program.cs
 // gives: ASP.NET Core's own fallback is `Production`, and this project carries
 // no launchSettings.json so that the yarn script and Playwright's webServer run
 // the same command in the same environment.
@@ -103,7 +103,7 @@ app.MapPost(
             outbox.Record(ReadSession(request), notification);
             // The SHAPE, never the contents - the address is the one field a
             // notification is guaranteed to carry and the one Sentry has no
-            // business holding. The same line ../Api/Program.cs draws on its
+            // business holding. The same line ../Accounts/Program.cs draws on its
             // own log, and the same one `SendDefaultPii` being off draws for
             // the SDK.
             logger.LogInformation("Notification rendered (langue: {Langue})", change.Langue);
@@ -122,7 +122,7 @@ app.MapPost(
 
 // Test-only: what this session was sent. Namespaced away from /notifications/
 // so it is obvious at the call site that it is not part of the surface the
-// account API talks to - the same split ../Api/Program.cs makes with
+// account API talks to - the same split ../Accounts/Program.cs makes with
 // /__test__/account.
 //
 // This is what lets the E2E tier PROVE the hop rather than assume it: a save in

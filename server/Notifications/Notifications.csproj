@@ -3,7 +3,7 @@
   Program.cs for what it serves and docs/adr/0004 for why the backend is two
   processes rather than one.
 
-  The SDK version is pinned in ../../global.json, the same file ../Api/Api.csproj
+  The SDK version is pinned in ../../global.json, the same file ../Accounts/Accounts.csproj
   points at. The Sentry packages are NOT here: they come with
   ../Observability/Observability.csproj, which is where the setup both services
   share lives.
@@ -23,7 +23,7 @@
     <RootNamespace>Notifications</RootNamespace>
   </PropertyGroup>
 
-  <!-- Its own Sentry project, on the same terms as ../Api/Api.csproj - read
+  <!-- Its own Sentry project, on the same terms as ../Accounts/Accounts.csproj - read
        that file for what each of these properties does and why
        `SentryUploadSources` is not one of them. The project name is the only
        line that differs, and it is the line that puts a .NET stack from THIS
@@ -40,7 +40,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Reads the repo's .env into the process, the same way ../Api does: one
+    <!-- Reads the repo's .env into the process, the same way ../Accounts does: one
          file holds the DSNs and the ports for every service. -->
     <PackageReference Include="DotNetEnv" Version="3.2.0" />
   </ItemGroup>

@@ -1,7 +1,7 @@
 <!-- The notifications service's own tests: xunit, in process, against nothing.
-     `yarn api:test` runs them with the account API's, through the solution.
+     `yarn server:test` runs them with the account API's, through the solution.
 
-     No Testcontainers here, unlike ../Api.Tests: this service has no database
+     No Testcontainers here, unlike ../Accounts.Tests: this service has no database
      to start (../Notifications/Outbox.cs says why), and the piece worth testing
      is a pure function. What the wiring around it does is the E2E tier's job -
      ../../e2e/account.spec.ts reads a notification back out of the running

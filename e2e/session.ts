@@ -1,7 +1,7 @@
 /**
  * One test's slice of the real backend - both halves of it.
  *
- * The account API in server/Api/ keys its store by a session id, so parallel
+ * The account API in server/Accounts/ keys its store by a session id, so parallel
  * specs do not overwrite each other's account, and the notifications service in
  * server/Notifications/ keys its outbox by the same id, because the API
  * forwards it. A test calls `startSession` in its GIVEN, and from then on the

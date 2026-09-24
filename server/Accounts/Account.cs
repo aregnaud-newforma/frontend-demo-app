@@ -1,4 +1,4 @@
-namespace Api;
+namespace Accounts;
 
 /// <summary>
 /// The account as it goes over the wire, minus the id: every field the client

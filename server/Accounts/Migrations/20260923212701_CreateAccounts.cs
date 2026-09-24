@@ -2,7 +2,7 @@
 
 #nullable disable
 
-namespace Api.Migrations
+namespace Accounts.Migrations
 {
     /// <inheritdoc />
     public partial class CreateAccounts : Migration

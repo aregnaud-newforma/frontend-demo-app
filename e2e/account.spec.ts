@@ -106,7 +106,7 @@ test("visitor navigates to their account, edits every field and is returned to t
 
   // Then the save has reached the OTHER backend service. Nothing in the browser
   // called it: the account API did, over HTTP, while it was serving the PUT
-  // above, through server/Api/NotificationsClient.cs. This assertion
+  // above, through server/Accounts/NotificationsClient.cs. This assertion
   // is the only place in the suite where the split backend is observable, and
   // it is here rather than in a unit test because a mocked HTTP client would
   // prove the call was written, not that it lands.

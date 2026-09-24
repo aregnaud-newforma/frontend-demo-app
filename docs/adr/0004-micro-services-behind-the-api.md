@@ -5,7 +5,7 @@ date: 2026-09-24
 
 # Micro-services behind the API
 
-The backend is two ASP.NET Core processes. The **account API** (`server/Api/`)
+The backend is two ASP.NET Core processes. The **account API** (`server/Accounts/`)
 keeps the surface it always had - `/api/account`, the `/__test__/account`
 seeding route, `/health`, the `e2e-session` cookie, port 3001 - and owns the
 `accounts` table. The **notifications service** (`server/Notifications/`) is
@@ -107,7 +107,7 @@ in the middle.
   five servers and waits on each, `/health` on both services included.
 - **The two services do not share a domain type.** `AccountChanged` is declared
   twice - `server/Notifications/Messages.cs` and
-  `server/Api/NotificationsClient.cs` - and the projects do not reference each
+  `server/Accounts/NotificationsClient.cs` - and the projects do not reference each
   other. That duplication is the boundary: a shared record would be a shared
   assembly, and a shared assembly is two services that deploy together.
   `server/Observability/` is the one shared project and it is allowed exactly
@@ -131,5 +131,15 @@ in the middle.
 - **The notifications service keeps nothing.** Its outbox is in memory, keyed by
   session so parallel E2E specs stay isolated across the hop. A real one would
   have a queue in front of it rather than a table behind it.
-- `yarn api:build` now builds the whole solution in Release, so both services'
+- `yarn server:build` now builds the whole solution in Release, so both services'
   debug files reach Sentry on one token.
+- **`server/Api/` is `server/Accounts/`.** With two services, one named after a
+  subject and one named after a layer was the inconsistency `src/` never had, and
+  "the API" stopped being a distinguishing word the moment both were one. Plural,
+  because the folder holds a record called `Account` and `Accounts.Account` reads
+  better than `Account.Account`; it also matches the `accounts` table and
+  `AccountsDb`. The scripts moved with it - `accounts:start` for the service,
+  `server:test` and `server:build` for the solution. ADR 0002 still says
+  `server/Api/`, which was true the day it was written; this line is where the
+  trail picks up. The Sentry project keeps the name `frontend-demo-api`, because
+  renaming a project breaks saved queries and alerts for a cosmetic gain.

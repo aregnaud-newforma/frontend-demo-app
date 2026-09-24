@@ -1,6 +1,6 @@
 using System.Net.Http.Json;
 
-namespace Api;
+namespace Accounts;
 
 /// <summary>
 /// The notifications service's request body, as THIS service declares it.

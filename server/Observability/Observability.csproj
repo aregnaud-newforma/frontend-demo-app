@@ -16,7 +16,7 @@
 
   No Sentry upload properties here. A referencing app's Release build carries
   this project's PDB into its own output, so `SentryUploadSymbols` in
-  ../Api/Api.csproj and ../Notifications/Notifications.csproj sends this
+  ../Accounts/Accounts.csproj and ../Notifications/Notifications.csproj sends this
   assembly's symbols to THEIR projects - which is what makes a frame in here
   resolve in whichever service was running when it threw.
 -->

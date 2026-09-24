@@ -16,7 +16,7 @@ namespace Notifications;
 /// </para>
 ///
 /// <para>
-/// Keyed by session for the reason the accounts table is (see ../Api/Program.cs,
+/// Keyed by session for the reason the accounts table is (see ../Accounts/Program.cs,
 /// PER-TEST ISOLATION): Playwright runs specs in parallel against one process,
 /// and a spec reading /__test__/notifications must see its own and no one
 /// else's. The account service forwards the session it read, so the isolation

@@ -7,13 +7,13 @@
 // reaches the database `yarn dev` uses. The Node version ran on PGlite,
 // Postgres compiled to WebAssembly, and needed no container; .NET has no such
 // thing, and a container is the next smallest honest Postgres.
-using Api;
+using Accounts;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Testcontainers.PostgreSql;
 using Xunit;
 
-namespace Api.Tests;
+namespace Accounts.Tests;
 
 public sealed class PostgresFixture : IAsyncLifetime
 {

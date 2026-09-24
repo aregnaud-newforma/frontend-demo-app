@@ -70,7 +70,7 @@ jobs:
       # The API's own tests. They start a Postgres through Testcontainers, which
       # is why they run here, where the runner's Docker is, and not under
       # `yarn test`, whose Node tier has no service to lean on.
-      - run: yarn api:test
+      - run: yarn server:test
 
   build:
     name: build (bundle + source maps + debug files)
@@ -111,14 +111,14 @@ jobs:
           global-json-file: global.json
       - run: yarn install --frozen-lockfile
       - run: yarn build
-      - run: yarn api:build
+      - run: yarn server:build
 
   e2e:
     name: e2e (playwright)
     runs-on: ubuntu-latest
     # The whole job is a minute or two; a hang is the runner, not the code.
     timeout-minutes: 15
-    # The API stores its accounts in Postgres (server/Api/AccountsDb.cs), so
+    # The API stores its accounts in Postgres (server/Accounts/AccountsDb.cs), so
     # this tier needs one. The same image and credentials as compose.yaml, declared here
     # rather than read from it because Actions has no `docker compose` service
     # runner; the health check makes the runner wait for it before checkout.
@@ -143,7 +143,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: yarn
-      # Playwright starts the API with `yarn api:start`, which is `dotnet run`.
+      # Playwright starts the API with `yarn accounts:start`, which is `dotnet run`.
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json

@@ -5,7 +5,7 @@
 
   The SDK version is pinned in ../../global.json, which is to `dotnet` what
   .nvmrc is to Node; `rollForward: latestFeature` accepts any newer 10.0.x patch.
-  The same file names the test runner, see ../Api.Tests/Api.Tests.csproj.
+  The same file names the test runner, see ../Accounts.Tests/Accounts.Tests.csproj.
 -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
@@ -17,7 +17,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- No culture-aware formatting anywhere in this API, so no ICU to ship. -->
     <InvariantGlobalization>true</InvariantGlobalization>
-    <RootNamespace>Api</RootNamespace>
+    <RootNamespace>Accounts</RootNamespace>
   </PropertyGroup>
 
   <!--
@@ -42,7 +42,7 @@
     Sources in every Release build, so the artifact does not change shape with
     whoever holds a token, and the upload only when SENTRY_AUTH_TOKEN is in the
     environment - the same switch the browser's source maps hang off
-    (vite.base.ts). So `yarn verify`, `yarn api:test` and `dotnet run` never
+    (vite.base.ts). So `yarn verify`, `yarn server:test` and `dotnet run` never
     upload: they are Debug, and Debug symbols describe a build nothing runs.
 
     The token has to be the ORGANIZATION kind (`sntrys_...`, see .env.example);
@@ -66,7 +66,7 @@
     <PackageReference Include="DotNetEnv" Version="3.2.0" />
     <!-- Named outright, at the version Design below carries, rather than left to
          Npgsql's older transitive floor: the two would otherwise disagree in
-         every project that references this one (../Api.Tests), which the build
+         every project that references this one (../Accounts.Tests), which the build
          reports as an unresolvable conflict. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
     <!-- Design-time only: what `dotnet ef migrations add` needs (see ../../.config). -->

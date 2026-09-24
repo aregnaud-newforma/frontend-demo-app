@@ -14,7 +14,7 @@ namespace Notifications;
 ///
 /// <para>
 /// The account service declares the matching shape in its own file
-/// (../Api/NotificationsClient.cs) and the two projects do not reference each
+/// (../Accounts/NotificationsClient.cs) and the two projects do not reference each
 /// other. That duplication IS the boundary: a shared <c>Account</c> record
 /// would mean the two services deploy together, which is the one thing
 /// splitting them was for. See docs/adr/0004.

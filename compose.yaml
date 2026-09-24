@@ -1,4 +1,4 @@
-# The Postgres behind `yarn api:start`, and so behind `yarn dev` and `yarn e2e`.
+# The Postgres behind `yarn accounts:start`, and so behind `yarn dev` and `yarn e2e`.
 # `yarn db:start` brings it up and waits for it to answer; the data survives
 # restarts in the named volume, which is the point of having a database at all
 # (see docs/adr/0001-postgres-and-drizzle-behind-the-api.md).

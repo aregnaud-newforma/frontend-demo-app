@@ -1,4 +1,4 @@
-namespace Api;
+namespace Accounts;
 
 /// <summary>
 /// Which test's data a request is about.
