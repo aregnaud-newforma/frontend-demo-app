@@ -27,6 +27,7 @@
     "db:start": "docker compose up --wait postgres",
     "db:generate": "dotnet ef migrations add --project server/Api",
     "api:start": "dotnet run --project server/Api",
+    "api:build": "dotnet build server/Api --configuration Release --nologo -warnaserror",
     "api:test": "dotnet test --solution server/server.slnx",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",

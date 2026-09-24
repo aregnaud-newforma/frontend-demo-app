@@ -19,6 +19,46 @@
     <RootNamespace>Api</RootNamespace>
   </PropertyGroup>
 
+  <!--
+    What turns a .NET frame in Sentry from a bare method name into the line of
+    code that threw, the way a source map does for the browser half.
+
+    Two halves. EmbedAllSources puts the source text INSIDE the portable PDB;
+    SentryUploadSymbols hands that PDB to Sentry, through the `sentry-cli` the
+    Sentry package ships and MSBuild targets that default to false. Sentry then
+    extracts the sources it needs and shows the frame in context.
+
+    NOT `SentryUploadSources`, the documented alternative, which silently does
+    nothing here. The .NET SDK writes a Source Link map into every PDB (the
+    repo path, as a raw.githubusercontent.com URL), and `sentry-cli` treats a
+    file that has a Source Link the same as one whose text is embedded: it
+    skips it. Every file has one, so it bundles nothing, reports "Resolved
+    source code for 0 debug information files" and succeeds. Sentry then never
+    follows the link either - symbolic issue #735 is still open. The two
+    properties are mutually exclusive anyway; the targets warn and turn
+    SentryUploadSources off when both are set.
+
+    Sources in every Release build, so the artifact does not change shape with
+    whoever holds a token, and the upload only when SENTRY_AUTH_TOKEN is in the
+    environment - the same switch the browser's source maps hang off
+    (vite.base.ts). So `yarn verify`, `yarn api:test` and `dotnet run` never
+    upload: they are Debug, and Debug symbols describe a build nothing runs.
+
+    The token has to be the ORGANIZATION kind (`sntrys_...`, see .env.example);
+    debug files take no other. It carries its own region, which is why there is
+    no SentryUrl here and why the Vite plugin's `url` has no counterpart.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <EmbedAllSources>true</EmbedAllSources>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' and '$(SENTRY_AUTH_TOKEN)' != ''">
+    <SentryOrg>alexisregnaud</SentryOrg>
+    <!-- The API's own project, as in .env.example and Program.cs. -->
+    <SentryProject>frontend-demo-api</SentryProject>
+    <SentryUploadSymbols>true</SentryUploadSymbols>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- Reads the repo's .env into the process, so DATABASE_URL and SENTRY_DSN
          reach `dotnet run` the way Node's env-file flag carried them before. -->

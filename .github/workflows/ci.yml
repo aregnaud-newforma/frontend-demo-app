@@ -73,7 +73,7 @@ jobs:
       - run: yarn api:test
 
   build:
-    name: build (bundle + source maps)
+    name: build (bundle + source maps + debug files)
     runs-on: ubuntu-latest
     # The whole job is a minute or two; a hang is the runner, not the code.
     timeout-minutes: 15
@@ -104,8 +104,14 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: yarn
+      # The API's Release build is the other half of this job: it hands Sentry
+      # the PDBs and sources behind a .NET frame, on the same token.
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
       - run: yarn install --frozen-lockfile
       - run: yarn build
+      - run: yarn api:build
 
   e2e:
     name: e2e (playwright)
