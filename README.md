@@ -26,7 +26,7 @@ yarn e2e                # end-to-end, against a real API
 | Modern toolchain          | One Rust-based pipeline: Rolldown to build, oxlint to lint, oxfmt to format         |
 | Vertical codebase         | Group by feature, not file type: pages, schema, queries, mocks, tests colocated     |
 | Micro-frontends           | Each vertical is its own build, fetched by the shell at runtime (Module Federation) |
-| Distributed tracing       | Browser, account API and notifications service report as one Sentry trace           |
+| Distributed tracing       | Browser, .NET account API and Node notifications service, one Sentry trace          |
 | Testing strategy (Trophy) | Playwright, Vitest, MSW, FakerJS and Zod, weighted toward integration, unit and E2E |
 | Build-time CSS-in-JS      | StyleX compiles styles at build time: no runtime cost, no class collisions          |     |
 
@@ -39,9 +39,9 @@ yarn build                # tsc, then the three builds into dist/shell, dist/acc
 yarn preview              # the three builds served as they deploy (build first)
 yarn db:start             # the Postgres behind the accounts service, and wait for it
 yarn accounts:start       # the account API (.NET) alone; migrates the database on start
-yarn notifications:start  # the notifications service (.NET), which the account API calls
-yarn server:test          # both services' tests (xunit); starts a Postgres container itself
-yarn server:build         # the Release build of both, which uploads their debug files
+yarn notifications:start  # the notifications service (Node), which the account API calls
+yarn server:test          # the account API's tests (xunit); starts a Postgres container itself
+yarn server:build         # its Release build, which uploads its debug files
 yarn db:generate          # a migration into server/Accounts/Migrations/ - yarn db:generate AddX
 yarn test                 # unit + integration   (yarn test:watch to keep it open)
 yarn e2e                  # end-to-end; starts both services and the preview build itself

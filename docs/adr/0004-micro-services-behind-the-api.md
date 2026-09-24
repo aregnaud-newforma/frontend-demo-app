@@ -141,5 +141,15 @@ in the middle.
   `AccountsDb`. The scripts moved with it - `accounts:start` for the service,
   `server:test` and `server:build` for the solution. ADR 0002 still says
   `server/Api/`, which was true the day it was written; this line is where the
-  trail picks up. The Sentry project keeps the name `frontend-demo-api`, because
-  renaming a project breaks saved queries and alerts for a cosmetic gain.
+  trail picks up. The Sentry project kept the name `frontend-demo-api` the day
+  this was written, on the grounds that renaming one breaks saved queries and
+  alerts for a cosmetic gain; the next line is where THAT trail picks up.
+- **The Sentry projects are `demo-<subject>-<tier>`.** `frontend-demo-app`,
+  `-account`, `-home`, `-api` and `-notifications` are now `demo-shell-frontend`,
+  `demo-account-frontend`, `demo-home-frontend`, `demo-account-backend` and
+  `demo-notifications-backend` - a project reads as a subject and the side it
+  runs on, the way the folders do, and the backend of the account subject stops
+  being "the API". The DSNs were not part of it: a DSN carries the project id,
+  so nothing that reports had to change. What did is the slug each build uploads
+  to - `vite.base.ts` and both `.csproj` files - and every saved query or alert
+  written against the old slug.

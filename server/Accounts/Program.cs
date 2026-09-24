@@ -32,7 +32,6 @@
 // playwright.config.ts), so no one has to remember to.
 using Accounts;
 using Microsoft.EntityFrameworkCore;
-using Observability;
 
 // The repo's .env, walked up to from wherever `dotnet run` put the working
 // directory. Before anything reads a variable: the connection string, the DSN
@@ -81,17 +80,11 @@ builder.WebHost.UseUrls($"http://localhost:{Environment.GetEnvironmentVariable("
 // query - all of that is on by default in this package, so none of it is
 // written here.
 //
-// The options themselves are in ../Observability/SentrySetup.cs, because the
-// notifications service wants the same ones and a rule that lives in two files
-// is a rule that will disagree with itself. What stays here is the part that is
-// this service's own: its name, and which variable holds its DSN.
-//
-// A DIFFERENT SENTRY PROJECT from the browser's, `alexisregnaud/frontend-demo-api`.
-// A trace is linked by its id, not by its project, so all three parts still
-// read as one trace - while a .NET stack and a React stack stay in separate
-// issue streams, and the source-map upload in ../../vite.config.ts stays a
-// frontend-only concern.
-builder.AddDemoObservability("account-api", Environment.GetEnvironmentVariable("SENTRY_DSN"));
+// The options themselves are in SentrySetup.cs, which is long enough to be
+// worth its own file and is where its own reasoning is written down - including
+// the Sentry project this reports to and the `service` tag that separates it
+// from the notifications service when the two share a DSN.
+builder.AddDemoObservability();
 
 builder.Services.AddDbContext<AccountsDb>(options => options.UseNpgsql(AccountsDb.ConnectionString()));
 
@@ -121,9 +114,9 @@ builder.Services.AddHttpClient<NotificationsClient>(client =>
 // `db.query` span Sentry attaches to the request. The terminal `yarn start`
 // shares with Vite is not that place.
 //
-// The other filter this host used to carry - the one keeping the framework's
-// running commentary out of Sentry - is in ../Observability/SentrySetup.cs now,
-// with the rest of what both services say.
+// The other filter this host carries - the one keeping the framework's running
+// commentary out of Sentry - is in SentrySetup.cs, with the rest of what this
+// service says.
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
 
 var app = builder.Build();

@@ -1,20 +1,24 @@
-using Microsoft.AspNetCore.Builder;
-// Where `UseSentry` lives: Sentry.AspNetCore puts its host extensions in the
-// framework's own namespace, so an app with ImplicitUsings on never writes this
-// line. A library does.
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-
-namespace Observability;
+namespace Accounts;
 
 /// <summary>
-/// The Sentry setup both backend services share.
+/// This service's Sentry setup, in one place away from Program.cs.
 /// </summary>
 public static class SentrySetup
 {
     /// <summary>
-    /// Error reporting, tracing, profiling and structured logs for one service.
+    /// Error reporting, tracing, profiling and structured logs for the account
+    /// API.
+    ///
+    /// <para>
+    /// THIS FILE USED TO BE A SHARED PROJECT. <c>server/Observability/</c> held
+    /// it while both backend services were ASP.NET Core and both could
+    /// reference it. Now that the notifications service is Node
+    /// (docs/adr/0005), it has one consumer, and a library with one consumer is
+    /// not a boundary - so it moved in here. Its twin is
+    /// <c>../Notifications/instrument.ts</c>: the same decisions in another
+    /// language, with nothing enforcing that the two agree. That is the price
+    /// of a polyglot backend and docs/adr/0005 is where it is written down.
+    /// </para>
     ///
     /// <para>
     /// WHAT MAKES THE TWO SERVICES ONE TRACE. Nothing in here, which is the
@@ -22,13 +26,14 @@ public static class SentrySetup
     /// and <c>baggage</c> off every incoming request and continues the trace
     /// they name, and its HTTP client filter puts the same two headers on every
     /// outgoing request made through an <c>HttpClient</c> the factory built. So
-    /// the browser's trace reaches the account API, and the account API's
-    /// reaches the notifications service, with no code on either side beyond
-    /// <c>AddHttpClient()</c>. See docs/adr/0004.
+    /// the browser's trace reaches this API, and this API's reaches the
+    /// notifications service, with no code on either side beyond
+    /// <c>AddHttpClient()</c> - and the Node SDK on the far end continues it the
+    /// same way, off the same two headers. See docs/adr/0004.
     /// </para>
     ///
     /// <para>
-    /// Off unless a DSN is passed. That is what keeps CI quiet -
+    /// Off unless <c>SENTRY_DSN</c> is set. That is what keeps CI quiet -
     /// .github/workflows/ci.yml sets DATABASE_URL and no DSN, so the failures
     /// its E2E specs provoke on purpose are reported to nobody. Note that this
     /// cuts the other way LOCALLY: `yarn e2e` starts both services through
@@ -36,34 +41,33 @@ public static class SentrySetup
     /// specs' own traffic is traced like any other.
     /// </para>
     /// </summary>
-    /// <param name="service">
-    /// Which service this is, as a <c>service</c> tag on everything it sends.
-    /// The projects already separate the two when each has a DSN of its own;
-    /// this is what separates them when they share one, which is the default
-    /// (see .env.example) and the shape most people will run the demo in.
-    /// </param>
-    /// <param name="dsn">
-    /// Where to report, or null to stay off. Resolved by the caller, because
-    /// which variable holds it is the service's own business: the account API
-    /// reads <c>SENTRY_DSN</c>, the notifications service prefers
-    /// <c>SENTRY_DSN_NOTIFICATIONS</c> and falls back to it.
-    /// </param>
-    public static void AddDemoObservability(this WebApplicationBuilder builder, string service, string? dsn)
+    public static void AddDemoObservability(this WebApplicationBuilder builder)
     {
         builder.WebHost.UseSentry(options =>
         {
-            options.Dsn = dsn;
+            // A DIFFERENT SENTRY PROJECT from the browser's,
+            // `alexisregnaud/demo-account-backend`. A trace is linked by its id,
+            // not by its project, so all three parts still read as one trace -
+            // while a .NET stack and a React stack stay in separate issue
+            // streams.
+            options.Dsn = Environment.GetEnvironmentVariable("SENTRY_DSN");
             // `development`, `production`: the browser half sends Vite's `MODE`,
-            // and these are the same words in the same case, so the three are
-            // one environment in Sentry rather than `development` next to
-            // `Development`.
+            // the notifications service sends `NODE_ENV`, and these are the same
+            // words in the same case, so the three are one environment in Sentry
+            // rather than `development` next to `Development`.
             options.Environment = builder.Environment.EnvironmentName.ToLowerInvariant();
-            options.DefaultTags["service"] = service;
+            // WHICH SERVICE this is, on everything it sends. The projects
+            // already separate the two backends when each has a DSN of its own;
+            // this is what separates them when they share one, which is the
+            // default (see ../../.env.example) and the shape most people will
+            // run the demo in. `../Notifications/instrument.ts` sets the same
+            // tag to "notifications".
+            options.DefaultTags["service"] = "account-api";
             // WHICH BUILD this is, in the SAME WORDS as the browser half.
             //
             // Left alone this SDK does name the commit - the .NET SDK stamps the
             // source revision into the assembly's informational version, so the
-            // default reads `Api@1.0.0+8ffc29c...`. What it does not do is
+            // default reads `Accounts@1.0.0+8ffc29c...`. What it does not do is
             // MATCH: the browser's release is the bare sha, put there by
             // @sentry/vite-plugin (../../vite.config.ts), so a search for one
             // release finds one part of the request and not the others, and the
@@ -86,10 +90,11 @@ public static class SentrySetup
             // The parent's decision first, whichever way it went. This is the
             // line that matters most once there is more than one service: the
             // browser decides whether to sample, that decision rides in
-            // `baggage` to the account API and on to the notifications service,
-            // and every hop honours it. Without it a trace could be recorded at
-            // one hop and dropped at the next, which is a trace with a hole in
-            // it rather than a trace.
+            // `baggage` to this API and on to the notifications service, and
+            // every hop honours it. Without it a trace could be recorded at one
+            // hop and dropped at the next, which is a trace with a hole in it
+            // rather than a trace. `../Notifications/instrument.ts` runs the
+            // same two decisions in the same order.
             //
             // The fallback of 1 applies only to a request that named no trace -
             // curl, or the seeding call the E2E specs make - and matches the
@@ -102,11 +107,9 @@ public static class SentrySetup
                 }
                 return context.TransactionContext.Name == "GET /health" ? 0 : 1;
             };
-            // Structured logs, OFF by default in this SDK. On, what a service
+            // Structured logs, OFF by default in this SDK. On, what this service
             // writes through `ILogger<T>` also goes to Sentry, stamped with the
-            // trace and the span that were active when the line was written -
-            // which is what puts a line the notifications service logged inside
-            // the browser's trace, under the span of the call that reached it.
+            // trace and the span that were active when the line was written.
             //
             // Worth knowing before turning it on anywhere real: the sampler
             // above governs traces, NOT logs. A request whose trace was dropped
@@ -143,10 +146,11 @@ public static class SentrySetup
 
         // Sentry gets THIS service's logs, not the framework's running
         // commentary. `EnableLogs` forwards everything the logging pipeline
-        // emits, and at Information - the level these hosts log at - that is
+        // emits, and at Information - the level this host logs at - that is
         // five lines out of Hosting and Routing for every single request
         // ("Request starting", "Executing endpoint", ...) before one of ours is
-        // reached.
+        // reached. The notifications service has no counterpart to this, because
+        // a raw node:http server writes no such commentary to filter.
         //
         // Below Warning only, so a framework line that reports actual trouble
         // still arrives. Matched on the provider rather than declared globally,

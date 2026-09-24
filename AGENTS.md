@@ -48,17 +48,24 @@ type-check or in the browser tests.
 
 ## Services
 
-`server/` is two ASP.NET Core processes and one library, each named after its
-subject the way `src/` is. `Accounts/` owns the accounts table and the surface
-the browser reaches; `Notifications/` owns what a message to a person says and
-is reached only by `Accounts/`, over HTTP. Neither
-references the other's project - a shape they exchange is declared on both
-sides, and that duplication is the boundary (`docs/adr/0004`).
+`server/` is two processes, each named after its subject the way `src/` is, and
+they are **not the same runtime**. `Accounts/` is ASP.NET Core over Postgres: it
+owns the accounts table and the surface the browser reaches. `Notifications/` is
+Node - `node:http` and TypeScript, run without a build step - and owns what a
+message to a person says; it is reached only by `Accounts/`, over HTTP. That
+split is `docs/adr/0005`, and the point of it is that a trace crosses them
+anyway.
 
-`Observability/` is the one project both may reference, and it earns that by
-carrying no domain type: the Sentry setup, and nothing that knows what an
-account is. A rule about what a service reports belongs there; a rule about what
-a service IS does not.
+Neither can reach the other's types, and now there is no build that could make
+it possible. A shape they exchange is declared on both sides - a C# record here,
+a TypeScript interface there - and that duplication is the boundary
+(`docs/adr/0004`). The casing on the wire is .NET's `JsonSerializerDefaults.Web`,
+so the TypeScript names are camelCase because that is what arrives, not because
+TypeScript prefers it.
+
+The Sentry setup is duplicated too, in `Accounts/SentrySetup.cs` and
+`Notifications/instrument.ts`, and nothing enforces that the two agree. Editing
+one is editing half of it.
 
 ## Writing components
 
@@ -79,9 +86,11 @@ MSW, `e2e/*.spec.ts` in Playwright against the real API process.
 yarn verify && yarn test
 ```
 
-Both green, every time. Add `yarn server:test` when the change touches `server/`,
-and `yarn e2e` when it crosses the wire — a field that never reaches the
-backend still type-checks and still passes the integration suite.
+Both green, every time. Add `yarn server:test` when the change touches
+`server/Accounts/` — it is the .NET half's tests alone, and the Node half's
+run under `yarn test` like any other unit test. Add `yarn e2e` when the change
+crosses the wire: a field that never reaches the backend still type-checks and
+still passes the integration suite.
 
 Seeing a visual change in the browser is part of finishing it: `yarn start`,
 which brings up the database, both backend services and the three frontend

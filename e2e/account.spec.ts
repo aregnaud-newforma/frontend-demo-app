@@ -119,7 +119,7 @@ test("visitor navigates to their account, edits every field and is returned to t
   // the change itself crossed the wire and not merely a ping.
   expect(notifications[0]?.to).toBe(edited.email);
   // ...and written in the language that was just selected, which is the other
-  // field the two services agreed to exchange (server/Notifications/Messages.cs).
+  // field the two services agreed to exchange (server/Notifications/messages.ts).
   expect(notifications[0]?.subject).toBe(
     edited.langue === "fr" ? "Votre compte a été mis à jour" : "Your account was updated",
   );

@@ -1,7 +1,4 @@
 <Solution>
   <Project Path="Accounts/Accounts.csproj" />
   <Project Path="Accounts.Tests/Accounts.Tests.csproj" />
-  <Project Path="Notifications/Notifications.csproj" />
-  <Project Path="Notifications.Tests/Notifications.Tests.csproj" />
-  <Project Path="Observability/Observability.csproj" />
 </Solution>

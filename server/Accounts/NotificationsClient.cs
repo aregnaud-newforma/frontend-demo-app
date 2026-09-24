@@ -6,12 +6,20 @@ namespace Accounts;
 /// The notifications service's request body, as THIS service declares it.
 ///
 /// <para>
-/// A copy, on purpose. ../Notifications/Messages.cs declares the same three
-/// fields and the two projects do not reference each other: a shared record
-/// would be a shared assembly, a shared assembly is a shared version, and a
-/// shared version is two services that deploy together - which is the one thing
-/// splitting them was for. The duplication IS the contract, and it is small
-/// because the contract is (see docs/adr/0004).
+/// A copy, on purpose. ../Notifications/messages.ts declares the same three
+/// fields and neither side can reach the other's: one is a C# record, the other
+/// a TypeScript interface, and since docs/adr/0005 there is no build that could
+/// share them even if we wanted to. A shared record would be a shared assembly,
+/// a shared assembly is a shared version, and a shared version is two services
+/// that deploy together - which is the one thing splitting them was for. The
+/// duplication IS the contract, and it is small because the contract is (see
+/// docs/adr/0004).
+/// </para>
+///
+/// <para>
+/// The names cross the wire lowercased - <c>AccountId</c> leaves here as
+/// <c>accountId</c> under <c>JsonSerializerDefaults.Web</c> - which is why the
+/// TypeScript side spells them that way.
 /// </para>
 /// </summary>
 public sealed record AccountChangedRequest(string AccountId, string Email, string Langue);

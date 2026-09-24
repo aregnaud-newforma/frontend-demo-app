@@ -27,7 +27,7 @@
     "db:start": "docker compose up --wait postgres",
     "db:generate": "dotnet ef migrations add --project server/Accounts",
     "accounts:start": "dotnet run --project server/Accounts",
-    "notifications:start": "dotnet run --project server/Notifications",
+    "notifications:start": "node --env-file-if-exists=.env --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/Notifications/instrument.ts server/Notifications/server.ts",
     "server:build": "dotnet build server --configuration Release --nologo -warnaserror",
     "server:test": "dotnet test --solution server/server.slnx",
     "lint": "oxlint",
@@ -51,6 +51,8 @@
     ]
   },
   "dependencies": {
+    "@sentry/node": "^11",
+    "@sentry/profiling-node": "^11",
     "@sentry/react": "^11.0.0",
     "@stylexjs/stylex": "^0.19.0",
     "@tanstack/react-form": "^1.33.3",

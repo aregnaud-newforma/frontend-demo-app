@@ -41,6 +41,10 @@ export default defineConfig({
       // forgot to start is a failure worth seeing here rather than a silently
       // skipped notification (server/Accounts/NotificationsClient.cs swallows the
       // error by design).
+      //
+      // This one is Node (docs/adr/0005), so it listens in milliseconds rather
+      // than after a restore and a compile. The 120s below is the API's budget
+      // kept for symmetry, not a number this process needs.
       command: "yarn notifications:start",
       url: "http://localhost:3002/health",
       reuseExistingServer: !process.env.CI,

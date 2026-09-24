@@ -64,9 +64,17 @@ export default defineConfig({
           environment: "node",
           // `evals/` is the harness, not the app: its pure helpers (how a
           // judge's reply is read) are unit tests like any other, and it has
-          // no browser half. `server/` is not here: the API is .NET, and its
-          // own tests run under xunit (`yarn server:test`).
-          include: ["src/**/*.unit.test.{ts,tsx}", "evals/**/*.unit.test.ts"],
+          // no browser half. `server/` is here for the half of the backend that
+          // is Node (docs/adr/0005) - the notifications service's message
+          // rendering is a pure function like any other. The account API is
+          // still .NET and its own tests still run under xunit
+          // (`yarn server:test`), which is why this is a pattern and not the
+          // whole folder.
+          include: [
+            "src/**/*.unit.test.{ts,tsx}",
+            "evals/**/*.unit.test.ts",
+            "server/**/*.unit.test.ts",
+          ],
         },
       },
       {

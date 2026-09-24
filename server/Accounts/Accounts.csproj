@@ -1,7 +1,9 @@
 <!--
   The account API: ASP.NET Core minimal APIs over Postgres through EF Core, see
   Program.cs for what it serves and docs/adr/0002 for why it is .NET at all. One
-  of two backend services since docs/adr/0004; ../Notifications is the other.
+  of two backend services since docs/adr/0004; ../Notifications is the other, and
+  since docs/adr/0005 it is Node - so this is the only .NET service left, and
+  this file is the whole of the repository's .NET dependency list.
 
   The SDK version is pinned in ../../global.json, which is to `dotnet` what
   .nvmrc is to Node; `rollForward: latestFeature` accepts any newer 10.0.x patch.
@@ -56,7 +58,7 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Release' and '$(SENTRY_AUTH_TOKEN)' != ''">
     <SentryOrg>alexisregnaud</SentryOrg>
     <!-- The API's own project, as in .env.example and Program.cs. -->
-    <SentryProject>frontend-demo-api</SentryProject>
+    <SentryProject>demo-account-backend</SentryProject>
     <SentryUploadSymbols>true</SentryUploadSymbols>
   </PropertyGroup>
 
@@ -78,18 +80,23 @@
   </ItemGroup>
 
   <!--
-    The Sentry packages are NOT named above, and that is deliberate: they come
-    with this reference, which is also where their version is pinned and where
-    the options both services share are written. Naming them here too would be
-    a third place to bump and a third place to disagree.
+    The Sentry packages, named here rather than reached through a shared
+    project. ../Observability/ used to hold them and the setup both services
+    shared; with the notifications service on @sentry/node (docs/adr/0005) there
+    was one consumer left, and a library with one consumer is not a boundary.
+    SentrySetup.cs moved in beside Program.cs and these two lines came with it.
 
-    It carries the MSBuild targets as well - the `SentryUploadSymbols` block
-    above is theirs - because the Sentry package ships them under
-    `buildTransitive/`, which is what makes them flow through a project
-    reference rather than stop at it.
+    They carry the MSBuild targets as well - the `SentryUploadSymbols` block
+    above is theirs - which the package ships under `buildTransitive/`. That is
+    what made them flow through the old project reference, and naming them
+    directly is the shorter path to the same place.
   -->
   <ItemGroup>
-    <ProjectReference Include="../Observability/Observability.csproj" />
+    <PackageReference Include="Sentry.AspNetCore" Version="6.11.1" />
+    <!-- The profiler, which ships apart from the SDK because it carries the
+         .NET runtime's own sampling machinery. ALPHA, and .NET 8+ only - see
+         SentrySetup.cs for what it is turned on with. -->
+    <PackageReference Include="Sentry.Profiling" Version="6.11.1" />
   </ItemGroup>
 
 </Project>
