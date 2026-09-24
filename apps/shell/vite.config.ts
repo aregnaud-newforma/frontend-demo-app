@@ -1,7 +1,6 @@
 import { defineConfig } from "vite";
 import { federation } from "@module-federation/vite";
-import { alias } from "./alias.ts";
-import { dts, remoteRef, remotes, shared, type RemoteName } from "./federation.config.ts";
+import { dts, remoteRef, remotes, shared, type RemoteName } from "../../federation.config.ts";
 import {
   appPlugins,
   browserTargets,
@@ -9,19 +8,21 @@ import {
   shellSentryProject,
   sourcemap,
   stylexCss,
-} from "./vite.base.ts";
+} from "../../vite.base.ts";
+import { fromRoot } from "../../stylex.config.ts";
 
 /**
  * The SHELL: the one build that owns index.html, and the one the browser is
  * pointed at. It ships the layout and the router; the pages come from the
- * remotes, one build per vertical (vite.<name>.config.ts), fetched over the
- * wire when a route first needs them. ./federation.config.ts says which remotes
- * exist and what the three builds must hold exactly one copy of; ./vite.base.ts
- * holds the toolchain they share.
+ * remotes, one build per vertical (apps/<name>/vite.config.ts), fetched over
+ * the wire when a route first needs them. ../../federation.config.ts says which
+ * remotes exist and what the three builds must hold exactly one copy of;
+ * ../../vite.base.ts holds the toolchain they share.
  */
 
 // The app builds its request from window.location.origin (see
-// src/account/helpers/api.ts), so /api/account is same-origin by construction.
+// apps/account/src/helpers/api.ts), so /api/account is same-origin by
+// construction.
 // The real API runs in its own process on another port, which is exactly what
 // a proxy is for: the browser keeps talking to one origin - cookies and all -
 // and the dev/preview server forwards the API calls on. Declared for both
@@ -40,14 +41,13 @@ const apiProxy = { "/api": { target: "http://localhost:3001", changeOrigin: fals
 // index.html has to send the same header.
 const profilingHeaders = { "Document-Policy": "js-profiling" };
 
-const outDir = "dist/shell";
+// Its own dist/, inside apps/shell/ - ../../vite.base.ts says why each build
+// writes into a directory of its own now.
+const outDir = "dist";
 
 // A function of `command`, because the remotes' URLs are baked into the bundle
 // and differ between `vite dev` and a build - see `remoteEntryUrl`.
 export default defineConfig(({ command }) => ({
-  // One pre-bundle cache per build - ./vite.base.ts says why the three cannot
-  // share the default.
-  cacheDir: "node_modules/.vite/shell",
   build: { outDir, target: browserTargets, sourcemap },
   // The Sentry plugin goes last: it reads what the others emitted.
   plugins: [
@@ -66,8 +66,13 @@ export default defineConfig(({ command }) => ({
   ],
   // The shell's own stylesheet: the layout, and the tokens every build shares.
   // What a page needs arrives with the page, in the remote's stylesheet.
-  css: stylexCss(["src/layout/**/*.tsx", "src/*.{ts,tsx}", "packages/tokens/tokens.stylex.ts"]),
-  resolve: { alias },
+  // Absolute patterns: this build runs with apps/shell/ as its cwd and the
+  // tokens are outside it. ../../stylex.config.ts says what a relative one
+  // would silently match instead.
+  css: stylexCss([
+    fromRoot("apps/shell/src/**/*.{ts,tsx}"),
+    fromRoot("packages/tokens/tokens.stylex.ts"),
+  ]),
   server: { port: 5173, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
   preview: { port: 4173, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
 }));

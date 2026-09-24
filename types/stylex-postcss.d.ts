@@ -11,8 +11,13 @@ declare module "@stylexjs/postcss-plugin" {
   import type { PluginCreator } from "postcss";
 
   interface StyleXPostcssOptions {
-    /** Globs the plugin scans for `stylex.create` calls, relative to cwd. */
+    /**
+     * Globs the plugin scans for `stylex.create` calls. Resolved against `cwd`
+     * unless absolute - ../stylex.config.ts passes absolute ones, and says why.
+     */
     include: Array<string>;
+    /** What a relative `include` is resolved against. Defaults to process.cwd(). */
+    cwd?: string;
     exclude?: Array<string>;
     /** Emit `@layer` rules so the generated CSS loses to authored CSS. */
     useCSSLayers?: boolean;

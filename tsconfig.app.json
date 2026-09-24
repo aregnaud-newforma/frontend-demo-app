@@ -19,16 +19,25 @@
     "types": ["vite/client"],
     "noEmit": true
   },
-  // The remote declarations too: `account/pages` in src/routes.tsx is a name
-  // the federation runtime resolves, and types/remotes.d.ts is the only place
-  // TypeScript can learn what it points at. Not the rest of types/ - the
-  // postcss declaration serves the config files, which are out of this program.
-  "include": ["src", "types/remotes.d.ts"],
+  // The remote declarations too: `account/pages` in apps/shell/src/routes.tsx
+  // is a name the federation runtime resolves, and apps/shell/types/remotes.d.ts
+  // is the only place TypeScript can learn what it points at. Not the rest of
+  // types/ - the postcss declaration serves the config files, which are out of
+  // this program.
+  //
+  // packages/testing is excluded wholesale rather than by a test-file pattern:
+  // it is the harness, none of it ships, and it is the one package with no
+  // production surface at all.
+  "include": ["apps", "packages/tokens", "apps/shell/types/remotes.d.ts"],
   "exclude": [
-    "src/**/__tests__/**",
-    "src/**/*.test.ts",
-    "src/**/*.test.tsx",
-    "src/**/mocks/**",
-    "src/testing/**"
+    // Build tooling, not shipped code - and it reaches the root config files,
+    // which need the `types/` declarations this program deliberately drops.
+    "apps/*/vite.config.ts",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "apps/*/src/mocks/**",
+    "apps/*/src/app-under-test.ts",
+    "packages/testing/**"
   ]
 }

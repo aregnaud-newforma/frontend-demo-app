@@ -5,8 +5,8 @@ import styleXPostcssPlugin from "@stylexjs/postcss-plugin";
 
 /**
  * StyleX runs in two passes, and both need the same options - so they are
- * written once here, the way ./alias.ts holds the namespaces for the configs
- * that need them.
+ * written once here, the way ./federation.config.ts holds the micro-frontend
+ * contract for the builds that need it.
  *
  * 1. A BABEL pass over the app's own modules, which turns every
  *    `stylex.create({...})` into the class names it compiles to. This is what
@@ -28,6 +28,19 @@ import styleXPostcssPlugin from "@stylexjs/postcss-plugin";
  * them with class names no stylesheet defines).
  */
 const rootDir = fileURLToPath(new URL(".", import.meta.url));
+
+/**
+ * A glob anchored at the repository root, whatever directory the build was
+ * launched from.
+ *
+ * The postcss half globs against `process.cwd()` unless the pattern is
+ * absolute, and each app is built with its own directory as the cwd - so a
+ * relative `packages/tokens/**` written here would look for
+ * apps/account/packages/tokens/ and match nothing. Nothing would fail: the
+ * plugin would emit a stylesheet with no rules and the page would render
+ * unstyled. Absolute patterns take the question off the table.
+ */
+export const fromRoot = (glob: string) => `${rootDir}${glob}`;
 
 // `dev` keeps the readable, per-file debug class names in development and drops
 // them in the production bundle. The e2e specs run against `vite build`, so what
@@ -61,6 +74,9 @@ export const stylexBabelPlugin = [
 export const stylexPostcss = (include: string[]) =>
   styleXPostcssPlugin({
     include,
+    // What a relative pattern would resolve against, for the same reason
+    // `fromRoot` exists. The plugin also reports watch dependencies through it.
+    cwd: rootDir,
     // The generated rules go in a CSS layer, so anything written by hand
     // outside a layer beats them without needing a specificity fight.
     useCSSLayers: true,

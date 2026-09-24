@@ -14,18 +14,13 @@
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "Bundler",
-    // One namespace per top-level folder in src/. The runtime half of this list
-    // lives in ./alias.ts, which vite.config.ts and vitest.config.ts import;
-    // Playwright reads the mapping straight from here. Keep the two in step.
-    //
-    // Written relative, with no `baseUrl`: TypeScript 7 removed that option, and
-    // a non-relative target is now an error. `./` is resolved against this file,
-    // which is what `baseUrl: "."` used to mean anyway.
-    "paths": {
-      "@account/*": ["./src/account/*"],
-      "@home/*": ["./src/home/*"],
-      "@layout/*": ["./src/layout/*"]
-    },
+    // No `paths`, and none needed: every cross-folder import is a workspace
+    // package now (`@demo/account/mocks/db-utils`), which yarn resolves through
+    // node_modules and TypeScript reads out of that package's `exports`. The
+    // list used to be written twice - here and in alias.ts - and keeping the
+    // two in step was the standing cost this migration removed. Playwright,
+    // which read the mapping straight from this file and had no alias config of
+    // its own, now resolves the same way everything else does.
     // Restricted on purpose: `types` is the ambient half of the program, and
     // these are what the code needs. `vitest/browser` is what teaches
     // TypeScript about `expect.element(...)` and the DOM matchers - without it
@@ -51,8 +46,7 @@
   // This file used to cover src/ minus the tests, which left the tests, the
   // e2e specs and the API server belonging to NO project - and a file in no
   // project is resolved by the editor in an INFERRED one, on default options.
-  // No `baseUrl`/`paths`, so every `@account/...` import reads as a missing
-  // package; no `types`, so `expect.element` is not a function. None of it
+  // no `types`, so `expect.element` is not a function. None of it
   // showed up in CI either, because `tsc` was never asked to compile those
   // files: `yarn verify` passed on a program that did not contain them.
   //
@@ -64,13 +58,13 @@
   // to the shipped app for the build (see the `build` script), which is the
   // check the old exclude list was really there to make.
   "include": [
-    "src",
+    "apps",
+    "packages",
     "server",
     "e2e",
     "evals",
     "types",
     "vitest.setup.ts",
-    "alias.ts",
     "*.config.ts"
   ]
 }

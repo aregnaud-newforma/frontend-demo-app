@@ -5,7 +5,14 @@
   // `--env-file-if-exists`, which Turborepo cannot see; stylex.config.ts
   // because its `rootDir` decides the CSS variable names of every build
   // (packages/tokens/tokens.stylex.ts says why it must stay at the root).
-  "globalDependencies": [".env", "stylex.config.ts", "tsconfig.json"],
+  "globalDependencies": [
+    ".env",
+    ".nvmrc",
+    "tsconfig.json",
+    "stylex.config.ts",
+    "vite.base.ts",
+    "federation.config.ts"
+  ],
   "globalEnv": ["NODE_ENV", "CI"],
   "tasks": {
     // ROOT TASKS (`//#`). A task is one when it answers about the whole
@@ -27,32 +34,47 @@
     "//#server:build": { "inputs": ["server/**", "global.json"] },
     "//#server:test": { "inputs": ["server/**", "global.json"] },
 
-    // Still root tasks because the split has not reached them yet: `build` is
-    // one tsc gate plus three Vite builds driven from here, and `test` is one
-    // Vitest run whose two projects span the whole tree. Both become per-package
-    // tasks as apps/ and packages/ fill in.
-    "//#build": {
-      "outputs": ["dist/**"],
-      "env": ["SENTRY_AUTH_TOKEN", "VITE_SENTRY_DSN", "SENTRY_DSN_*", "SENTRY_RELEASE"]
-    },
-    "//#test": {
-      "outputs": ["coverage/**"]
-    },
+    // One Vitest run whose two projects span every package, and it stays that
+    // way on purpose: the contract AGENTS.md states - the FILENAME, not the
+    // folder, decides a test's tier - is a statement about the repository, and
+    // per-package configs would let a package drift from it with nothing to
+    // catch the drift. It is also what keeps the test tier free of a topology:
+    // the layout's tests use the account's mocks while the account's tests
+    // mount the shell's routes, so any app-to-app test dependency would be a
+    // cycle.
+    "//#test": { "outputs": ["coverage/**"] },
+
+    // Playwright drives the BUILT app, so the three builds are turbo's problem
+    // now rather than something each `webServer` entry re-runs. Not cached: it
+    // starts a Postgres, two services and three preview servers.
     "//#e2e": {
-      "dependsOn": ["//#build"],
-      "outputs": ["playwright-report/**", "test-results/**"]
+      "dependsOn": ["@demo/shell#build", "@demo/account#build", "@demo/home#build"],
+      "cache": false,
+      "env": ["DATABASE_URL", "SENTRY_*"]
     },
 
-    // Per-package tasks. Nothing defines them yet - packages/tokens is exported
-    // as TypeScript source and has no build - but they are the shape the apps
-    // will take: `^build` orders a remote's build after what it consumes.
+    // One per app. `^build` is free today - packages/ export TypeScript source
+    // and have no build - and is here for the day one of them needs it.
+    //
+    // `home` is NOT made to wait for `account`, although its bundle carries the
+    // account's remoteEntry URL: that URL is a string computed from
+    // federation.config.ts, which is in globalDependencies, so a changed port
+    // re-hashes home's build already. An edge would serialise two builds that
+    // can run at once, for nothing.
+    //
+    // SENTRY_AUTH_TOKEN is in `env` for a reason beyond the upload:
+    // vite.base.ts keys `sourcemap` on it, so set and unset are two different
+    // bundles. Turbo 2 also runs tasks in strict env mode, which means this
+    // list is what gets FORWARDED into the task - without it the variables
+    // loaded from .env are filtered out and the build silently produces no
+    // source maps.
     "build": {
       "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.env", "$TURBO_ROOT$/stylex.config.ts"],
+      "inputs": ["$TURBO_DEFAULT$", "!**/__tests__/**", "!**/*.test.ts", "!**/*.test.tsx"],
       "outputs": ["dist/**"],
-      "env": ["SENTRY_AUTH_TOKEN", "VITE_SENTRY_DSN", "SENTRY_DSN_*", "SENTRY_RELEASE"]
+      "env": ["SENTRY_*", "VITE_*", "NODE_ENV"]
     },
-    "check-types": { "dependsOn": ["^check-types"] },
-    "dev": { "cache": false, "persistent": true }
+    "dev": { "cache": false, "persistent": true },
+    "preview": { "dependsOn": ["build"], "cache": false, "persistent": true }
   }
 }

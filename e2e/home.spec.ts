@@ -5,7 +5,7 @@
  *   live in the integration and unit tests).
  */
 import { test, expect, type Page } from "@playwright/test";
-import { accountFactory } from "@account/mocks/db-utils";
+import { accountFactory } from "@demo/account/mocks/db-utils";
 import { startSession } from "./session";
 
 /**

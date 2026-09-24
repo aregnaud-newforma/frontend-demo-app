@@ -10,19 +10,20 @@
  * down with it.
  *
  * What is NOT here is the remote itself. `account/preview` resolves from
- * source in this tier (alias.ts), so a preview that cannot be FETCHED - the
+ * source in this tier (`remotesFromSource` in vitest.config.ts), so a preview
+ * that cannot be FETCHED - the
  * account deployment down - is the e2e tier's to prove, not this one's.
  *
- * The nav gets its own file (@layout/__tests__/Navigation.integration.test.tsx)
+ * The nav gets its own file (apps/shell/src/layout/__tests__/Navigation.integration.test.tsx)
  * because it belongs to the shell, not to this page.
  *
  * Same rules as the account pages: a real Chromium, the real route tree over a
  * memory history, queries by role.
  */
 import { expect, it, describe } from "vitest";
-import { seedAccount } from "@account/mocks/db-utils";
+import { seedAccount } from "@demo/account/mocks/db-utils";
 import { renderRoute } from "@demo/testing/render-route";
-import { app } from "../../app-under-test";
+import { app } from "@demo/shell/app-under-test";
 
 /** The setup function for this file. Apply AHA Testing principle */
 async function renderHomePage() {

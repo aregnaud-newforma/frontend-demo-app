@@ -138,8 +138,8 @@ jobs:
 
           # `evals/run.ts` is the source of the agent names, as it is of the
           # gate names: an agent named here instead would be a declaration wired
-          # into half the system, which is the failure `alias.ts` and the
-          # tsconfig `paths` warn about.
+          # into half the system: a declaration that only half the tooling reads
+          # is the failure mode this repository keeps designing against.
           known=$(yarn --silent evals --list-agents)
 
           # An `evals:<agent>` label selects that agent; no label means the

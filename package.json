@@ -2,6 +2,7 @@
   "name": "frontend-demo-app",
   "private": true,
   "workspaces": [
+    "apps/*",
     "packages/*"
   ],
   "devEngines": {
@@ -15,15 +16,15 @@
   "type": "module",
   "scripts": {
     "start": "yarn db:start && concurrently -k -n accounts,notifications,web -c blue,yellow,green \"yarn accounts:start\" \"yarn notifications:start\" \"yarn dev\"",
-    "dev": "concurrently -k -n shell,account,home -c green,cyan,magenta \"vite\" \"vite --config vite.account.config.ts\" \"vite --config vite.home.config.ts\"",
-    "build": "tsc -p tsconfig.app.json && yarn build:shell && yarn build:account && yarn build:home",
-    "build:shell": "node --env-file-if-exists=.env node_modules/vite/bin/vite.js build",
-    "build:account": "node --env-file-if-exists=.env node_modules/vite/bin/vite.js build --config vite.account.config.ts",
-    "build:home": "node --env-file-if-exists=.env node_modules/vite/bin/vite.js build --config vite.home.config.ts",
-    "preview": "concurrently -k -n shell,account,home -c green,cyan,magenta \"yarn preview:shell\" \"yarn preview:account\" \"yarn preview:home\"",
-    "preview:shell": "vite preview",
-    "preview:account": "vite preview --config vite.account.config.ts",
-    "preview:home": "vite preview --config vite.home.config.ts",
+    "dev": "turbo run dev",
+    "build": "tsc -p tsconfig.app.json && node --env-file-if-exists=.env ./node_modules/.bin/turbo run build",
+    "build:shell": "node --env-file-if-exists=.env ./node_modules/.bin/turbo run build --filter=@demo/shell",
+    "build:account": "node --env-file-if-exists=.env ./node_modules/.bin/turbo run build --filter=@demo/account",
+    "build:home": "node --env-file-if-exists=.env ./node_modules/.bin/turbo run build --filter=@demo/home",
+    "preview": "turbo run preview",
+    "preview:shell": "yarn workspace @demo/shell preview",
+    "preview:account": "yarn workspace @demo/account preview",
+    "preview:home": "yarn workspace @demo/home preview",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
@@ -45,7 +46,7 @@
     "format:check": "oxfmt --check",
     "verify": "oxlint && oxfmt --check && tsc --noEmit && tsc -p tsconfig.app.json && dotnet build server --nologo -warnaserror",
     "browsers:install": "playwright install --with-deps chromium",
-    "postinstall": "msw init public/ --save"
+    "postinstall": "msw init apps/shell/public/ --save"
   },
   "browserslist": [
     "chrome >= 111",
@@ -56,7 +57,7 @@
   ],
   "msw": {
     "workerDirectory": [
-      "public"
+      "apps/shell/public"
     ]
   },
   "dependencies": {
@@ -73,6 +74,9 @@
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",
+    "@demo/account": "1.0.0",
+    "@demo/home": "1.0.0",
+    "@demo/shell": "1.0.0",
     "@demo/testing": "1.0.0",
     "@faker-js/faker": "^9.3.0",
     "@langfuse/client": "^5.11.0",

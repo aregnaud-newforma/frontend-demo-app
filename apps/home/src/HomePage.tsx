@@ -16,7 +16,7 @@ import { colors, radius, space, text } from "@demo/tokens/tokens.stylex";
 /**
  * The account's preview, from the account vertical: a component from ANOTHER
  * remote, reached the way the shell reaches this page - over the wire, by
- * `<remote>/<key>` (vite.home.config.ts says this build consumes `account`).
+ * `<remote>/<key>` (../vite.config.ts says this build consumes `account`).
  * Not `@account/components/AccountPreview`: that would bundle the account's
  * query and API shape into THIS build, and the two verticals would then have to
  * deploy together for a change to either to be safe.

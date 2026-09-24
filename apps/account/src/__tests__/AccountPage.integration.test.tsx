@@ -7,7 +7,7 @@ import { expect, it } from "vitest";
 import { worker } from "@demo/testing/worker";
 import { deferred } from "@demo/testing/deferred";
 import { renderRoute } from "@demo/testing/render-route";
-import { app } from "../../app-under-test";
+import { app } from "@demo/shell/app-under-test";
 import { accounts } from "../mocks/db";
 import { ACCOUNT_URL } from "../mocks/handlers";
 import { createFrenchPhone, seedAccount } from "../mocks/db-utils";

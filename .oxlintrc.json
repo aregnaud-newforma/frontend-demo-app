@@ -31,8 +31,11 @@
 
   "ignorePatterns": [
     "node_modules",
-    "dist",
-    "public/mockServiceWorker.js",
+    // Every app writes into its own dist/ now, so the pattern has to match at
+    // any depth rather than only at the root.
+    "**/dist",
+    ".turbo",
+    "apps/shell/public/mockServiceWorker.js",
     "test-results",
     "playwright-report"
   ],
@@ -67,9 +70,9 @@
       // The entry point imports global.css for its side effect - that IS how a
       // stylesheet is pulled into a bundle, and there is nothing to assign it
       // to. Same exemption as vitest.setup.ts above, for the same reason. A
-      // remote's exposed modules (src/<vertical>/pages.ts, preview.ts) are the
-      // entry points of ITS build, and pull its stylesheet in the same way.
-      "files": ["src/main.tsx", "src/*/pages.ts", "src/*/preview.ts"],
+      // remote's exposed modules (apps/<vertical>/src/pages.ts, preview.ts) are
+      // the entry points of ITS build, and pull its stylesheet in the same way.
+      "files": ["apps/shell/src/main.tsx", "apps/*/src/pages.ts", "apps/*/src/preview.ts"],
       "rules": { "import/no-unassigned-import": "off" }
     }
   ]

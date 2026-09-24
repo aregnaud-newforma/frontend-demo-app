@@ -7,14 +7,14 @@
 // tree *before* each test rather than after, so the last render stays on screen
 // in the Browser UI for inspection.
 import "vitest-browser-react";
-// The app's stylesheet, so a component under test is laid out the way it ships
-// rather than as unstyled markup. main.tsx is not involved in these tests, so
-// nothing else would pull it in.
-import "./src/global.css";
+// The shell's stylesheet, so a component under test is laid out the way it
+// ships rather than as unstyled markup. main.tsx is not involved in these
+// tests, so nothing else would pull it in.
+import "@demo/shell/global.css";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { createWorker } from "@demo/testing/worker";
-import { accounts } from "@account/mocks/db";
-import { handlers } from "@account/mocks/handlers";
+import { accounts } from "@demo/account/mocks/db";
+import { handlers } from "@demo/account/mocks/handlers";
 
 // The one place the app's mock network is named. @demo/testing/worker takes the
 // handlers rather than importing them, so the harness depends on none of the

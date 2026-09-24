@@ -3,8 +3,7 @@ import { defineConfig } from "vitest/config";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import { playwright } from "@vitest/browser-playwright";
-import { alias, remotesFromSource } from "./alias.ts";
-import { stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
+import { fromRoot, stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
 
 // Two projects, two costs - which is the point of the trophy:
 //   unit        *.unit.test.ts        pure functions, Node, no DOM, milliseconds
@@ -16,10 +15,23 @@ import { stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
 // being saved in the wrong directory.
 // e2e/*.spec.ts is owned by Playwright and belongs to neither project.
 
-// The namespaces as the array form `resolve.alias` takes when a regex entry
-// (the remotes) has to sit beside them; the object form cannot hold one.
-const toAliasEntries = (map: Record<string, string>) =>
-  Object.entries(map).map(([find, replacement]) => ({ find, replacement }));
+/**
+ * The remotes, resolved from source rather than over the wire - for the tests
+ * only. `account/pages` in apps/shell/src/routes.tsx is a federated module
+ * (see ./federation.config.ts): in the shell build the plugin fetches it from
+ * the account remote, and no such plugin runs in Vitest. This maps the same
+ * specifier onto the same file the remote would have built from, so the test
+ * tier mounts the route tree the shell ships, minus the network. The e2e tier
+ * is the one that crosses it.
+ *
+ * Deliberately here and nowhere else. In a BUILD, this mapping would make the
+ * shell bundle the pages it is supposed to fetch and the federation would be
+ * silently bypassed. It is also why the packages are SCOPED - `@demo/account`,
+ * not `account`: a package literally named `account` would make
+ * `import("account/pages")` resolve as a real package subpath in the shell's
+ * build, with the same result and nothing to remove.
+ */
+const remotesFromSource = [{ find: /^(account|home)\//, replacement: fromRoot("apps/$1/src/") }];
 
 export default defineConfig({
   test: {
@@ -32,12 +44,17 @@ export default defineConfig({
       // browser project, which is the half people expect to be missing.
       provider: "v8",
       // Root-relative, and a non-wildcard pattern is read as a directory.
-      include: ["src"],
+      include: ["apps/*/src", "packages/*/src", "packages/tokens"],
       // What is left is the app's own source. Tests, factories and MSW handlers
       // are the things doing the covering, and counting them flatters the
       // number by measuring the suite against itself; the bootstrap files have
       // no behaviour to lose.
-      exclude: ["src/**/__tests__/**", "src/account/mocks/**", "src/main.tsx", "src/routes.tsx"],
+      exclude: [
+        "**/__tests__/**",
+        "apps/account/src/mocks/**",
+        "apps/shell/src/main.tsx",
+        "src/routes.tsx",
+      ],
       // `text` prints the table but HIDES every file already at 100%, so a file
       // that slips from 100% to 90% appears out of nowhere and one that was
       // never instrumented looks identical to one that was perfect. The summary
@@ -47,9 +64,10 @@ export default defineConfig({
     },
     projects: [
       {
-        // Each project resolves on its own, so the namespaces from ./alias.ts
-        // have to be declared per project rather than once at the root.
-        resolve: { alias },
+        // No `resolve` of its own: what the namespaces used to need is a
+        // package name now, and the unit tier never touches a federated
+        // specifier - those only appear in the route tree, which only the
+        // integration tier mounts.
         test: {
           name: "unit",
           // Injects describe/it/expect as globals so test files need no imports.
@@ -64,7 +82,8 @@ export default defineConfig({
           // (`yarn server:test`), which is why this is a pattern and not the
           // whole folder.
           include: [
-            "src/**/*.unit.test.{ts,tsx}",
+            "apps/*/src/**/*.unit.test.{ts,tsx}",
+            "packages/*/src/**/*.unit.test.{ts,tsx}",
             "evals/**/*.unit.test.ts",
             "server/**/*.unit.test.ts",
           ],
@@ -85,7 +104,12 @@ export default defineConfig({
         // Browser Mode may mount any component, so it needs every rule.
         css: {
           postcss: {
-            plugins: [stylexPostcss(["src/**/*.{ts,tsx}", "packages/tokens/tokens.stylex.ts"])],
+            plugins: [
+              stylexPostcss([
+                fromRoot("apps/*/src/**/*.{ts,tsx}"),
+                fromRoot("packages/tokens/tokens.stylex.ts"),
+              ]),
+            ],
           },
         },
         // vitest-browser-react bundles the React it renders with, and a router
@@ -93,16 +117,16 @@ export default defineConfig({
         // read properties of null (reading 'useContext')" the moment a route
         // renders. Deduping pins every dependency to one React instance.
         //
-        // The remotes resolve from source here - alias.ts says why the tests
-        // are the one place that mapping is allowed.
+        // The remotes resolve from source here - `remotesFromSource` above says
+        // why the tests are the one place that mapping is allowed.
         resolve: {
-          alias: [...toAliasEntries(alias), ...remotesFromSource],
+          alias: remotesFromSource,
           dedupe: ["react", "react-dom"],
         },
         test: {
           name: "integration",
           globals: true,
-          include: ["src/**/*.integration.test.{ts,tsx}"],
+          include: ["apps/*/src/**/*.integration.test.{ts,tsx}"],
           setupFiles: ["./vitest.setup.ts"],
           browser: {
             enabled: true,

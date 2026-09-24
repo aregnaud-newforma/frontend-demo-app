@@ -12,7 +12,7 @@
  *
  * Written once here rather than in each config so that a remote's name and
  * port cannot disagree between the build that serves it and the shell that
- * fetches it - the same reason ./alias.ts exists.
+ * fetches it.
  */
 
 /**
@@ -50,7 +50,7 @@ export const remoteEntryUrl = (name: RemoteName, command: "build" | "serve") =>
 
 /**
  * One remote as a consumer declares it - the shell for every remote, a remote
- * for the one it embeds a component from (vite.home.config.ts). `type:
+ * for the one it embeds a component from (apps/home/vite.config.ts). `type:
  * "module"` because the remotes are ESM builds of this same plugin; the
  * default is the global-variable format webpack emits.
  */

@@ -3,7 +3,6 @@ import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import { federation } from "@module-federation/vite";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
-import { alias } from "./alias.ts";
 import {
   dts,
   remoteEntry,
@@ -12,23 +11,27 @@ import {
   shared,
   type RemoteName,
 } from "./federation.config.ts";
-import { stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
+import { fromRoot, stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
 
 /**
  * What the shell build and every remote build have in common: the same
- * toolchain over the same source tree, differing only in which part of it they
- * ship. Held here so a plugin added to one build cannot be forgotten in another
- * - the way ./alias.ts holds the namespaces and ./stylex.config.ts the StyleX
- * options. vitest.config.ts declares its own copy of the plugin list: Browser
- * Mode serves through its own pipeline and takes no `vite.config.ts`.
+ * toolchain, differing only in which app it is pointed at. Held here so a
+ * plugin added to one build cannot be forgotten in another - the way
+ * ./stylex.config.ts holds the StyleX options. vitest.config.ts declares its
+ * own copy of the plugin list: Browser Mode serves through its own pipeline
+ * and takes no `vite.config.ts`.
+ *
+ * At the repository root rather than in a package: each app's vite.config.ts
+ * reaches it relatively, which Vite's config loader always bundles, while a
+ * bare specifier can be externalised and handed to Node as raw TypeScript.
  */
 
 // The browsers this app is built for, restated in esbuild's own vocabulary.
 // Vite does not read `browserslist` — `build.target` takes esbuild names
 // (`safari16.4`), not browserslist queries (`safari >= 16.4`), and a
-// `browserslist` field is ignored in silence. So the floor is declared twice,
-// the same way `alias.ts` and tsconfig `paths` are: here for what Vite emits,
-// and in package.json for every tool that does read browserslist.
+// `browserslist` field is ignored in silence. So the floor is declared twice:
+// here for what Vite emits, and in package.json for every tool that does read
+// browserslist.
 //
 // These values are Vite 8's own `baseline-widely-available` default, written
 // down rather than inherited: that default is pinned per Vite major, so a Vite
@@ -165,7 +168,11 @@ export const remoteConfig = (
   { exposes, consumes = [] }: RemoteOptions,
   command: "build" | "serve",
 ): UserConfig => {
-  const outDir = `dist/${name}`;
+  // Its OWN dist/, inside apps/<name>/, not a shared dist/<name> at the root.
+  // Turborepo restores a cache entry by overwriting the task's declared
+  // outputs, so three builds writing into one directory would have one
+  // restore clobber another's artefacts.
+  const outDir = "dist";
   const port = remotes[name];
   const consumed = Object.fromEntries(
     consumes.map((remote) => [remote, remoteRef(remote, command)]),
@@ -175,12 +182,11 @@ export const remoteConfig = (
     // public/ is the shell's: index.html's favicon, the MSW worker the tests
     // register. A remote serves what it exposes and nothing else.
     publicDir: false,
-    // Its own pre-bundle cache. The default is node_modules/.vite for every
-    // build of this root, and `yarn dev` runs three at once: each writes
+    // No `cacheDir` override any more. It was here because three builds shared
+    // one Vite root and therefore one node_modules/.vite: each wrote
     // pre-bundled dependencies carrying ITS federation ids, and the last to
-    // write wins for all - the shell then fails to resolve a `virtual:mf:` id
-    // that belongs to a remote. See cacheDir in ./vite.config.ts as well.
-    cacheDir: `node_modules/.vite/${name}`,
+    // write won for all. Each app is its own root now, so the default is
+    // already one cache per build.
     // What the dev server's dependency scan starts from. Without an
     // index.html it would crawl the root's - the SHELL's - and fail on the
     // `account/pages` imports in src/routes.tsx, which only the shell's
@@ -199,8 +205,13 @@ export const remoteConfig = (
       federation({ name, filename: remoteEntry, exposes, remotes: consumed, shared, dts }),
       ...sentrySourcemaps(outDir, sentryProjectFor(name)),
     ],
-    css: stylexCss([`src/${name}/**/*.{ts,tsx}`, "packages/tokens/tokens.stylex.ts"]),
-    resolve: { alias },
+    // Absolute, because this build runs with apps/<name>/ as its cwd and the
+    // tokens are outside it - ../stylex.config.ts's `fromRoot` says why a
+    // relative pattern would match nothing without failing.
+    css: stylexCss([
+      fromRoot(`apps/${name}/src/**/*.{ts,tsx}`),
+      fromRoot("packages/tokens/tokens.stylex.ts"),
+    ]),
     server: { port: port.dev, strictPort: true, origin: `http://localhost:${port.dev}` },
     preview: { port: port.preview, strictPort: true },
   };

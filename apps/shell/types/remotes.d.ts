@@ -2,7 +2,7 @@
  * What the shell's imports of a remote resolve to.
  *
  * `account/pages` is not a package and not a path: it is the name of a remote
- * plus a key it exposes (federation.config.ts, vite.account.config.ts), and at
+ * plus a key it exposes (federation.config.ts, apps/account/vite.config.ts), and at
  * runtime the federation plugin fetches it from the remote's own origin.
  * TypeScript knows nothing of that, so each exposed module is declared here as
  * a re-export of the source file behind it - the types are the source's own,
@@ -19,13 +19,13 @@
  * the shell ships, minus the network.
  */
 declare module "account/pages" {
-  export * from "@account/pages";
+  export * from "@demo/account/pages";
 }
 
 declare module "account/preview" {
-  export * from "@account/preview";
+  export * from "@demo/account/preview";
 }
 
 declare module "home/pages" {
-  export * from "@home/pages";
+  export * from "@demo/home/pages";
 }

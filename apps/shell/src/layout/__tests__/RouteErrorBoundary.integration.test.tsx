@@ -23,7 +23,7 @@ import { expect, it, vi } from "vitest";
 import { renderRoute } from "@demo/testing/render-route";
 import { app } from "../../app-under-test";
 
-vi.mock("@home/HomePage", () => ({
+vi.mock("@demo/home/HomePage", () => ({
   HomePage: () => {
     throw new Error("route exploded");
   },

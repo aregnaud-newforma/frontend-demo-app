@@ -1,8 +1,8 @@
 import { createBrowserRouter, type RouteObject } from "react-router";
 import { wrapCreateBrowserRouter } from "@sentry/react";
-import { PageLoading } from "@layout/PageLoading";
-import { RootLayout } from "@layout/RootLayout";
-import { RouteErrorBoundary } from "@layout/RouteErrorBoundary";
+import { PageLoading } from "./layout/PageLoading";
+import { RootLayout } from "./layout/RootLayout";
+import { RouteErrorBoundary } from "./layout/RouteErrorBoundary";
 import { initSentry, routerInstrumentation } from "./sentry";
 
 /*

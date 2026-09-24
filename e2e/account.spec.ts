@@ -5,8 +5,8 @@
  *   live in the integration and unit tests).
  */
 import { test, expect, type Page } from "@playwright/test";
-import { accountFactory, createFrenchPhone } from "@account/mocks/db-utils";
-import { LANGUAGE_LABELS } from "@account/helpers/validation";
+import { accountFactory, createFrenchPhone } from "@demo/account/mocks/db-utils";
+import { LANGUAGE_LABELS } from "@demo/account/helpers/validation";
 import { readNotifications, startSession } from "./session";
 
 /**
