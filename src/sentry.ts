@@ -1,6 +1,57 @@
 import * as Sentry from "@sentry/react";
 import { reactRouterBrowserTracingIntegration } from "@sentry/react/react-router";
+import type { ClientInstrumentation } from "react-router";
 import { ownerOf } from "./sentry-owner";
+
+/**
+ * When the navigation now in flight was asked for, in ms since the epoch, or
+ * nothing when none is.
+ *
+ * Set by `routerInstrumentation` below as the router starts a navigation, read
+ * back by `beforeStartSpan` in `initSentry` as Sentry starts the span for it,
+ * so the span begins at the click rather than at the URL change. Measured, the
+ * two are 96ms apart on `/` -> `/account`, and the whole of that is the account
+ * remote being fetched: a data router resolves a route's `lazy` BEFORE it
+ * commits the URL, and the URL is what Sentry's `wrapCreateBrowserRouter`
+ * listens for. Every chunk of the remote had landed before the span existed,
+ * and Sentry drops a resource entry that predates the span it would belong to
+ * (`addPerformanceEntries` in @sentry/browser-utils), so a navigation into a
+ * remote read as a bare API call. The pageload span never had the problem: it
+ * starts at init, before any remote, which is why `/` showed every chunk and
+ * `/account` none.
+ *
+ * A module variable rather than a span, because at the moment the router calls
+ * the hook there is no span to hold it - that is the whole gap. React Router's
+ * `route.instrument({ lazy })` would have been the natural place to time the
+ * load itself, and it does not fire here: the router wraps only the function
+ * form of `lazy`, and ../routes.tsx uses the object form on purpose.
+ */
+let navigationStartedAt: number | undefined;
+
+/**
+ * What ../routes.tsx hands to `createBrowserRouter` as `instrumentations`.
+ *
+ * Observational by contract - React Router neither lets a hook alter a
+ * navigation nor lets an error thrown in one escape - so this is a change to
+ * what Sentry sees and not to what the router does. `navigate` wraps the
+ * router's own `navigate()`, which is what `<Link>` calls; the back button goes
+ * through `popstate` instead and never reaches it, and a POP has no remote to
+ * fetch, so its span starting at the URL change loses nothing.
+ */
+export const routerInstrumentation: ClientInstrumentation = {
+  router(router) {
+    router.instrument({
+      async navigate(callNavigate) {
+        navigationStartedAt = Date.now();
+        await callNavigate();
+        // Consumed by the span in the normal case; cleared here for the
+        // navigation that never got one - interrupted, or to the same URL -
+        // so the next span does not start at a click that was not for it.
+        navigationStartedAt = undefined;
+      },
+    });
+  },
+};
 
 /**
  * Error and performance reporting, started by ./routes.tsx rather than by the
@@ -74,7 +125,19 @@ export function initSentry() {
     // are separable in Sentry without a second variable to keep in step.
     environment: import.meta.env.MODE,
     integrations: [
-      reactRouterBrowserTracingIntegration(),
+      reactRouterBrowserTracingIntegration({
+        // The other half of `routerInstrumentation` at the top of this file:
+        // a navigation span starts when the click was, so that the remote it
+        // fetched on the way is inside it. Only navigation - a pageload's start
+        // is the document's, and nothing was clicked.
+        beforeStartSpan(options) {
+          if (options.op !== "navigation" || navigationStartedAt === undefined) return options;
+
+          const startTime = navigationStartedAt;
+          navigationStartedAt = undefined;
+          return { ...options, startTime };
+        },
+      }),
       Sentry.browserProfilingIntegration(),
       Sentry.moduleMetadataIntegration(),
     ],

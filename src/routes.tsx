@@ -3,7 +3,7 @@ import { wrapCreateBrowserRouter } from "@sentry/react";
 import { PageLoading } from "@layout/PageLoading";
 import { RootLayout } from "@layout/RootLayout";
 import { RouteErrorBoundary } from "@layout/RouteErrorBoundary";
-import { initSentry } from "./sentry";
+import { initSentry, routerInstrumentation } from "./sentry";
 
 /*
  * Before `wrapCreateBrowserRouter` at the bottom of this file, which is Sentry's
@@ -108,5 +108,13 @@ export const createRoutes = (): RouteObject[] => [
  * difference between one span you can compare over time and one per id; this
  * app has no params yet, and naming them by route now is what keeps the first
  * one from splitting the data.
+ *
+ * `instrumentations` is the router's own observability hook, and what it is
+ * for here is the START of that span: the wrapper above learns of a navigation
+ * from the URL change, which a data router makes only after the page's remote
+ * has loaded, and the hook is what sees the click. ../sentry.ts says the rest.
+ * The tests' memory router does without it - Sentry is off there.
  */
-export const router = wrapCreateBrowserRouter(createBrowserRouter)(createRoutes());
+export const router = wrapCreateBrowserRouter(createBrowserRouter)(createRoutes(), {
+  instrumentations: [routerInstrumentation],
+});
