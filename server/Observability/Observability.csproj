@@ -1,0 +1,46 @@
+<!--
+  What both services say to Sentry, said once. Not a service and not a domain:
+  a library the two executables reference for the half of their setup that is
+  the same on either side of the wire - the DSN switch, the environment, the
+  release, the sampler, the logs, the profiler.
+
+  A shared library BETWEEN micro-services is normally the thing to avoid, and
+  the line this one stays on is the reason it is allowed: it carries no domain
+  type. Nothing in here knows what an account is, and neither service can learn
+  the other's shapes through it. See docs/adr/0004 for where that line is drawn.
+
+  A plain class library rather than Microsoft.NET.Sdk.Web - it hosts nothing -
+  with a FrameworkReference for the ASP.NET Core types its one extension method
+  takes. That is how a library extends WebApplicationBuilder without pretending
+  to be an app.
+
+  No Sentry upload properties here. A referencing app's Release build carries
+  this project's PDB into its own output, so `SentryUploadSymbols` in
+  ../Api/Api.csproj and ../Notifications/Notifications.csproj sends this
+  assembly's symbols to THEIR projects - which is what makes a frame in here
+  resolve in whichever service was running when it threw.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The same bar as `tsc` with `noEmit` under `strict`: a warning is a failure. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Observability</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Sentry.AspNetCore" Version="6.11.1" />
+    <!-- The profiler, which ships apart from the SDK because it carries the
+         .NET runtime's own sampling machinery. ALPHA, and .NET 8+ only - see
+         SentrySetup.cs for what it is turned on with. -->
+    <PackageReference Include="Sentry.Profiling" Version="6.11.1" />
+  </ItemGroup>
+
+</Project>

@@ -46,6 +46,19 @@ but `@testing/render-route`. Namespaces are declared twice, in `alias.ts` and in
 `tsconfig.json` `paths`; one wired into only half of that fails either at
 type-check or in the browser tests.
 
+## Services
+
+`server/` is two ASP.NET Core processes and one library. `Api/` owns the
+accounts table and the surface the browser reaches; `Notifications/` owns what a
+message to a person says and is reached only by `Api/`, over HTTP. Neither
+references the other's project - a shape they exchange is declared on both
+sides, and that duplication is the boundary (`docs/adr/0004`).
+
+`Observability/` is the one project both may reference, and it earns that by
+carrying no domain type: the Sentry setup, and nothing that knows what an
+account is. A rule about what a service reports belongs there; a rule about what
+a service IS does not.
+
 ## Writing components
 
 Styles are StyleX, declared in the component file, built from the tokens in
@@ -69,8 +82,9 @@ Both green, every time. Add `yarn api:test` when the change touches `server/`,
 and `yarn e2e` when it crosses the wire — a field that never reaches the
 backend still type-checks and still passes the integration suite.
 
-Seeing a visual change in the browser is part of finishing it: `yarn dev`, with
-`yarn db:start` and then `yarn api:start` running alongside for data.
+Seeing a visual change in the browser is part of finishing it: `yarn start`,
+which brings up the database, both backend services and the three frontend
+builds together.
 
 ## Agent docs
 

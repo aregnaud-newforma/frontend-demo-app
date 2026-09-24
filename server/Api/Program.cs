@@ -12,51 +12,33 @@
 // assumptions being played back at it.
 //
 // WHAT IT IS MADE OF: this file is the HTTP surface only. The tables are in
-// AccountsDb.cs, the queries in Store.cs, the wire shapes in Account.cs - see
+// AccountsDb.cs, the queries in Store.cs, the wire shapes in Account.cs, the
+// per-test isolation in Session.cs - see
 // docs/adr/0002-aspnet-core-and-ef-core-behind-the-api.md for why a demo of a
 // React app carries a .NET process, and 0001 for why it carries a database.
 //
-// PER-TEST ISOLATION: Playwright runs specs in parallel (`fullyParallel`), and
-// one shared backend would mean one spec's PUT changing what another spec's GET
-// returns. So every row is keyed by a session id, which each test generates and
-// puts in a cookie on its own browser context (see e2e/session.ts). The browser
-// sends it with every request; the server reads it and sees only that test's
-// data. This is the part a mocked backend never has to solve, and the part real
-// E2E against a shared environment always does.
+// WHAT IT IS NOT: the whole backend. Telling someone their account changed
+// belongs to the notifications service (../Notifications/Program.cs), which
+// this one calls over HTTP through NotificationsClient.cs. docs/adr/0004 is why
+// the backend is two processes and what that costs.
 //
-// A request that names no session gets DEMO_SESSION, which is seeded on first
+// A request that names no session gets the demo one, which is seeded on first
 // start - that is what makes `yarn dev` show an account rather than an error,
 // since nothing outside the specs ever sets the cookie.
 //
-// Run it with `yarn api:start`, with the database from `yarn db:start` up.
-// Playwright starts the API itself (see the webServer array in
+// Run it with `yarn api:start`, with the database from `yarn db:start` up and
+// the notifications service from `yarn notifications:start` beside it.
+// Playwright starts all of them (see the webServer array in
 // playwright.config.ts), so no one has to remember to.
 using Api;
 using Microsoft.EntityFrameworkCore;
+using Observability;
 
 // The repo's .env, walked up to from wherever `dotnet run` put the working
 // directory. Before anything reads a variable: the connection string, the DSN
 // and the port below all come from it. Missing is fine - CI sets its variables
 // itself and has no .env.
 DotNetEnv.Env.TraversePath().Load();
-
-// The cookie the browser carries, and the header the seeding call sends.
-const string SessionCookie = "e2e-session";
-const string SessionHeader = "x-e2e-session";
-
-// The session a request belongs to when it names none - which is every request
-// from a browser someone opened themselves, since only the specs set the
-// cookie. Without it `yarn dev` has no way to reach any data at all: the store
-// starts empty and `/__test__/account` is the only thing that fills it.
-//
-// Seeded once, the first time the API starts against an empty database, and
-// mutable like any other session: the form saves, the summary comes back
-// changed, and the change is still there after a restart.
-//
-// A spec that forgets `startSession` lands here rather than on an error - but
-// it still fails, and at the right place: its assertions name the random values
-// it seeded, and this record matches none of them.
-const string DemoSession = "demo";
 
 var demoAccount = new Account(
     Id: "demo-account",
@@ -71,8 +53,8 @@ var demoAccount = new Account(
 // `Production`, which is the one value nearly never true of this process: a
 // Properties/launchSettings.json is what usually sets it, and this project
 // carries none so that `yarn api:start` and Playwright's webServer run the same
-// command in the same environment. The name is what Sentry's `environment`
-// below is built from.
+// command in the same environment. The name is what Sentry's `environment` is
+// built from.
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
@@ -81,7 +63,8 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 
 builder.WebHost.UseUrls($"http://localhost:{Environment.GetEnvironmentVariable("PORT") ?? "3001"}");
 
-// The API's own Sentry, and the other half of a trace that starts in a browser.
+// The API's own Sentry, and the middle of a trace that starts in a browser and
+// ends in the notifications service.
 //
 // ../../src/sentry.ts already reports what the browser does, which gets the
 // request to `/api/account` as far as an `http.client` span and no further: how
@@ -98,124 +81,50 @@ builder.WebHost.UseUrls($"http://localhost:{Environment.GetEnvironmentVariable("
 // query - all of that is on by default in this package, so none of it is
 // written here.
 //
-// Off unless `SENTRY_DSN` is set, exactly as the browser half is off without
-// `VITE_SENTRY_DSN`. That is what keeps CI quiet - .github/workflows/ci.yml sets
-// DATABASE_URL and no DSN, so the failures its E2E specs provoke on purpose are
-// reported to nobody. Note that this cuts the other way LOCALLY: `yarn e2e`
-// starts the API through `yarn api:start`, which reads .env, so a DSN sitting
-// there means the specs' own traffic is traced like any other.
+// The options themselves are in ../Observability/SentrySetup.cs, because the
+// notifications service wants the same ones and a rule that lives in two files
+// is a rule that will disagree with itself. What stays here is the part that is
+// this service's own: its name, and which variable holds its DSN.
 //
 // A DIFFERENT SENTRY PROJECT from the browser's, `alexisregnaud/frontend-demo-api`.
-// A trace is linked by its id, not by its project, so the two halves still read
-// as one trace - while a .NET stack and a React stack stay in separate issue
-// streams, and the source-map upload in ../../vite.config.ts stays a
+// A trace is linked by its id, not by its project, so all three parts still
+// read as one trace - while a .NET stack and a React stack stay in separate
+// issue streams, and the source-map upload in ../../vite.config.ts stays a
 // frontend-only concern.
-builder.WebHost.UseSentry(options =>
-{
-    options.Dsn = Environment.GetEnvironmentVariable("SENTRY_DSN");
-    // `development`, `production`: the browser half sends Vite's `MODE`, and
-    // these are the same words in the same case, so the two are one environment
-    // in Sentry rather than `development` next to `Development`.
-    options.Environment = builder.Environment.EnvironmentName.ToLowerInvariant();
-    // WHICH BUILD this is, in the SAME WORDS as the browser half.
-    //
-    // Left alone this SDK does name the commit - the .NET SDK stamps the source
-    // revision into the assembly's informational version, so the default reads
-    // `Api@1.0.0+8ffc29c...`. What it does not do is MATCH: the browser's
-    // release is the bare sha, put there by @sentry/vite-plugin
-    // (../../vite.config.ts), so a search for one release finds one half of the
-    // request and not the other, and the two projects cannot be compared over a
-    // deploy.
-    //
-    // The same variable the JS tooling reads, so one
-    // `SENTRY_RELEASE=$(git rev-parse HEAD)` covers both. Unset leaves the
-    // SDK's own default - a name that is right but spelled differently.
-    if (Environment.GetEnvironmentVariable("SENTRY_RELEASE") is { Length: > 0 } release)
-    {
-        options.Release = release;
-    }
-    // A sampler rather than a flat `TracesSampleRate`, for one reason:
-    // Playwright's webServer polls /health until the process answers (see
-    // ../../playwright.config.ts), and at a flat rate every poll is a trace of
-    // its own - noise outnumbering the requests anyone opened Sentry to look at.
-    //
-    // The parent's decision first, whichever way it went: when the browser
-    // already decided to sample this trace, that decision arrives in `baggage`
-    // and is honoured, so no trace is ever recorded half-way. The fallback of 1
-    // applies only to a request that named no trace - curl, or the seeding call
-    // the E2E specs make - and matches the browser's own `tracesSampleRate: 1`.
-    options.TracesSampler = context =>
-    {
-        if (context.TransactionContext.IsParentSampled is bool parentSampled)
-        {
-            return parentSampled ? 1 : 0;
-        }
-        return context.TransactionContext.Name == "GET /health" ? 0 : 1;
-    };
-    // Structured logs, OFF by default in this SDK. On, what the app writes
-    // through `ILogger<T>` also goes to Sentry, stamped with the trace and the
-    // span that were active when the line was written - which is what puts a
-    // line this API logged inside the browser's trace, under the very span that
-    // was serving the request.
-    //
-    // Worth knowing before turning it on anywhere real: the sampler above
-    // governs traces, NOT logs. A request whose trace was dropped still sends
-    // whatever it logged, so the rate limiting has to happen at the filter
-    // below or in `SetBeforeSendLog`.
-    options.EnableLogs = true;
-    // The same thing the browser half now does (../../src/sentry.ts), on the
-    // other side of the request: the trace says the PUT took 120ms and that
-    // `db.query` was 90 of them, the profile says which .NET frames spent the
-    // rest.
-    //
-    // `ProfilesSampleRate` multiplies the sampler above rather than replacing
-    // it - 1.0 here means "every transaction that was already sampled", so the
-    // /health polls the sampler drops are not profiled either.
-    //
-    // Worth saying out loud in a demo: Sentry marks .NET profiling ALPHA, on
-    // .NET 8+ only. The integration starts the runtime profiler asynchronously,
-    // so the first request or two after a start may carry no profile.
-    options.ProfilesSampleRate = 1.0;
-    options.AddProfilingIntegration();
-    // `SendDefaultPii` is left at its default, which in this SDK is OFF - the
-    // opposite of the browser's Sentry v11, where ../../src/sentry.ts has to
-    // switch `dataCollection.userInfo` off by hand. Same outcome on both sides:
-    // what debugs a slow query is the query; who asked for it is not.
-});
+builder.AddDemoObservability("account-api", Environment.GetEnvironmentVariable("SENTRY_DSN"));
 
 builder.Services.AddDbContext<AccountsDb>(options => options.UseNpgsql(AccountsDb.ConnectionString()));
+
+// The line that makes the second service visible in a trace, and it is easy to
+// miss because it looks like plumbing.
+//
+// `AddHttpClient` turns on the HTTP client FACTORY, and Sentry.AspNetCore
+// registers a message handler filter on it: every client the factory builds
+// gets a handler that attaches `sentry-trace` and `baggage` to outgoing
+// requests and opens an `http.client` span for each one. The typed overload
+// gives NotificationsClient its own configured client through that same
+// factory. Take this away and the account API still calls the notifications
+// service, and Sentry shows two unrelated traces instead of one.
+//
+// The timeout is short on purpose: a save waits for this call (see
+// NotificationsClient.cs), so a notifications service that hangs would
+// otherwise hold the visitor's PUT open for the client's 100-second default.
+builder.Services.AddHttpClient<NotificationsClient>(client =>
+{
+    client.BaseAddress = NotificationsClient.BaseAddress;
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
 
 // EF Core prints every statement it runs at Information, which with no
 // appsettings.json to say otherwise is the level this host logs at. The SQL
 // is worth having, and it is already where it is worth having: on the
 // `db.query` span Sentry attaches to the request. The terminal `yarn start`
 // shares with Vite is not that place.
+//
+// The other filter this host used to carry - the one keeping the framework's
+// running commentary out of Sentry - is in ../Observability/SentrySetup.cs now,
+// with the rest of what both services say.
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
-
-// Sentry gets THIS app's logs, not the framework's running commentary.
-// `EnableLogs` forwards everything the logging pipeline emits, and at
-// Information - the level this host logs at - that is five lines out of Hosting
-// and Routing for every single request ("Request starting", "Executing
-// endpoint", ...) before one of ours is reached.
-//
-// Below Warning only, so a framework line that reports actual trouble still
-// arrives. Matched on the provider rather than declared globally like the EF
-// Core line above, because the two want opposite things: the terminal `yarn
-// start` shares with Vite is where "Request finished" is worth reading, and
-// Sentry is where it is a bill.
-//
-// A predicate and a name rather than the typed `AddFilter<SentryLoggerProvider>`
-// overload: that type is internal to Sentry.Extensions.Logging and will not
-// compile here. `provider` arrives as either the provider's full type name or
-// its `[ProviderAlias]`, and "Sentry" is in both.
-//
-// Note the one thing this does NOT do: a log Sentry drops here is still written
-// to the console, and it is still NOT a span. Spans come from the tracing
-// middleware and answer to `TracesSampler` above instead.
-builder.Logging.AddFilter((provider, category, level) =>
-    level >= LogLevel.Warning
-    || provider?.Contains("Sentry", StringComparison.Ordinal) != true
-    || category?.StartsWith("Microsoft", StringComparison.Ordinal) != true);
 
 var app = builder.Build();
 
@@ -227,9 +136,9 @@ using (var startup = app.Services.CreateScope())
 {
     var db = startup.ServiceProvider.GetRequiredService<AccountsDb>();
     await db.Database.MigrateAsync();
-    if (await Store.FindAccount(db, DemoSession) is null)
+    if (await Store.FindAccount(db, Session.Demo) is null)
     {
-        await Store.SaveAccount(db, DemoSession, demoAccount);
+        await Store.SaveAccount(db, Session.Demo, demoAccount);
     }
 }
 
@@ -248,15 +157,25 @@ app.MapGet("/health", () => Results.Json(new { ok = true }));
 // Test-only: put an account in this session's store. Namespaced away from
 // /api/ so it is obvious at the call site that it is not part of the product
 // surface the specs are exercising.
+//
+// No notification: seeding is a spec arranging its GIVEN, not somebody editing
+// their details, and a notification for it would be one the spec then has to
+// subtract before it can assert on the save it actually made.
 app.MapPut("/__test__/account", async (HttpRequest request, Account account, AccountsDb db) =>
-    Results.Json(await Store.SaveAccount(db, ReadSession(request), account), statusCode: StatusCodes.Status201Created));
+    Results.Json(await Store.SaveAccount(db, Session.Read(request), account), statusCode: StatusCodes.Status201Created));
 
 app.MapGet("/api/account", async (HttpRequest request, AccountsDb db) =>
-    await Store.FindAccount(db, ReadSession(request)) is { } account ? Results.Json(account) : NoAccount());
+    await Store.FindAccount(db, Session.Read(request)) is { } account ? Results.Json(account) : NoAccount());
 
-app.MapPut("/api/account", async (HttpRequest request, AccountPayload payload, AccountsDb db, ILogger<Program> logger) =>
+app.MapPut("/api/account", async (
+    HttpRequest request,
+    AccountPayload payload,
+    AccountsDb db,
+    NotificationsClient notifications,
+    ILogger<Program> logger) =>
 {
-    if (await Store.UpdateAccount(db, ReadSession(request), payload) is not { } updated)
+    var session = Session.Read(request);
+    if (await Store.UpdateAccount(db, session, payload) is not { } updated)
     {
         return NoAccount();
     }
@@ -268,6 +187,10 @@ app.MapPut("/api/account", async (HttpRequest request, AccountPayload payload, A
         "Account updated (langue: {Langue}, phone: {HasTelephone})",
         updated.Langue,
         updated.Telephone is not null);
+    // The second service, called after the save and before the response.
+    // Awaited, and unable to fail this endpoint - NotificationsClient.cs is
+    // where both of those decisions are argued.
+    await notifications.AccountChanged(session, updated);
     return Results.Json(updated);
 });
 
@@ -277,15 +200,6 @@ app.MapPut("/api/account", async (HttpRequest request, AccountPayload payload, A
 // src/account/helpers/api.ts, which looks at `response.ok` and nothing else).
 
 app.Run();
-
-static string ReadSession(HttpRequest request)
-{
-    if (request.Headers.TryGetValue(SessionHeader, out var header) && !string.IsNullOrEmpty(header))
-    {
-        return header.ToString();
-    }
-    return request.Cookies.TryGetValue(SessionCookie, out var cookie) ? cookie : DemoSession;
-}
 
 static IResult NoAccount() =>
     Results.Json(new { error = "No account for this session" }, statusCode: StatusCodes.Status404NotFound);
