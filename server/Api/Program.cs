@@ -117,6 +117,23 @@ builder.WebHost.UseSentry(options =>
     // these are the same words in the same case, so the two are one environment
     // in Sentry rather than `development` next to `Development`.
     options.Environment = builder.Environment.EnvironmentName.ToLowerInvariant();
+    // WHICH BUILD this is, in the SAME WORDS as the browser half.
+    //
+    // Left alone this SDK does name the commit - the .NET SDK stamps the source
+    // revision into the assembly's informational version, so the default reads
+    // `Api@1.0.0+8ffc29c...`. What it does not do is MATCH: the browser's
+    // release is the bare sha, put there by @sentry/vite-plugin
+    // (../../vite.config.ts), so a search for one release finds one half of the
+    // request and not the other, and the two projects cannot be compared over a
+    // deploy.
+    //
+    // The same variable the JS tooling reads, so one
+    // `SENTRY_RELEASE=$(git rev-parse HEAD)` covers both. Unset leaves the
+    // SDK's own default - a name that is right but spelled differently.
+    if (Environment.GetEnvironmentVariable("SENTRY_RELEASE") is { Length: > 0 } release)
+    {
+        options.Release = release;
+    }
     // A sampler rather than a flat `TracesSampleRate`, for one reason:
     // Playwright's webServer polls /health until the process answers (see
     // ../../playwright.config.ts), and at a flat rate every poll is a trace of
@@ -146,6 +163,20 @@ builder.WebHost.UseSentry(options =>
     // whatever it logged, so the rate limiting has to happen at the filter
     // below or in `SetBeforeSendLog`.
     options.EnableLogs = true;
+    // The same thing the browser half now does (../../src/sentry.ts), on the
+    // other side of the request: the trace says the PUT took 120ms and that
+    // `db.query` was 90 of them, the profile says which .NET frames spent the
+    // rest.
+    //
+    // `ProfilesSampleRate` multiplies the sampler above rather than replacing
+    // it - 1.0 here means "every transaction that was already sampled", so the
+    // /health polls the sampler drops are not profiled either.
+    //
+    // Worth saying out loud in a demo: Sentry marks .NET profiling ALPHA, on
+    // .NET 8+ only. The integration starts the runtime profiler asynchronously,
+    // so the first request or two after a start may carry no profile.
+    options.ProfilesSampleRate = 1.0;
+    options.AddProfilingIntegration();
     // `SendDefaultPii` is left at its default, which in this SDK is OFF - the
     // opposite of the browser's Sentry v11, where ../../src/sentry.ts has to
     // switch `dataCollection.userInfo` off by hand. Same outcome on both sides:

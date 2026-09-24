@@ -7,7 +7,7 @@ import { FieldError, errorProps } from "./components/FieldError";
 import { ErrorBanner, LoadingStatus } from "./components/PageState";
 import { toValues, updateAccount, type Account } from "./helpers/api";
 import { accountQueryKey, useAccount } from "./hooks/use-account";
-import { LANGUAGES, LANGUAGE_LABELS, accountSchema } from "./helpers/validation";
+import { LANGUAGES, LANGUAGE_LABELS, accountSchema, type ValidAccount } from "./helpers/validation";
 import { colors, radius, shadow, space, text } from "../tokens.stylex";
 
 const styles = stylex.create({
@@ -129,7 +129,22 @@ function AccountFields({ account }: { account: Account }) {
   const navigate = useNavigate();
 
   const save = useMutation({
-    mutationFn: updateAccount,
+    /*
+     * The same `updateAccount`, inside a span of our own.
+     *
+     * The fetch is already instrumented - the SDK puts an `http.client` span on
+     * every request without being asked - so this one adds the part the network
+     * cannot see: it opens when the user submits and closes when the cache has
+     * the server's answer, which is the duration the user actually waited.
+     * `ui.submit` is what it is FOR, `http.client` is what it DOES, and a trace
+     * is worth reading when it says both.
+     *
+     * `startSpan` ends the span when the promise it returns settles, so the
+     * wrapper has to BE the mutationFn - wrapping `save.mutate` would end the
+     * span the instant the mutation was queued and measure nothing.
+     */
+    mutationFn: (values: ValidAccount) =>
+      Sentry.startSpan({ name: "account.save", op: "ui.submit" }, () => updateAccount(values)),
     onSuccess: (saved) => {
       // Write the server's response straight into the cache, THEN leave.
       queryClient.setQueryData(accountQueryKey, saved);
@@ -142,6 +157,24 @@ function AccountFields({ account }: { account: Account }) {
         hasTelephone: saved.telephone !== null,
         bioLength: saved.bio.length,
       });
+      /*
+       * The same event, counted rather than written down.
+       *
+       * A log answers "what happened in THIS session"; a metric answers "how
+       * often, and is it moving" - saves per hour, split by language, with no
+       * log search to run. Both are stamped with the current trace, so a spike
+       * on the chart opens the traces that made it.
+       *
+       * Attributes, not names: `account.updated` with `langue: "fr"` stays one
+       * series to chart, where `account.updated.fr` would be a new metric per
+       * language. Same rule as the log template above.
+       */
+      Sentry.metrics.count("account.updated", 1, {
+        attributes: { langue: saved.langue, hasTelephone: saved.telephone !== null },
+      });
+      // A distribution rather than a count, because the interesting question is
+      // the SHAPE - p50 against p95 - not the total.
+      Sentry.metrics.distribution("account.bio_length", saved.bio.length);
       void navigate("/account");
     },
   });

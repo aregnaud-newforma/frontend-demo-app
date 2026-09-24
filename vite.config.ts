@@ -16,6 +16,16 @@ import { stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
 // servers because `vite` and `vite preview` do not share config.
 const apiProxy = { "/api": { target: "http://localhost:3001", changeOrigin: false } };
 
+// What the browser's own profiler asks for before it will sample anything.
+// `browserProfilingIntegration` in src/sentry.ts is inert without it, silently:
+// the JS Self-Profiling API refuses to start unless the DOCUMENT carrying the
+// script was served under this policy, and nothing reports that it did not.
+// Declared for both servers for the same reason the proxy is - `vite` and
+// `vite preview` do not share config - and it is the one piece of the Sentry
+// setup a real deployment cannot inherit from this file: the host serving
+// index.html has to send the same header.
+const profilingHeaders = { "Document-Policy": "js-profiling" };
+
 // The browsers this app is built for, restated in esbuild's own vocabulary.
 // Vite does not read `browserslist` — `build.target` takes esbuild names
 // (`safari16.4`), not browserslist queries (`safari >= 16.4`), and a
@@ -85,6 +95,6 @@ export default defineConfig({
   ],
   css: { postcss: { plugins: [stylexPostcss()] } },
   resolve: { alias },
-  server: { port: 5173, strictPort: true, proxy: apiProxy },
-  preview: { port: 4173, strictPort: true, proxy: apiProxy },
+  server: { port: 5173, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
+  preview: { port: 4173, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
 });

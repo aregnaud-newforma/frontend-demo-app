@@ -60,10 +60,64 @@ export function initSentry() {
     // `vite build` says "production", `vite dev` says "development", so the two
     // are separable in Sentry without a second variable to keep in step.
     environment: import.meta.env.MODE,
-    integrations: [reactRouterBrowserTracingIntegration()],
+    integrations: [reactRouterBrowserTracingIntegration(), Sentry.browserProfilingIntegration()],
     // Every transaction, because this is a demo with demo traffic. A real app
     // samples here, or swaps in `tracesSampler` to keep the routes that matter.
     tracesSampleRate: 1,
+    // A profile is the sampled call stack UNDER the spans above: the trace says
+    // the save took 400ms, the profile says which functions spent them.
+    //
+    // `trace` lifecycle rather than `manual`, which is the default: the profiler
+    // runs only while a sampled root span is open, so it follows
+    // `tracesSampleRate` instead of recording the whole page. Nothing to start
+    // or stop by hand.
+    //
+    // The browser refuses to profile at all unless the DOCUMENT was served with
+    // `Document-Policy: js-profiling`. ../vite.config.ts sends that header for
+    // `vite dev` and `vite preview`; a deployment has to set it on whatever
+    // serves index.html. Missing, this integration is simply silent - no error,
+    // no profile.
+    profileSessionSampleRate: 1,
+    profileLifecycle: "trace",
     dataCollection: { userInfo: false },
   });
+
+  Sentry.setUser({ id: visitorId() });
+}
+
+/** Where the id below is kept, and the name it is kept under. */
+const VISITOR_KEY = "demo-visitor-id";
+
+/**
+ * An id for the browser, so an issue can say how many people hit it.
+ *
+ * Without a user on the event, every report is unattributable: Sentry can count
+ * EVENTS but not the people behind them, so an issue one person reloaded fifty
+ * times and an issue fifty people hit once read the same, and there is no way to
+ * pull up everything that happened to one of them. The "users affected" column
+ * is what triage is sorted by, and with nothing set it reads 0 for everything.
+ *
+ * A random uuid, not a name, not an email, not the account the app is about -
+ * the same line `dataCollection.userInfo: false` above draws. An opaque id is
+ * enough to COUNT and to GROUP, which is all the column needs, and it identifies
+ * nobody outside this Sentry project. In an app with real accounts this would be
+ * the account id instead, for the same reason: it links, it does not reveal.
+ *
+ * Kept in localStorage so the same browser stays one person across reloads. That
+ * is also its limit - a new browser, or a cleared site data, is a new "user".
+ */
+function visitorId(): string {
+  try {
+    const stored = localStorage.getItem(VISITOR_KEY);
+    if (stored) return stored;
+
+    const created = crypto.randomUUID();
+    localStorage.setItem(VISITOR_KEY, created);
+    return created;
+  } catch {
+    // Storage can be refused outright - third-party contexts, hardened privacy
+    // settings - and it throws when it is. A fresh id per page load still
+    // counts one visit as one person; it just cannot recognise a return.
+    return crypto.randomUUID();
+  }
 }

@@ -35,6 +35,10 @@
     </PackageReference>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageReference Include="Sentry.AspNetCore" Version="6.11.1" />
+    <!-- The profiler, which ships apart from the SDK because it carries the
+         .NET runtime's own sampling machinery. ALPHA, and .NET 8+ only - see
+         Program.cs for what it is turned on with. -->
+    <PackageReference Include="Sentry.Profiling" Version="6.11.1" />
   </ItemGroup>
 
 </Project>
