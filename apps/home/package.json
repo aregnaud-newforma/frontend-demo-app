@@ -20,5 +20,8 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-router": "^8"
+  },
+  "devDependencies": {
+    "@demo/testing": "1.0.0"
   }
 }

@@ -85,13 +85,19 @@ that touched only `server/` or `docs/`.
 - **Each app writes into its own `dist/`.** Turbo restores a cache entry by
   overwriting the task's declared outputs, so three builds sharing one
   directory would have had one restore clobber another's artefacts.
-- **The test tier is composed at the root, and its dependencies are declared
-  there.** `apps/shell`'s layout tests use the account's mocks while
-  `apps/account`'s tests mount the shell's routes: any app-to-app dependency
-  would be a cycle, and turbo traverses `devDependencies`. `test` is a root
-  task with no topology, `vitest.config.ts` and `vitest.setup.ts` are root
-  files, and the root package is outside the apps' graph. The contract that
-  the FILENAME decides a test's tier is unchanged.
+- **The app-to-app test dependencies are deliberately undeclared.**
+  `apps/shell`'s layout tests use the account's mocks while `apps/account`'s
+  tests mount the shell's routes. Declaring either would be a cycle - turbo
+  traverses `devDependencies` - and declaring both in the ROOT package instead
+  turns out to cost the whole cache: an internal dependency of the root feeds
+  turbo's GLOBAL hash, so with the apps listed there, editing one of them
+  invalidated every task in the repository. Measured, then removed. Yarn
+  symlinks every workspace member into the root `node_modules` whether or not
+  anything declares it, so the imports resolve either way; what is left is a
+  known, written-down gap between what the test files import and what the
+  manifests say. `@demo/testing` IS declared, by each app, because the harness
+  is a leaf and that edge is acyclic. `test` is a root task with no topology,
+  and the contract that the FILENAME decides a test's tier is unchanged.
 - **A cache hit skips the Sentry upload, and only `SENTRY_RELEASE` keeps that
   honest.** It is `${{ github.sha }}` in `ci.yml`, which makes every commit's
   build hash unique. `SENTRY_AUTH_TOKEN` is in the task's `env` for a second
