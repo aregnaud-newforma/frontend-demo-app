@@ -73,6 +73,7 @@
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",
+    "@demo/testing": "1.0.0",
     "@faker-js/faker": "^9.3.0",
     "@langfuse/client": "^5.11.0",
     "@langfuse/otel": "^5.11.0",

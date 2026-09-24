@@ -4,9 +4,9 @@
  */
 import { http, HttpResponse } from "msw";
 import { expect, it } from "vitest";
-import { worker } from "@testing/worker";
-import { deferred } from "@testing/deferred";
-import { renderRoute } from "@testing/render-route";
+import { worker } from "@demo/testing/worker";
+import { deferred } from "@demo/testing/deferred";
+import { renderRoute } from "@demo/testing/render-route";
 import { app } from "../../app-under-test";
 import { accounts } from "../mocks/db";
 import { ACCOUNT_URL } from "../mocks/handlers";

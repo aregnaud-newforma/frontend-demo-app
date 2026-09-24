@@ -5,11 +5,16 @@ import { fileURLToPath } from "node:url";
  * the codebase it reaches into instead of counting how far up it has to climb.
  *
  * The rule is: RELATIVE inside a folder, NAMESPACED across one. `./helpers/api`
- * stays relative because moving the account vertical moves it too; a test
- * reaching for `@testing/render-route` names its target because the harness is
- * somewhere else entirely. That also makes the dependency direction the README
- * describes visible at a glance - `@account/...` appearing inside src/home/ is a
- * vertical importing a vertical, and it now looks like one.
+ * stays relative because moving the account vertical moves it too. That also
+ * makes the dependency direction the README describes visible at a glance -
+ * `@account/...` appearing inside src/home/ is a vertical importing a vertical,
+ * and it now looks like one.
+ *
+ * SHRINKING. The harness left for packages/testing and is reached as
+ * `@demo/testing/render-route` - a real package name, resolved by yarn's
+ * workspace symlink, which no config here or in tsconfig.json has to know
+ * about. Each namespace below goes the same way as its folder becomes a
+ * package, and this file goes with the last one.
  *
  * Kept here rather than repeated in vite.config.ts and vitest.config.ts, which
  * both import it. tsconfig.json still has to spell the same list out in `paths`
@@ -23,7 +28,6 @@ export const alias = {
   "@account": folder("account"),
   "@home": folder("home"),
   "@layout": folder("layout"),
-  "@testing": folder("testing"),
 };
 
 /**

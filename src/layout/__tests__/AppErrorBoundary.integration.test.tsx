@@ -7,7 +7,7 @@
  * user gets SOMETHING, since the alternative this exists to prevent is a blank
  * document with the error only in the console.
  *
- * Rendered on its own rather than through @testing/render-route: the boundary
+ * Rendered on its own rather than through @demo/testing/render-route: the boundary
  * sits outside the router in main.tsx precisely so it survives a router that
  * does not, so mounting it inside one would test the opposite arrangement.
  *

@@ -1,0 +1,21 @@
+{
+  "name": "@demo/testing",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    "./app-providers": "./src/app-providers.tsx",
+    "./app-under-test": "./src/app-under-test.ts",
+    "./deferred": "./src/deferred.ts",
+    "./render-component": "./src/render-component.tsx",
+    "./render-route": "./src/render-route.tsx",
+    "./worker": "./src/worker.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "msw": "^2.7.0",
+    "react": "19.2.8",
+    "react-router": "^8",
+    "vitest-browser-react": "^2.2.0"
+  }
+}

@@ -26,7 +26,7 @@
  */
 import { expect, it } from "vitest";
 import { seedAccount } from "@account/mocks/db-utils";
-import { renderRoute } from "@testing/render-route";
+import { renderRoute } from "@demo/testing/render-route";
 import { app } from "../../app-under-test";
 
 /*

@@ -37,13 +37,7 @@ export default defineConfig({
       // are the things doing the covering, and counting them flatters the
       // number by measuring the suite against itself; the bootstrap files have
       // no behaviour to lose.
-      exclude: [
-        "src/**/__tests__/**",
-        "src/account/mocks/**",
-        "src/testing/**",
-        "src/main.tsx",
-        "src/routes.tsx",
-      ],
+      exclude: ["src/**/__tests__/**", "src/account/mocks/**", "src/main.tsx", "src/routes.tsx"],
       // `text` prints the table but HIDES every file already at 100%, so a file
       // that slips from 100% to 90% appears out of nowhere and one that was
       // never instrumented looks identical to one that was perfect. The summary

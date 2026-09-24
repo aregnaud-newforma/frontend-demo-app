@@ -1,4 +1,4 @@
-import type { AppUnderTest } from "@testing/app-under-test";
+import type { AppUnderTest } from "@demo/testing/app-under-test";
 import { createRoutes } from "./routes";
 import { createQueryClient } from "./query-client";
 
@@ -6,7 +6,7 @@ import { createQueryClient } from "./query-client";
  * This app, as the integration tests mount it.
  *
  * The harness in src/testing/ takes the route tree and the QueryClient factory
- * as an argument so that it depends on nothing of this app's - @testing/
+ * as an argument so that it depends on nothing of this app's - @demo/testing/
  * app-under-test says why - and this file is the other end of that: the ONE
  * place the two are named together, so a test file passes `app` and does not
  * assemble anything itself.

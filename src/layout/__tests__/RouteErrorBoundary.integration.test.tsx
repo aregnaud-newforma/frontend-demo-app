@@ -7,7 +7,7 @@
  * intercepts what a route throws and renders its `errorElement` instead, so the
  * boundary outside <RouterProvider> never sees it - which makes "a page that
  * throws still shows our screen" a claim about the route TREE, not about a
- * component. Hence the real tree here, through @testing/render-route, with one
+ * component. Hence the real tree here, through @demo/testing/render-route, with one
  * page replaced by one that throws.
  *
  * Mocking the page rather than adding a crashing route to ../../routes.tsx: a
@@ -20,7 +20,7 @@
  * call.
  */
 import { expect, it, vi } from "vitest";
-import { renderRoute } from "@testing/render-route";
+import { renderRoute } from "@demo/testing/render-route";
 import { app } from "../../app-under-test";
 
 vi.mock("@home/HomePage", () => ({

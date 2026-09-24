@@ -12,11 +12,11 @@ import "vitest-browser-react";
 // nothing else would pull it in.
 import "./src/global.css";
 import { afterAll, afterEach, beforeAll } from "vitest";
-import { createWorker } from "@testing/worker";
+import { createWorker } from "@demo/testing/worker";
 import { accounts } from "@account/mocks/db";
 import { handlers } from "@account/mocks/handlers";
 
-// The one place the app's mock network is named. @testing/worker takes the
+// The one place the app's mock network is named. @demo/testing/worker takes the
 // handlers rather than importing them, so the harness depends on none of the
 // verticals whose tests depend on it; this file is outside every package and
 // is therefore where the two can meet.

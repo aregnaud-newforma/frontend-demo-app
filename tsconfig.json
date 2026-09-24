@@ -24,8 +24,7 @@
     "paths": {
       "@account/*": ["./src/account/*"],
       "@home/*": ["./src/home/*"],
-      "@layout/*": ["./src/layout/*"],
-      "@testing/*": ["./src/testing/*"]
+      "@layout/*": ["./src/layout/*"]
     },
     // Restricted on purpose: `types` is the ambient half of the program, and
     // these are what the code needs. `vitest/browser` is what teaches
