@@ -21,6 +21,7 @@
  */
 import { expect, it, vi } from "vitest";
 import { renderRoute } from "@testing/render-route";
+import { app } from "../../app-under-test";
 
 vi.mock("@home/HomePage", () => ({
   HomePage: () => {
@@ -44,7 +45,7 @@ async function renderCrashingRoute() {
   vi.spyOn(console, "error").mockImplementation(() => {});
   window.addEventListener("error", silenceExpectedCrash);
 
-  const screen = await renderRoute("/");
+  const screen = await renderRoute("/", app);
 
   return {
     fallback: screen.getByRole("alert"),

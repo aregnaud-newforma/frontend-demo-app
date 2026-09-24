@@ -27,6 +27,7 @@
 import { expect, it } from "vitest";
 import { seedAccount } from "@account/mocks/db-utils";
 import { renderRoute } from "@testing/render-route";
+import { app } from "../../app-under-test";
 
 /*
  * Integration: component
@@ -34,7 +35,7 @@ import { renderRoute } from "@testing/render-route";
 
 /** The setup function for this file. Apply AHA Testing principle */
 async function renderNavigationAt(initialPath: string) {
-  const screen = await renderRoute(initialPath);
+  const screen = await renderRoute(initialPath, app);
   const navigation = screen.getByRole("navigation", { name: "Main" });
 
   return {

@@ -1,5 +1,6 @@
 import { render } from "vitest-browser-react";
 import { AppProviders } from "./app-providers";
+import type { AppUnderTest } from "./app-under-test";
 
 /**
  * Mounts ONE component under the app's providers - the Integration component
@@ -16,6 +17,6 @@ import { AppProviders } from "./app-providers";
  * A component that only ever renders inside one page is a step in that page's
  * journey and belongs in the page's file.
  */
-export async function renderComponent(ui: React.ReactElement) {
-  return await render(<AppProviders>{ui}</AppProviders>);
+export async function renderComponent(ui: React.ReactElement, app: AppUnderTest) {
+  return await render(<AppProviders app={app}>{ui}</AppProviders>);
 }

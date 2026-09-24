@@ -22,10 +22,11 @@
 import { expect, it, describe } from "vitest";
 import { seedAccount } from "@account/mocks/db-utils";
 import { renderRoute } from "@testing/render-route";
+import { app } from "../../app-under-test";
 
 /** The setup function for this file. Apply AHA Testing principle */
 async function renderHomePage() {
-  const screen = await renderRoute("/");
+  const screen = await renderRoute("/", app);
 
   return {
     welcome: screen.getByRole("heading", { name: "Welcome" }),

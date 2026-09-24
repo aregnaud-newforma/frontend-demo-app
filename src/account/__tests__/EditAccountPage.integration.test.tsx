@@ -7,6 +7,7 @@ import { expect, it } from "vitest";
 import { worker } from "@testing/worker";
 import { deferred } from "@testing/deferred";
 import { renderRoute } from "@testing/render-route";
+import { app } from "../../app-under-test";
 import { accounts } from "../mocks/db";
 import { ACCOUNT_URL } from "../mocks/handlers";
 import { accountValuesFactory, createFrenchPhone, seedAccount } from "../mocks/db-utils";
@@ -22,7 +23,7 @@ import type { AccountPayload } from "../helpers/api";
  * The setup function for this file. Apply AHA Testing principle.
  */
 async function renderEditAccountPage() {
-  const screen = await renderRoute("/account/edit");
+  const screen = await renderRoute("/account/edit", app);
 
   return {
     nameInput: () => screen.getByLabelText("Name", { exact: true }),
@@ -67,7 +68,7 @@ it("shows a loading state, then every field seeded from the stored account", asy
   const phone = createFrenchPhone();
   const account = await seedAccount({ telephone: phone.e164 });
   const { promise: accountArrives, resolve: releaseAccount } = deferred<void>();
-  worker.use(
+  worker().use(
     http.get(ACCOUNT_URL, async () => {
       await accountArrives;
       return HttpResponse.json(accounts.findFirst());
@@ -120,7 +121,7 @@ it("edits every field of an account with no phone, saves, and lands on the summa
   const edited = accountValuesFactory.build();
   const phone = createFrenchPhone();
   const { promise: saveArrives, resolve: releaseSave } = deferred<void>();
-  worker.use(
+  worker().use(
     http.put(ACCOUNT_URL, async ({ request }) => {
       await saveArrives;
       const body = (await request.json()) as AccountPayload;
@@ -217,7 +218,7 @@ it("rejects the form when every field is invalid, flags each one, sends nothing,
 it("stays on the form and shows an error banner when the save fails, clearing it once the user edits again", async () => {
   // Given a loaded form and a server that refuses the save
   const account = await seedAccount();
-  worker.use(http.put(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
+  worker().use(http.put(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
   const form = await renderEditAccountPage();
   await expect.element(form.emailInput()).toBeVisible();
 
@@ -261,7 +262,7 @@ it("abandons the edit: Cancel returns to the summary leaving the stored account 
 // Use case: Editing your account — Edge case
 it("shows an error and no form fields when the account fails to load", async () => {
   // Given a server that fails the load
-  worker.use(http.get(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
+  worker().use(http.get(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
 
   // When the visitor opens the edit form
   const form = await renderEditAccountPage();

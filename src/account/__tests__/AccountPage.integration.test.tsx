@@ -7,6 +7,7 @@ import { expect, it } from "vitest";
 import { worker } from "@testing/worker";
 import { deferred } from "@testing/deferred";
 import { renderRoute } from "@testing/render-route";
+import { app } from "../../app-under-test";
 import { accounts } from "../mocks/db";
 import { ACCOUNT_URL } from "../mocks/handlers";
 import { createFrenchPhone, seedAccount } from "../mocks/db-utils";
@@ -20,7 +21,7 @@ import { LANGUAGE_LABELS } from "../helpers/validation";
  * The setup function for this file. Apply AHA Testing principle.
  */
 async function renderAccountPage() {
-  const screen = await renderRoute("/account");
+  const screen = await renderRoute("/account", app);
 
   return {
     // exact: true - "Edit your account" is a substring match on "Your account"
@@ -47,7 +48,7 @@ it("shows a loading state, then every stored field once the account arrives", as
   const phone = createFrenchPhone();
   const account = await seedAccount({ telephone: phone.e164 });
   const { promise: accountArrives, resolve: releaseAccount } = deferred<void>();
-  worker.use(
+  worker().use(
     http.get(ACCOUNT_URL, async () => {
       await accountArrives;
       return HttpResponse.json(accounts.findFirst());
@@ -117,7 +118,7 @@ it('shows "Not provided" for a missing phone and an empty bio, and every other f
 // Use case: Reading your account — Edge case
 it("shows an error and no summary when the account fails to load", async () => {
   // Given a server that fails the load
-  worker.use(http.get(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
+  worker().use(http.get(ACCOUNT_URL, () => new HttpResponse(null, { status: 500 })));
 
   // When the visitor lands on the summary
   const view = await renderAccountPage();
