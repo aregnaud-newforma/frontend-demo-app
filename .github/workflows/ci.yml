@@ -85,7 +85,13 @@ jobs:
     # The token is what turns the same command into a source-map upload: set, it
     # generates the maps, sends them to Sentry and deletes them; unset - which is
     # every pull request from a fork, since secrets are withheld there - the
-    # build runs unchanged and emits no map at all. See vite.config.ts.
+    # build runs unchanged and emits no map at all. See apps/shell/vite.config.ts.
+    #
+    # All four are in the `build` task's `env` in turbo.json, which is what
+    # keeps the cache honest: a cache hit skips the upload, so a token-bearing
+    # build must never be served from a token-less entry. SENTRY_RELEASE being
+    # the sha is the load-bearing part - it makes every commit's build hash
+    # unique, so an upload can never be replayed from an earlier commit.
     env:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       # One Sentry project per remote (vite.base.ts, .env.example). Unset, a
@@ -121,6 +127,27 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      # Turborepo's task cache, carried BETWEEN runs - a fresh runner otherwise
+      # has nothing and every build is cold. The win is a commit that touches
+      # only server/, docs/ or evals/: the three Vite builds are then restored
+      # rather than run, in both this job and e2e.
+      #
+      # Not a win WITHIN a run, and the key says so by including the job name:
+      # `build` runs with the Sentry secrets set and `e2e` without them, those
+      # variables are in the task's `env` in turbo.json, so the two jobs hash
+      # differently on purpose. A token-bearing build must never be served from
+      # a token-less entry.
+      #
+      # Keyed on the sha so every run writes its own entry, with a prefix
+      # restore so it starts from the most recent one. What turbo does with it
+      # is hash-based, not key-based: a restored entry is used only if the
+      # task's own inputs and declared env match.
+      - name: Cache turbo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-${{ github.job }}-
       - run: yarn install --frozen-lockfile
       - run: yarn build
       - run: yarn server:build
@@ -172,6 +199,27 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: ms-playwright-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+      # Turborepo's task cache, carried BETWEEN runs - a fresh runner otherwise
+      # has nothing and every build is cold. The win is a commit that touches
+      # only server/, docs/ or evals/: the three Vite builds are then restored
+      # rather than run, in both this job and e2e.
+      #
+      # Not a win WITHIN a run, and the key says so by including the job name:
+      # `build` runs with the Sentry secrets set and `e2e` without them, those
+      # variables are in the task's `env` in turbo.json, so the two jobs hash
+      # differently on purpose. A token-bearing build must never be served from
+      # a token-less entry.
+      #
+      # Keyed on the sha so every run writes its own entry, with a prefix
+      # restore so it starts from the most recent one. What turbo does with it
+      # is hash-based, not key-based: a restored entry is used only if the
+      # task's own inputs and declared env match.
+      - name: Cache turbo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-${{ github.job }}-
       - run: yarn browsers:install
       # playwright.config.ts starts the API and the preview build itself
       # through `webServer`; with CI set it never reuses a stale server.

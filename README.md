@@ -25,6 +25,7 @@ yarn e2e                # end-to-end, against a real API
 | ------------------------- | ----------------------------------------------------------------------------------- |
 | Modern toolchain          | One Rust-based pipeline: Rolldown to build, oxlint to lint, oxfmt to format         |
 | Vertical codebase         | Group by feature, not file type: pages, schema, queries, mocks, tests colocated     |
+| Monorepo                  | yarn workspaces + Turborepo: one install, one task graph, cached builds             |
 | Micro-frontends           | Each vertical is its own build, fetched by the shell at runtime (Module Federation) |
 | Distributed tracing       | Browser, .NET account API and Node notifications service, one Sentry trace          |
 | Testing strategy (Trophy) | Playwright, Vitest, MSW, FakerJS and Zod, weighted toward integration, unit and E2E |
@@ -35,7 +36,7 @@ yarn e2e                # end-to-end, against a real API
 ```bash
 yarn start                # everything in one terminal: db:start, then both services and dev
 yarn dev                  # the shell and both remotes, each on its own port; the shell proxies /api
-yarn build                # tsc, then the three builds into dist/shell, dist/account, dist/home
+yarn build                # tsc, then the three builds into apps/*/dist - cached, so a second run is a no-op
 yarn preview              # the three builds served as they deploy (build first)
 yarn db:start             # the Postgres behind the accounts service, and wait for it
 yarn accounts:start       # the account API (.NET) alone; migrates the database on start
