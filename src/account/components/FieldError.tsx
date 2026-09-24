@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import type { AnyFieldApi } from "@tanstack/react-form";
-import { colors, space, text } from "../../tokens.stylex";
+import { colors, space, text } from "@demo/tokens/tokens.stylex";
 
 /**
  * How a field reports that it is invalid, in two halves that always ship

@@ -13,10 +13,14 @@ import * as stylex from "@stylexjs/stylex";
  *
  * The `.stylex.ts` suffix is required - it is how the compiler knows this file
  * defines variables, and how every importer resolves to the same ones instead
- * of a fresh set per module.
+ * of a fresh set per module. It is required in the IMPORT SPECIFIER too, which
+ * is why this package exports `./tokens.stylex` rather than `.`: the babel
+ * plugin tests the specifier for that suffix before it resolves anything, so
+ * `@demo/tokens` alone is not recognised as a variable-defining file.
  *
- * At the root of src/ rather than in a vertical: it belongs to no feature, the
- * same reason main.tsx and query-client.ts sit here.
+ * A package of its own rather than a file in a vertical: it belongs to no
+ * feature, and every build - the shell and both remotes - has to compile the
+ * same file to end up with the same CSS variables.
  */
 
 const DARK = "@media (prefers-color-scheme: dark)";

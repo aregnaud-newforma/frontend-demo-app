@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import * as stylex from "@stylexjs/stylex";
-import { colors, radius, space } from "../../tokens.stylex";
+import { colors, radius, space } from "@demo/tokens/tokens.stylex";
 
 /**
  * The two things every page here says while it has nothing to show: that it is

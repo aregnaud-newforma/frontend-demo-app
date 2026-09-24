@@ -1,6 +1,9 @@
 {
   "name": "frontend-demo-app",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "version": "1.0.0",
   "description": "Practical testing-trophy example: static (oxlint/tsc) + unit (Vitest) + integration (Vitest Browser Mode/MSW) + E2E (Playwright).",
   "type": "module",

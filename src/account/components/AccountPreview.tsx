@@ -1,7 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { useAccount } from "../hooks/use-account";
 import { ErrorBanner, LoadingStatus } from "./PageState";
-import { colors, radius, space, text } from "../../tokens.stylex";
+import { colors, radius, space, text } from "@demo/tokens/tokens.stylex";
 
 /**
  * The account in one line - who it belongs to, and how to reach them - for a

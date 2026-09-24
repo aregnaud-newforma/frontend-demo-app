@@ -8,7 +8,7 @@ import { ErrorBanner, LoadingStatus } from "./components/PageState";
 import { toValues, updateAccount, type Account } from "./helpers/api";
 import { accountQueryKey, useAccount } from "./hooks/use-account";
 import { LANGUAGES, LANGUAGE_LABELS, accountSchema, type ValidAccount } from "./helpers/validation";
-import { colors, radius, shadow, space, text } from "../tokens.stylex";
+import { colors, radius, shadow, space, text } from "@demo/tokens/tokens.stylex";
 
 const styles = stylex.create({
   title: {

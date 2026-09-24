@@ -37,7 +37,7 @@ const dev = process.env.NODE_ENV !== "production";
 /**
  * The babel half. `commonJS` module resolution is what lets a `.stylex.ts` file
  * of `defineVars` be imported across modules and still resolve to one set of CSS
- * variables - the tokens in src/tokens.stylex.ts depend on it.
+ * variables - the tokens in packages/tokens depend on it.
  */
 export const stylexBabelPlugin = [
   styleXBabelPlugin,

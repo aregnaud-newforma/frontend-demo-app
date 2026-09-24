@@ -66,7 +66,7 @@ export default defineConfig(({ command }) => ({
   ],
   // The shell's own stylesheet: the layout, and the tokens every build shares.
   // What a page needs arrives with the page, in the remote's stylesheet.
-  css: stylexCss(["src/layout/**/*.tsx", "src/*.{ts,tsx}"]),
+  css: stylexCss(["src/layout/**/*.tsx", "src/*.{ts,tsx}", "packages/tokens/tokens.stylex.ts"]),
   resolve: { alias },
   server: { port: 5173, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
   preview: { port: 4173, strictPort: true, proxy: apiProxy, headers: profilingHeaders },

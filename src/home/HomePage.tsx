@@ -2,7 +2,7 @@ import { lazy, Suspense } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ErrorBoundary } from "@sentry/react";
 import { Link } from "react-router";
-import { colors, radius, space, text } from "../tokens.stylex";
+import { colors, radius, space, text } from "@demo/tokens/tokens.stylex";
 
 /**
  * The landing route. "/" used to forward straight to the summary; it now holds

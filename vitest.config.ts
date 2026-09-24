@@ -43,7 +43,6 @@ export default defineConfig({
         "src/testing/**",
         "src/main.tsx",
         "src/routes.tsx",
-        "src/tokens.stylex.ts",
       ],
       // `text` prints the table but HIDES every file already at 100%, so a file
       // that slips from 100% to 90% appears out of nowhere and one that was
@@ -90,7 +89,11 @@ export default defineConfig({
         ],
         // All of src/, where each build (vite.base.ts) names only its slice:
         // Browser Mode may mount any component, so it needs every rule.
-        css: { postcss: { plugins: [stylexPostcss(["src/**/*.{ts,tsx}"])] } },
+        css: {
+          postcss: {
+            plugins: [stylexPostcss(["src/**/*.{ts,tsx}", "packages/tokens/tokens.stylex.ts"])],
+          },
+        },
         // vitest-browser-react bundles the React it renders with, and a router
         // resolved to a SECOND copy of React sees a null dispatcher - "Cannot
         // read properties of null (reading 'useContext')" the moment a route

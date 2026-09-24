@@ -5,7 +5,7 @@ import { useAccount } from "./hooks/use-account";
 import { LANGUAGE_LABELS } from "./helpers/validation";
 import { SummaryRow } from "./components/SummaryRow";
 import { ErrorBanner, LoadingStatus } from "./components/PageState";
-import { colors, radius, space, text } from "../tokens.stylex";
+import { colors, radius, space, text } from "@demo/tokens/tokens.stylex";
 
 const styles = stylex.create({
   title: {

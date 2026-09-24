@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { colors, radius, space, text } from "../tokens.stylex";
+import { colors, radius, space, text } from "@demo/tokens/tokens.stylex";
 
 /**
  * What a crash looks like to the user, shared by the two boundaries that can

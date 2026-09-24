@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { colors } from "../tokens.stylex";
+import { colors } from "@demo/tokens/tokens.stylex";
 
 /**
  * What the page's slot shows while the router fetches a page from its remote -

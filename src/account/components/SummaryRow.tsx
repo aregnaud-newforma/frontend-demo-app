@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import * as stylex from "@stylexjs/stylex";
-import { colors, text } from "../../tokens.stylex";
+import { colors, text } from "@demo/tokens/tokens.stylex";
 
 const styles = stylex.create({
   term: {

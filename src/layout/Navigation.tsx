@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { NavLink, type NavLinkRenderProps } from "react-router";
-import { colors, radius, space, text } from "../tokens.stylex";
+import { colors, radius, space, text } from "@demo/tokens/tokens.stylex";
 
 /**
  * Where you can go in this app - the one list of destinations, rendered by the

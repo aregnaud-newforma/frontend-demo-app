@@ -1,7 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { ErrorBoundary, type FallbackRender } from "@sentry/react";
 import { CrashScreen } from "./CrashScreen";
-import { colors, space, text } from "../tokens.stylex";
+import { colors, space, text } from "@demo/tokens/tokens.stylex";
 
 /**
  * The last thing between a render that threw and a blank document.

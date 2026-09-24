@@ -199,7 +199,7 @@ export const remoteConfig = (
       federation({ name, filename: remoteEntry, exposes, remotes: consumed, shared, dts }),
       ...sentrySourcemaps(outDir, sentryProjectFor(name)),
     ],
-    css: stylexCss([`src/${name}/**/*.{ts,tsx}`, "src/tokens.stylex.ts"]),
+    css: stylexCss([`src/${name}/**/*.{ts,tsx}`, "packages/tokens/tokens.stylex.ts"]),
     resolve: { alias },
     server: { port: port.dev, strictPort: true, origin: `http://localhost:${port.dev}` },
     preview: { port: port.preview, strictPort: true },
