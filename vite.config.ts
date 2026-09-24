@@ -1,19 +1,26 @@
 import { defineConfig } from "vite";
-import react, { reactCompilerPreset } from "@vitejs/plugin-react";
-import babel from "@rolldown/plugin-babel";
-import { sentryVitePlugin } from "@sentry/vite-plugin";
+import { federation } from "@module-federation/vite";
 import { alias } from "./alias.ts";
-import { stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
+import { dts, remoteEntryUrl, remotes, shared } from "./federation.config.ts";
+import { appPlugins, browserTargets, sentrySourcemaps, sourcemap, stylexCss } from "./vite.base.ts";
 
-// plugin-react v6 transforms with Oxc, not Babel, so the React Compiler is not
-// an option on `react()` any more: it runs as its own Babel pass alongside it.
+/**
+ * The SHELL: the one build that owns index.html, and the one the browser is
+ * pointed at. It ships the layout and the router; the pages come from the
+ * remotes, one build per vertical (vite.<name>.config.ts), fetched over the
+ * wire when a route first needs them. ./federation.config.ts says which remotes
+ * exist and what the three builds must hold exactly one copy of; ./vite.base.ts
+ * holds the toolchain they share.
+ */
 
 // The app builds its request from window.location.origin (see
 // src/account/helpers/api.ts), so /api/account is same-origin by construction.
 // The real API runs in its own process on another port, which is exactly what
 // a proxy is for: the browser keeps talking to one origin - cookies and all -
 // and the dev/preview server forwards the API calls on. Declared for both
-// servers because `vite` and `vite preview` do not share config.
+// servers because `vite` and `vite preview` do not share config. Only the
+// shell proxies: a remote serves modules, and the page that called the API
+// is served from here whichever remote it came from.
 const apiProxy = { "/api": { target: "http://localhost:3001", changeOrigin: false } };
 
 // What the browser's own profiler asks for before it will sample anything.
@@ -26,75 +33,37 @@ const apiProxy = { "/api": { target: "http://localhost:3001", changeOrigin: fals
 // index.html has to send the same header.
 const profilingHeaders = { "Document-Policy": "js-profiling" };
 
-// The browsers this app is built for, restated in esbuild's own vocabulary.
-// Vite does not read `browserslist` — `build.target` takes esbuild names
-// (`safari16.4`), not browserslist queries (`safari >= 16.4`), and a
-// `browserslist` field is ignored in silence. So the floor is declared twice,
-// the same way `alias.ts` and tsconfig `paths` are: here for what Vite emits,
-// and in package.json for every tool that does read browserslist.
-//
-// These values are Vite 8's own `baseline-widely-available` default, written
-// down rather than inherited: that default is pinned per Vite major, so a Vite
-// upgrade would otherwise move which browsers this app supports with nothing in
-// the diff to show it.
-//
-// It lowers syntax only. Nothing here polyfills a missing method, so an API
-// newer than this floor - `Set.prototype.difference`, say - throws at runtime on
-// a browser at the floor, and works in `vite dev`, which always runs esnext.
-const browserTargets = ["chrome111", "edge111", "firefox114", "safari16.4", "ios16.4"];
+const outDir = "dist/shell";
 
-// Source maps, and the upload that makes them worth generating - both together
-// or neither, keyed on the token.
-//
-// A production bundle with no map gives Sentry minified frames: `t.default` at
-// column 4831, which names nothing. The maps fix that, but they are the source
-// code, so shipping them alongside the bundle publishes it. The plugin closes
-// that gap by uploading them to Sentry and DELETING them from dist/ afterwards -
-// Sentry can un-minify the stack, the browser is served nothing extra.
-//
-// `hidden` is what stops the `//# sourceMappingURL=` comment being emitted: the
-// map is written, but nothing in the shipped file points at a file that is about
-// to be deleted.
-//
-// Without the token there is nowhere to upload to, so no map is generated
-// either - a plain `yarn build` leaves nothing behind to leak.
-//
-// `url` is NOT optional here. The plugin defaults to sentry.io, and this
-// organisation is hosted in the EU region, where an upload to the default host
-// is accepted by nothing.
-//
-// The token is read from `process.env`, and package.json's `build` runs Vite through
-// `node --env-file-if-exists=.env` for it: Vite reads .env into
-// `import.meta.env` for the CLIENT bundle and deliberately leaves `process.env`
-// alone, so a token sitting in .env is invisible here without that flag - the
-// build succeeds, uploads nothing, and says nothing about it. CI passes the
-// same variable its own way and needs no .env at all.
-const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN;
-
-const sentrySourcemaps = sentryAuthToken
-  ? [
-      sentryVitePlugin({
-        org: "alexisregnaud",
-        project: "frontend-demo-app",
-        url: "https://de.sentry.io",
-        authToken: sentryAuthToken,
-        sourcemaps: { filesToDeleteAfterUpload: ["./dist/**/*.map"] },
-      }),
-    ]
-  : [];
-
-export default defineConfig({
-  build: { target: browserTargets, sourcemap: sentryAuthToken ? "hidden" : false },
-  // StyleX joins the Babel pass the React Compiler already needs, rather than
-  // adding a second one. See ./stylex.config.ts for why the postcss half exists.
+// A function of `command`, because the remotes' URLs are baked into the bundle
+// and differ between `vite dev` and a build - see `remoteEntryUrl`.
+export default defineConfig(({ command }) => ({
+  // One pre-bundle cache per build - ./vite.base.ts says why the three cannot
+  // share the default.
+  cacheDir: "node_modules/.vite/shell",
+  build: { outDir, target: browserTargets, sourcemap },
   // The Sentry plugin goes last: it reads what the others emitted.
   plugins: [
-    react(),
-    babel({ presets: [reactCompilerPreset()], plugins: [stylexBabelPlugin] }),
-    ...sentrySourcemaps,
+    ...appPlugins(),
+    federation({
+      name: "shell",
+      remotes: Object.fromEntries(
+        Object.keys(remotes).map((name) => [
+          name,
+          // `type: "module"` because the remotes are ESM builds of this same
+          // plugin; the default is the global-variable format webpack emits.
+          { type: "module", name, entry: remoteEntryUrl(name as keyof typeof remotes, command) },
+        ]),
+      ),
+      shared,
+      dts,
+    }),
+    ...sentrySourcemaps(outDir),
   ],
-  css: { postcss: { plugins: [stylexPostcss()] } },
+  // The shell's own stylesheet: the layout, and the tokens every build shares.
+  // What a page needs arrives with the page, in the remote's stylesheet.
+  css: stylexCss(["src/layout/**/*.tsx", "src/*.{ts,tsx}"]),
   resolve: { alias },
   server: { port: 5173, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
   preview: { port: 4173, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
-});
+}));

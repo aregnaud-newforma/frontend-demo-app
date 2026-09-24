@@ -25,6 +25,7 @@ yarn e2e                # end-to-end, against a real API
 | ------------------------- | ----------------------------------------------------------------------------------- |
 | Modern toolchain          | One Rust-based pipeline: Rolldown to build, oxlint to lint, oxfmt to format         |
 | Vertical codebase         | Group by feature, not file type: pages, schema, queries, mocks, tests colocated     |
+| Micro-frontends           | Each vertical is its own build, fetched by the shell at runtime (Module Federation) |
 | Testing strategy (Trophy) | Playwright, Vitest, MSW, FakerJS and Zod, weighted toward integration, unit and E2E |
 | Build-time CSS-in-JS      | StyleX compiles styles at build time: no runtime cost, no class collisions          |     |
 
@@ -32,7 +33,9 @@ yarn e2e                # end-to-end, against a real API
 
 ```bash
 yarn start         # the three below in one terminal: db:start, then api:start and dev
-yarn dev           # Vite dev server (proxies /api to the API, if it is running)
+yarn dev           # the shell and both remotes, each on its own port; the shell proxies /api
+yarn build         # tsc, then the three builds into dist/shell, dist/account, dist/home
+yarn preview       # the three builds served as they deploy (build first)
 yarn db:start      # the Postgres behind the API (compose.yaml), and wait for it
 yarn api:start     # the account API (.NET) on its own; migrates the database on start
 yarn api:test      # the API's own tests (xunit); starts a Postgres container itself

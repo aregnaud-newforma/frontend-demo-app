@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import { playwright } from "@vitest/browser-playwright";
-import { alias } from "./alias.ts";
+import { alias, remotesFromSource } from "./alias.ts";
 import { stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
 
 // Two projects, two costs - which is the point of the trophy:
@@ -15,6 +15,12 @@ import { stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
 // --project unit` run, and a test cannot silently land in the wrong tier by
 // being saved in the wrong directory.
 // e2e/*.spec.ts is owned by Playwright and belongs to neither project.
+
+// The namespaces as the array form `resolve.alias` takes when a regex entry
+// (the remotes) has to sit beside them; the object form cannot hold one.
+const toAliasEntries = (map: Record<string, string>) =>
+  Object.entries(map).map(([find, replacement]) => ({ find, replacement }));
+
 export default defineConfig({
   test: {
     // Coverage is a ROOT option, never a per-project one: both projects
@@ -74,12 +80,20 @@ export default defineConfig({
           react(),
           babel({ presets: [reactCompilerPreset()], plugins: [stylexBabelPlugin] }),
         ],
-        css: { postcss: { plugins: [stylexPostcss()] } },
+        // All of src/, where each build (vite.base.ts) names only its slice:
+        // Browser Mode may mount any component, so it needs every rule.
+        css: { postcss: { plugins: [stylexPostcss(["src/**/*.{ts,tsx}"])] } },
         // vitest-browser-react bundles the React it renders with, and a router
         // resolved to a SECOND copy of React sees a null dispatcher - "Cannot
         // read properties of null (reading 'useContext')" the moment a route
         // renders. Deduping pins every dependency to one React instance.
-        resolve: { alias, dedupe: ["react", "react-dom"] },
+        //
+        // The remotes resolve from source here - alias.ts says why the tests
+        // are the one place that mapping is allowed.
+        resolve: {
+          alias: [...toAliasEntries(alias), ...remotesFromSource],
+          dedupe: ["react", "react-dom"],
+        },
         test: {
           name: "integration",
           globals: true,

@@ -48,10 +48,19 @@ export const stylexBabelPlugin = [
   // build proves. Asserted once here rather than at each of the two call sites.
 ] as unknown as PluginItem;
 
-/** The postcss half. Same files, same options, different question. */
-export const stylexPostcss = () =>
+/**
+ * The postcss half. Same options, different question - and, unlike the babel
+ * half, it has to be told WHICH files. It scans globs rather than following
+ * imports, so `include` decides what a stylesheet collects: a remote build
+ * names its own vertical plus the tokens (see ../federation.config.ts), the
+ * shell names the layout, and Browser Mode names all of src/ because it mounts
+ * anything. A file scanned twice by two builds yields the same class names in
+ * both - the hash is of the declaration - so the sheets overlap harmlessly
+ * where the pages share a style.
+ */
+export const stylexPostcss = (include: string[]) =>
   styleXPostcssPlugin({
-    include: ["src/**/*.{ts,tsx}"],
+    include,
     // The generated rules go in a CSS layer, so anything written by hand
     // outside a layer beats them without needing a specificity fight.
     useCSSLayers: true,

@@ -405,6 +405,68 @@
   dependencies:
     "@langfuse/core" "^5.11.0"
 
+"@module-federation/dts-plugin@2.9.0":
+  version "2.9.0"
+  resolved "https://registry.yarnpkg.com/@module-federation/dts-plugin/-/dts-plugin-2.9.0.tgz#efa77add1b54f3dc21e5c9c7b4f2a94998e33352"
+  integrity sha512-uMGqEG/p9odG2BVr7WRbBe2OgrvzBd3LPzcp5WP+bm3djBdUJ4PZ3ozqKp6qpy+NFnlh6vnM815Xn6AXkKy1Vw==
+  dependencies:
+    "@module-federation/error-codes" "2.9.0"
+    "@module-federation/managers" "2.9.0"
+    "@module-federation/sdk" "2.9.0"
+    "@module-federation/third-party-dts-extractor" "2.9.0"
+    adm-zip "0.6.0"
+    isomorphic-ws "5.0.0"
+    undici "7.29.0"
+    ws "8.21.0"
+
+"@module-federation/error-codes@2.9.0":
+  version "2.9.0"
+  resolved "https://registry.yarnpkg.com/@module-federation/error-codes/-/error-codes-2.9.0.tgz#646c98dac076576bae8ac662cc76a63943c64108"
+  integrity sha512-IGpd+VRlji3NyGOGGTsk7YEmPRKcDoBK4YHqIuP+OQwyb2YhHCUHO2vW9RXeQxCuKwi+c6xkTweRYG+Umy+0Zw==
+
+"@module-federation/managers@2.9.0":
+  version "2.9.0"
+  resolved "https://registry.yarnpkg.com/@module-federation/managers/-/managers-2.9.0.tgz#415fbf86049b6096e1774ccefb0fa7e7d0ca719e"
+  integrity sha512-8KhB2PF4g+M0hGaethU1H4GVWabLn5sF5TvnM6VxgAcDL4TfLY8aC/YobAXHG/SV0jpU5lsGe6s6xy6ccV0MQw==
+  dependencies:
+    "@module-federation/sdk" "2.9.0"
+
+"@module-federation/runtime-core@2.9.0":
+  version "2.9.0"
+  resolved "https://registry.yarnpkg.com/@module-federation/runtime-core/-/runtime-core-2.9.0.tgz#51f0da3fe1dcde2215c4c36f0f96aecdf9fb60d1"
+  integrity sha512-dLykRYfpbEJBTdk2NlbNoVVTB196O3qujawTBguLABJkPCWETJNk60NR1yZO34eI+DTH+eGwHU3m7FddAWnbnw==
+  dependencies:
+    "@module-federation/error-codes" "2.9.0"
+    "@module-federation/sdk" "2.9.0"
+
+"@module-federation/runtime@2.9.0":
+  version "2.9.0"
+  resolved "https://registry.yarnpkg.com/@module-federation/runtime/-/runtime-2.9.0.tgz#b585f115a42b474916f2adcec0a76aa14c7adc80"
+  integrity sha512-3cyAav0hWP+dNvB7qrcK9CKxQn+JvkbRvLtZz3zS2g0EyxtDFDjgbHY0Afcf7oHf8IHhKeEdzb/3Kjr1Pjmr7A==
+  dependencies:
+    "@module-federation/error-codes" "2.9.0"
+    "@module-federation/runtime-core" "2.9.0"
+    "@module-federation/sdk" "2.9.0"
+
+"@module-federation/sdk@2.9.0":
+  version "2.9.0"
+  resolved "https://registry.yarnpkg.com/@module-federation/sdk/-/sdk-2.9.0.tgz#9f0533be27cb7ecd00666b401df2d425435b6504"
+  integrity sha512-IMjObgBGQTXd33jTTCYcxvz8iOQGLsZ2QIPOj90rDxuBtJsN4WJwYyXqligrhY/e5p/BipUPdbIgKmWL7zFhTw==
+
+"@module-federation/third-party-dts-extractor@2.9.0":
+  version "2.9.0"
+  resolved "https://registry.yarnpkg.com/@module-federation/third-party-dts-extractor/-/third-party-dts-extractor-2.9.0.tgz#dab97e3bf403582c1a10ca5bbdb085dccc648b6e"
+  integrity sha512-R1Xuqnqzw6wQxWV3yU9fX1FydXAeZF2TNVFAVo1N1oLBA2j5y7aUO/Fc3VSNgd9/gxMzJgTVBdA+nMiD2SFCgg==
+
+"@module-federation/vite@^1.22.1":
+  version "1.22.1"
+  resolved "https://registry.yarnpkg.com/@module-federation/vite/-/vite-1.22.1.tgz#3cda0b6888fb7ceb137143df57d1c89aab3dd412"
+  integrity sha512-rrbm8mEuDvIYmy0fq5MPMh5SNQbSxbWoFa3y0NejaOGUaWwgKxsAL0FzIX3cXSJCbl66mAu21PTi5Y04y0eXEw==
+  dependencies:
+    "@module-federation/dts-plugin" "2.9.0"
+    "@module-federation/runtime" "2.9.0"
+    "@module-federation/sdk" "2.9.0"
+
 "@msw/data@^1.1.7":
   version "1.1.7"
   resolved "https://registry.yarnpkg.com/@msw/data/-/data-1.1.7.tgz#8c1c6e9c215e82db91787d7e062c1c8fce792889"
@@ -1654,6 +1716,11 @@
     convert-source-map "^2.0.0"
     tinyrainbow "^3.1.0"
 
+adm-zip@0.6.0:
+  version "0.6.0"
+  resolved "https://registry.yarnpkg.com/adm-zip/-/adm-zip-0.6.0.tgz#bbc5c6c333755e967a06dd98747f431e1d53a3cf"
+  integrity sha512-XleryMhbuksdKtofnWZ9Sk+4CUTbms4Mb/EU32SZwToAyZ5RgVos/ki8n+yr0LWHOGKuakbXTuuYNHLQjhddgg==
+
 agent-base@6:
   version "6.0.2"
   resolved "https://registry.yarnpkg.com/agent-base/-/agent-base-6.0.2.tgz#49fff58577cfee3f37176feab4c22e00f86d7f77"
@@ -2100,6 +2167,11 @@ isexe@^2.0.0:
   version "2.0.0"
   resolved "https://registry.yarnpkg.com/isexe/-/isexe-2.0.0.tgz#e8fbf374dc556ff8947a10dcb0572d633f2cfa10"
   integrity sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==
+
+isomorphic-ws@5.0.0:
+  version "5.0.0"
+  resolved "https://registry.yarnpkg.com/isomorphic-ws/-/isomorphic-ws-5.0.0.tgz#e5529148912ecb9b451b46ed44d53dae1ce04bbf"
+  integrity sha512-muId7Zzn9ywDsyXgTIafTry2sV3nySZeUDe6YedVd1Hvuuep5AsIlqK+XefWpYTyJG5e503F2xIuT2lcU6rCSw==
 
 istanbul-lib-coverage@^3.0.0, istanbul-lib-coverage@^3.2.2:
   version "3.2.2"
@@ -2871,6 +2943,11 @@ undici-types@~8.3.0:
   resolved "https://registry.yarnpkg.com/undici-types/-/undici-types-8.3.0.tgz#44e9fc9f3244648cdea35e4f9bb2d681e9410809"
   integrity sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==
 
+undici@7.29.0:
+  version "7.29.0"
+  resolved "https://registry.yarnpkg.com/undici/-/undici-7.29.0.tgz#ae0f6f62e06e057a9cbb7b2b5fde2bb74f791b8f"
+  integrity sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw==
+
 until-async@^3.0.2:
   version "3.0.2"
   resolved "https://registry.yarnpkg.com/until-async/-/until-async-3.0.2.tgz#447f1531fdd7bb2b4c7a98869bdb1a4c2a23865f"
@@ -2983,6 +3060,11 @@ wrap-ansi@^9.0.0:
     ansi-styles "^6.2.1"
     string-width "^7.0.0"
     strip-ansi "^7.1.0"
+
+ws@8.21.0:
+  version "8.21.0"
+  resolved "https://registry.yarnpkg.com/ws/-/ws-8.21.0.tgz#012e413fc07429945121b0c153158c4343086951"
+  integrity sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==
 
 ws@^8.19.0:
   version "8.21.2"

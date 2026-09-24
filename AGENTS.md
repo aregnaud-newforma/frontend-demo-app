@@ -30,6 +30,12 @@ subject.
 `layout/` and `testing/` are infrastructure: they may import verticals, and the
 reverse is the smell.
 
+Each vertical is also a **remote**: its own Vite build, served from its own
+origin, fetched by the shell when a route needs it (`docs/adr/0003`). What a
+vertical exposes is its `pages.ts`; the shell reaches it as `account/pages`,
+never as `@account/...`. `federation.config.ts` names the remotes and the
+packages the builds must share one copy of.
+
 Imports are **relative inside a folder, namespaced across one** — `./helpers/api`,
 but `@testing/render-route`. Namespaces are declared twice, in `alias.ts` and in
 `tsconfig.json` `paths`; one wired into only half of that fails either at

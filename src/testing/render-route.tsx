@@ -1,7 +1,7 @@
 import { render } from "vitest-browser-react";
 import { createMemoryRouter } from "react-router";
 import { RouterProvider } from "react-router/dom";
-import { routes } from "../routes";
+import { createRoutes } from "../routes";
 import { AppProviders } from "./app-providers";
 
 /**
@@ -14,10 +14,12 @@ import { AppProviders } from "./app-providers";
  * URL bar - and it means the tests exercise the same route definitions the app
  * does, so a path renamed in one place fails here rather than in production.
  *
- * The router is built fresh per call, and ./app-providers builds a fresh
- * QueryClient per mount. A shared router would carry one test's history into
- * the next, and a shared cache would carry one test's account - the two ways a
- * browser suite starts passing, or failing, according to file order.
+ * The router is built fresh per call, over a fresh route tree, and
+ * ./app-providers builds a fresh QueryClient per mount. A shared router would
+ * carry one test's history into the next, and a shared cache would carry one
+ * test's account - the two ways a browser suite starts passing, or failing,
+ * according to file order. The tree has to be fresh too, and ../routes says
+ * why: a data router writes into the route objects it is given.
  *
  * Everything below the router comes from AppProviders, the same composition
  * root ./render-component mounts a lone component under, so a page and a
@@ -27,7 +29,7 @@ import { AppProviders } from "./app-providers";
  * in each file, where the test can see what it is driving.
  */
 export async function renderRoute(initialPath: string) {
-  const router = createMemoryRouter(routes, { initialEntries: [initialPath] });
+  const router = createMemoryRouter(createRoutes(), { initialEntries: [initialPath] });
 
   return await render(
     <AppProviders>

@@ -19,7 +19,11 @@
     "types": ["vite/client"],
     "noEmit": true
   },
-  "include": ["src"],
+  // The remote declarations too: `account/pages` in src/routes.tsx is a name
+  // the federation runtime resolves, and types/remotes.d.ts is the only place
+  // TypeScript can learn what it points at. Not the rest of types/ - the
+  // postcss declaration serves the config files, which are out of this program.
+  "include": ["src", "types/remotes.d.ts"],
   "exclude": [
     "src/**/__tests__/**",
     "src/**/*.test.ts",

@@ -25,3 +25,18 @@ export const alias = {
   "@layout": folder("layout"),
   "@testing": folder("testing"),
 };
+
+/**
+ * The remotes, resolved from source rather than over the wire - for the tests
+ * only. `account/pages` in src/routes.tsx is a federated module (see
+ * ../federation.config.ts): in the shell build the plugin fetches it from the
+ * account remote, and no such plugin runs in Vitest. This maps the same
+ * specifier onto the same file the remote would have built from, so the test
+ * tier mounts the route tree the shell ships, minus the network. The e2e tier
+ * is the one that crosses it.
+ *
+ * Deliberately NOT in `alias` above: with it, the shell's Vite build would
+ * bundle the pages it is supposed to fetch, and the federation would be
+ * silently bypassed.
+ */
+export const remotesFromSource = [{ find: /^(account|home)\//, replacement: `${folder("")}$1/` }];

@@ -1,8 +1,6 @@
 import { createBrowserRouter, type RouteObject } from "react-router";
 import { wrapCreateBrowserRouter } from "@sentry/react";
-import { AccountPage } from "@account/AccountPage";
-import { EditAccountPage } from "@account/EditAccountPage";
-import { HomePage } from "@home/HomePage";
+import { PageLoading } from "@layout/PageLoading";
 import { RootLayout } from "@layout/RootLayout";
 import { RouteErrorBoundary } from "@layout/RouteErrorBoundary";
 import { initSentry } from "./sentry";
@@ -34,8 +32,22 @@ initSentry();
  * could no longer be rendered - or tested - on their own. Keeping react-query
  * inside the components is what lets eleven integration tests mount the form
  * with no router in the tree at all.
+ *
+ * The PAGES are not here either. `account/pages` is a remote - a separate
+ * build, served from its own origin, fetched when a route first needs it
+ * (../federation.config.ts, docs/adr/0003) - and `lazy` is how a data router
+ * asks for a route's component on demand rather than at startup. The URL is
+ * the whole contract between the shell and a remote: this file says WHERE a
+ * page lives, the remote says WHAT it is, and neither imports the other's
+ * state. A remote that fails to load - its server down, a bad deploy - rejects
+ * this promise, which the router hands to the `errorElement` below like any
+ * other route error: the page fails, the navigation around it stands.
+ *
+ * `lazy` takes the object form, one loader per property, so the route knows
+ * ahead of time that it has no `loader` and can skip the round-trip a function
+ * form would need to find that out.
  */
-export const routes: RouteObject[] = [
+export const createRoutes = (): RouteObject[] => [
   {
     // Pathless, so the shell wraps every route without owning a URL segment.
     Component: RootLayout,
@@ -48,15 +60,29 @@ export const routes: RouteObject[] = [
          * them all. @layout/RouteErrorBoundary says what it does with the error.
          */
         errorElement: <RouteErrorBoundary />,
+        /*
+         * What the <Outlet> shows on the first render, while the router is
+         * still fetching the page the URL asks for from its remote. On THIS
+         * route rather than the layout above it, so the navigation is on
+         * screen from the first frame and only the page's slot waits. Without
+         * one the router renders nothing at all until the import lands.
+         */
+        HydrateFallback: PageLoading,
         children: [
           /**
            * "/" is a page now, not a forward. It used to redirect to "/account"
            * because there was nothing to land on; the welcome is that something,
            * and the nav in RootLayout is how you leave it.
            */
-          { index: true, Component: HomePage },
-          { path: "account", Component: AccountPage },
-          { path: "account/edit", Component: EditAccountPage },
+          { index: true, lazy: { Component: () => import("home/pages").then((m) => m.HomePage) } },
+          {
+            path: "account",
+            lazy: { Component: () => import("account/pages").then((m) => m.AccountPage) },
+          },
+          {
+            path: "account/edit",
+            lazy: { Component: () => import("account/pages").then((m) => m.EditAccountPage) },
+          },
         ],
       },
     ],
@@ -64,10 +90,17 @@ export const routes: RouteObject[] = [
 ];
 
 /**
- * `routes` is exported above so the integration tests can build their own
- * router over the same tree with a memory history - the pages navigate, so
+ * `createRoutes` is exported above so the integration tests can build their
+ * own router over the same tree with a memory history - the pages navigate, so
  * testing one means giving it somewhere to navigate TO. A fresh router per
  * test, like the fresh QueryClient, so no test inherits another's history.
+ *
+ * A factory rather than a shared array, since the routes went `lazy`: the
+ * router clears each `lazy` loader on the route object once it has run it, so
+ * it is never run twice - and a SECOND router built over the same objects
+ * finds `lazy: { Component: undefined }` and, measured, answers `No route
+ * matches URL "/"` to every navigation. Static routes could be shared; lazy
+ * ones belong to the router that resolved them, so each router gets its own.
  *
  * `wrapCreateBrowserRouter` is what tells Sentry the route tree: without it a
  * navigation span is named by the URL that was visited, with it by the ROUTE
@@ -76,4 +109,4 @@ export const routes: RouteObject[] = [
  * app has no params yet, and naming them by route now is what keeps the first
  * one from splitting the data.
  */
-export const router = wrapCreateBrowserRouter(createBrowserRouter)(routes);
+export const router = wrapCreateBrowserRouter(createBrowserRouter)(createRoutes());
