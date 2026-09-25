@@ -68,9 +68,9 @@
     // re-hashes home's build already. An edge would serialise two builds that
     // can run at once, for nothing.
     //
-    // SENTRY_AUTH_TOKEN is in `env` for a reason beyond the upload:
-    // vite.base.ts keys `sourcemap` on it, so set and unset are two different
-    // bundles. Turbo 2 also runs tasks in strict env mode, which means this
+    // SENTRY_AUTH_TOKEN and DATADOG_API_KEY are in `env` for a reason beyond
+    // the upload: vite.base.ts keys `sourcemap` on them, so set and unset are
+    // two different bundles. Turbo 2 also runs tasks in strict env mode, which means this
     // list is what gets FORWARDED into the task - without it the variables
     // loaded from .env are filtered out and the build silently produces no
     // source maps.
@@ -83,7 +83,7 @@
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", "!**/__tests__/**", "!**/*.test.ts", "!**/*.test.tsx"],
       "outputs": ["dist/**"],
-      "env": ["SENTRY_*", "VITE_*", "EXPO_PUBLIC_*", "NODE_ENV"]
+      "env": ["SENTRY_*", "DATADOG_*", "VITE_*", "EXPO_PUBLIC_*", "NODE_ENV"]
     },
     // The three web builds only. The mobile app's dev server is `expo start`,
     // and its script is named `start` rather than `dev` precisely so this fan-

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useRouteError } from "react-router";
+import { datadogRum } from "@datadog/browser-rum";
 import * as Sentry from "@sentry/react";
 import { CrashScreen } from "./CrashScreen";
 
@@ -32,8 +33,10 @@ import { CrashScreen } from "./CrashScreen";
 export function RouteErrorBoundary() {
   const error = useRouteError();
 
+  // Datadog too, for the same reason: its global handler is bypassed the same way.
   useEffect(() => {
     Sentry.captureException(error);
+    datadogRum.addError(error);
   }, [error]);
 
   /*

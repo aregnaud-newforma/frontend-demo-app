@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import * as stylex from "@stylexjs/stylex";
+import { addReactError } from "@datadog/browser-rum-react";
 import { ErrorBoundary } from "@sentry/react";
 import { Link } from "react-router";
 import { colors, radius, space, text } from "@demo/tokens/tokens.stylex";
@@ -78,6 +79,11 @@ const previewLoading = (
   </p>
 );
 
+// Datadog's view of the same crash, which the boundary would otherwise keep
+// from it - apps/shell/src/layout/AppErrorBoundary.tsx does the same.
+const reportToDatadog = (error: unknown, componentStack: string) =>
+  addReactError(error, { componentStack });
+
 const previewUnavailable = (
   <p role="alert" {...stylex.props(styles.status)}>
     Your account is unavailable right now.
@@ -89,7 +95,7 @@ export function HomePage() {
     <>
       <h1 {...stylex.props(styles.title)}>Welcome</h1>
 
-      <ErrorBoundary fallback={previewUnavailable}>
+      <ErrorBoundary fallback={previewUnavailable} onError={reportToDatadog}>
         <Suspense fallback={previewLoading}>
           <AccountPreview />
         </Suspense>
