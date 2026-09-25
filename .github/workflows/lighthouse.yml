@@ -1,0 +1,170 @@
+# Lighthouse CI over the built web app: what lighthouse/lighthouserc.yml audits and
+# asserts, with the five processes it needs started here first.
+#
+# Two jobs, so a PR that reaches no page - server/, docs/, the mobile app -
+# skips the second one whole, Postgres and the builds included, rather than
+# starting all of it to audit nothing.
+#
+# A workflow of its own rather than a job in ci.yml: ci.yml is the gate
+# AGENTS.md defines, and this is a measurement beside it. Its accessibility
+# assertion still fails the run, and a PR still shows that as a red check.
+name: Lighthouse
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pages:
+    name: pages to audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      pages: ${{ steps.pages.outputs.pages }}
+      scope: ${{ steps.pages.outputs.scope }}
+    steps:
+      # Full history, for Turborepo to diff the PR against main.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      # Every page on main, so the dashboard always has a whole baseline to
+      # compare a branch with. On a PR only the pages its changes reach
+      # (lighthouse/run.ts says how that is decided) - unless the PR changes the
+      # audit itself, which has to run everywhere to show what it changed.
+      - id: pages
+        env:
+          BASE: ${{ github.base_ref }}
+          TURBO_SCM_BASE: origin/${{ github.base_ref }}
+        run: |
+          if [ -n "$BASE" ] && git diff --quiet "origin/$BASE...HEAD" -- lighthouse .github/workflows/lighthouse.yml; then
+            scope=--affected
+          fi
+          pages=$(yarn -s lighthouse --list $scope | paste -sd' ' -)
+          echo "Pages to audit: ${pages:-none}"
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+          echo "pages=$pages" >> "$GITHUB_OUTPUT"
+
+  lighthouse:
+    name: lighthouse (${{ needs.pages.outputs.pages }})
+    needs: pages
+    if: needs.pages.outputs.pages != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # `statuses` so lhci can set a check per page on the commit with the run's
+    # own GITHUB_TOKEN - no GitHub App, and no token of anyone's to rotate.
+    permissions:
+      contents: read
+      statuses: write
+    # The same Postgres as ci.yml's e2e job, which says why it is declared here
+    # rather than read from compose.yaml.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: frontend_demo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=frontend_demo
+    steps:
+      # The whole history, not the default single commit: Turborepo diffs
+      # against main again to pick the same pages, and the build context below
+      # names the commit a branch left main at, found with `git merge-base`.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: yarn install --frozen-lockfile
+      # Backgrounded, so they outlive this step; the runner stops them when the
+      # job ends. `yarn preview` builds the three apps first (turbo.json).
+      - name: Start the services and the preview builds
+        run: |
+          nohup yarn accounts:start > accounts.log 2>&1 &
+          nohup yarn notifications:start > notifications.log 2>&1 &
+          nohup yarn preview > preview.log 2>&1 &
+      # The URLs playwright.config.ts waits on, for the same reason: a shell that
+      # answers before its remotes do is not up. The ports are federation.config.ts's.
+      - name: Wait for all five
+        run: |
+          for url in \
+            http://localhost:3001/health \
+            http://localhost:3002/health \
+            http://localhost:4173 \
+            http://localhost:4174/remoteEntry.js \
+            http://localhost:4175/remoteEntry.js; do
+            timeout 180 bash -c "until curl -sf $url > /dev/null; do sleep 2; done" \
+              || { echo "$url never answered"; tail -n 50 *.log; exit 1; }
+          done
+      # ubuntu-latest ships Chrome, which lhci finds on its own.
+      #
+      # The config uploads to the LHCI server on a developer's machine, which
+      # this runner cannot reach, so the target is overridden to Google's
+      # temporary storage: a public link per page, kept a few days, and a status
+      # check on the PR that links to it. The checks go through the run's own
+      # GITHUB_TOKEN, and onto the PR's HEAD rather than the merge commit a
+      # pull_request run checks out, since the PR only shows the HEAD's.
+      - run: yarn lighthouse ${{ needs.pages.outputs.scope }} --upload.target=temporary-public-storage
+        env:
+          TURBO_SCM_BASE: origin/${{ github.base_ref }}
+          LHCI_GITHUB_TOKEN: ${{ github.token }}
+          LHCI_BUILD_CONTEXT__CURRENT_HASH: ${{ github.event.pull_request.head.sha || github.sha }}
+      # What lighthouse/pull.ts needs to file this run on the local server as
+      # the server would have filed it: the raw results, and the build context
+      # `lhci upload` would otherwise read from a git clone that may not have
+      # this commit - as the variables that override it, so the pull only has
+      # to set them. Kept even when an assertion failed, which is a run worth
+      # seeing in the dashboard too.
+      - name: Record the build context
+        if: ${{ !cancelled() && hashFiles('.lighthouseci/lhr-*.json') != '' }}
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          BASE: ${{ github.base_ref }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # A branch is compared with where it left main; main with its parent.
+          if [ -n "$BASE" ]; then ancestor=$(git merge-base "$SHA" "origin/$BASE"); else ancestor=$(git rev-parse "$SHA^"); fi
+          jq -n \
+            --arg hash "$SHA" --arg branch "$BRANCH" --arg ancestor "$ancestor" --arg url "$RUN_URL" \
+            --arg time "$(git log -1 --format=%cI "$SHA")" \
+            --arg message "$(git log -1 --format=%s "$SHA")" \
+            --arg author "$(git log -1 --format='%aN <%aE>' "$SHA")" \
+            '{
+              LHCI_BUILD_CONTEXT__CURRENT_HASH: $hash,
+              LHCI_BUILD_CONTEXT__CURRENT_BRANCH: $branch,
+              LHCI_BUILD_CONTEXT__ANCESTOR_HASH: $ancestor,
+              LHCI_BUILD_CONTEXT__COMMIT_TIME: $time,
+              LHCI_BUILD_CONTEXT__COMMIT_MESSAGE: $message,
+              LHCI_BUILD_CONTEXT__AUTHOR: $author,
+              LHCI_BUILD_CONTEXT__EXTERNAL_BUILD_URL: $url,
+              LHCI_BUILD_CONTEXT__GITHUB_REPO_SLUG: "${{ github.repository }}"
+            }' > .lighthouseci/build-context.json
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && hashFiles('.lighthouseci/build-context.json') != '' }}
+        with:
+          name: lighthouse
+          path: |
+            .lighthouseci/lhr-*.json
+            .lighthouseci/build-context.json

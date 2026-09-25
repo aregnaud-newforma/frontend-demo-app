@@ -56,6 +56,9 @@ yarn db:generate          # a migration into server/Accounts/Migrations/ - yarn 
 yarn test                 # unit + integration   (yarn test:watch to keep it open)
 yarn test:native          # the mobile app's tier (jest-expo); yarn test does not reach it
 yarn e2e                  # end-to-end; starts both services and the preview build itself
+yarn lhci:start           # the Lighthouse CI dashboard on :9001, filled with what CI ran (needs LHCI_TOKEN in .env)
+yarn lighthouse           # Lighthouse CI over the preview build, uploaded to it; start preview + both services first
+                          #   --affected for only the pages your changes since main reach
 yarn verify               # oxlint + oxfmt --check + both tsc projects + dotnet build - the CI gate
 yarn lint                 # oxlint  (yarn lint:fix to apply what it can)
 yarn format               # oxfmt   (yarn format:check to only report)

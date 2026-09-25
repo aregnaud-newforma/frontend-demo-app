@@ -1,0 +1,52 @@
+# Lighthouse CI: the pages of the web app, audited as they deploy, on every PR.
+#
+# It audits the SHELL on 4173, not a remote's dist/. A remote's build holds no
+# page anyone visits - the shell fetches it over the wire (docs/adr/0003) - so
+# `staticDistDir` would audit an index.html with no pages in it. That is also
+# why there is no `startServerCommand`: a page here needs five processes up -
+# the shell, both remotes, and both services, since /account renders the
+# account the API returns - and one command with one ready pattern cannot say
+# when all five are. Whoever runs `yarn lighthouse` starts them first: the
+# workflow in .github/workflows/lighthouse.yml does, and locally it is
+# `yarn db:start`, then `yarn preview`, `yarn accounts:start` and
+# `yarn notifications:start` - plus `yarn lhci:start` for the server the
+# results go to, and LHCI_TOKEN in .env (.env.example says where it comes from).
+#
+# No session cookie is set, so the API answers with its demo account
+# (server/Accounts/Session.cs), which a fresh database seeds the same way on
+# every CI run.
+#
+# The URLs are not here: ./run.ts passes them, because it is also what decides
+# which pages a change reaches, and a second list could drift from the first.
+ci:
+  collect:
+    # Three runs per URL, and assert/upload keep the median: one run on a shared
+    # CI runner is too noisy to fail a build on.
+    numberOfRuns: 3
+
+  assert:
+    # Per category rather than the `lighthouse:recommended` preset, which
+    # asserts every audit on its own and fails on some that do not apply to a
+    # local build served over http.
+    #
+    # Accessibility is the one that errors: it is read off the DOM, so it gives
+    # the same score on every run. Performance is timed, on a runner shared with
+    # other jobs, so a slow neighbour would fail a PR that changed nothing -
+    # it warns until a few runs have shown where its floor really is.
+    assertions:
+      categories:accessibility: ["error", { minScore: 0.9 }]
+      categories:best-practices: ["warn", { minScore: 0.9 }]
+      categories:performance: ["warn", { minScore: 0.8 }]
+      categories:seo: "off"
+
+  upload:
+    # To the LHCI server `yarn lhci:start` runs on this machine (compose.yaml),
+    # which keeps every run and compares a branch against main. The project's
+    # build token arrives as LHCI_TOKEN, from .env.
+    #
+    # Nothing hosts that server, so CI cannot reach it: the workflow overrides
+    # the target to temporary-public-storage for the PR's links, and keeps the
+    # raw results as an artifact that ./pull.ts later uploads HERE, with the
+    # same settings - which is why it reads this file rather than its own.
+    target: lhci
+    serverBaseUrl: http://localhost:9001

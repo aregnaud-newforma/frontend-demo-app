@@ -63,6 +63,7 @@
     "server",
     "e2e",
     "evals",
+    "lighthouse",
     "types",
     "vitest.setup.ts",
     "*.config.ts"

@@ -21,5 +21,35 @@ services:
       timeout: 5s
       retries: 15
 
+  # The Lighthouse CI server: the dashboard `yarn lighthouse` uploads to, which
+  # keeps every run and compares a branch against main
+  # (lighthouse/lighthouserc.yml). `yarn lhci:start` brings it up, waits for it
+  # and pulls in what CI ran since last time (lighthouse/pull.ts);
+  # `yarn db:start` does not, because nothing else needs it.
+  #
+  # The image is published for amd64 only, so it runs emulated on Apple
+  # silicon; `platform` says so rather than letting Docker warn on every start.
+  # The version matches @lhci/cli in package.json, which is the client that
+  # talks to it.
+  lhci:
+    image: patrickhulce/lhci-server:0.15.1
+    platform: linux/amd64
+    ports:
+      - "9001:9001"
+    volumes:
+      - lhci-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:9001/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
 volumes:
   postgres-data:
+  lhci-data:
