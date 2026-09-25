@@ -2,10 +2,20 @@ import { datadogLogs } from "@datadog/browser-logs";
 import { datadogRum } from "@datadog/browser-rum";
 import { reactPlugin } from "@datadog/browser-rum-react";
 
+const applicationId = import.meta.env.VITE_DATADOG_APPLICATION_ID;
+const clientToken = import.meta.env.VITE_DATADOG_CLIENT_TOKEN;
+const credentials =
+  applicationId && clientToken && import.meta.env.MODE !== "test"
+    ? { applicationId, clientToken }
+    : undefined;
+
+/** Whether Datadog runs at all - and so whether it, not Sentry, profiles the page. */
+export const datadogEnabled = credentials !== undefined;
+
 /**
  * Datadog RUM and browser logs, run BESIDE ./sentry.ts rather than instead of
- * it, so the two can be compared on the same sessions. Neither knows the other
- * is there, and each is switched on by its own variables.
+ * it, so the two can be compared on the same sessions. Each is switched on by
+ * its own variables, and the profiler is the one thing they do not both run.
  *
  * Off unless `VITE_DATADOG_APPLICATION_ID` and `VITE_DATADOG_CLIENT_TOKEN` are
  * both set, and off in `test` whatever they say - the two conditions
@@ -30,10 +40,12 @@ import { reactPlugin } from "@datadog/browser-rum-react";
  * `/api/` on this origin: the Vite proxy forwards those, and a header on any
  * other origin would trip a CORS preflight the remotes never answer.
  *
- * No `profilingSampleRate`, which leaves Datadog's profiler at its default of
- * 0. Sentry already profiles every trace through the same JS Self-Profiling
- * API, and two profilers sampling one page would make both overheads look
- * worse than either is alone. Switch Sentry's off before turning this on.
+ * `profilingSampleRate: 100` profiles every session, INSTEAD of Sentry: two
+ * profilers sampling one page through the same JS Self-Profiling API would
+ * make both overheads look worse than either is alone, so ./sentry.ts reads
+ * `datadogEnabled` and leaves its own profiler out whenever this one runs.
+ * The browser profiles nothing unless index.html was served with
+ * `Document-Policy: js-profiling`, which ../vite.config.ts sends.
  *
  * Session replay is Datadog's alone - Sentry records none here - so one
  * session in five is recorded, the rate Datadog's own setup suggests.
@@ -43,9 +55,8 @@ import { reactPlugin } from "@datadog/browser-rum-react";
  * them - the reason ./sentry.ts gives for sending no user info either.
  */
 export function initDatadog() {
-  const applicationId = import.meta.env.VITE_DATADOG_APPLICATION_ID;
-  const clientToken = import.meta.env.VITE_DATADOG_CLIENT_TOKEN;
-  if (!applicationId || !clientToken || import.meta.env.MODE === "test") return;
+  if (!credentials) return;
+  const { applicationId, clientToken } = credentials;
 
   // `datadoghq.eu` for an EU organisation; the SDK's default is the US site,
   // and a token sent to the wrong one is refused without a word in the console.
@@ -66,6 +77,7 @@ export function initDatadog() {
     env,
     version,
     sessionReplaySampleRate: 20,
+    profilingSampleRate: 100,
     defaultPrivacyLevel: "mask",
     plugins: [reactPlugin({ router: true })],
     propagateTraceBaggage: false,

@@ -79,3 +79,5 @@ reads nor writes it:
   whenever dd-trace runs, and by Sentry only when it does not
   (`DD_PROFILING_ENABLED`). The account API stays with Sentry's profiler, for
   the same reason it cannot run Datadog's tracer.
+  The browser follows the same rule: Datadog RUM profiles the page whenever it
+  runs, and Sentry's browser profiling is left out then.

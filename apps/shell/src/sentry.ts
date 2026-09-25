@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/react";
 import { reactRouterBrowserTracingIntegration } from "@sentry/react/react-router";
 import type { ClientInstrumentation } from "react-router";
+import { datadogEnabled } from "./datadog";
 import { ownerOf } from "./sentry-owner";
 
 /**
@@ -138,7 +139,8 @@ export function initSentry() {
           return { ...options, startTime };
         },
       }),
-      Sentry.browserProfilingIntegration(),
+      // Not when Datadog profiles the page instead - ./datadog.ts says why.
+      ...(datadogEnabled ? [] : [Sentry.browserProfilingIntegration()]),
       Sentry.moduleMetadataIntegration(),
     ],
     transport: Sentry.makeMultiplexedTransport(Sentry.makeFetchTransport),
