@@ -6,8 +6,8 @@ Vitest, MSW and Playwright. `README.md` lists the commands; this file holds the
 conventions no config states.
 
 Use `yarn`. Every config file carries its reasoning in comments — when something
-looks surprising, the explanation is in the file that does it (`alias.ts`,
-`vite.config.ts`, `vitest.config.ts`, `.oxlintrc.json`).
+looks surprising, the explanation is in the file that does it (`turbo.json`,
+`vite.base.ts`, `vitest.config.ts`, `.oxlintrc.json`).
 
 ## Skills
 
@@ -21,32 +21,97 @@ find them.
 
 ## Verticals
 
-`src/` groups by **subject, not by file type**. A vertical (`account/`, `home/`)
-owns everything that changes with it: its pages at the top, then `hooks/`,
-`helpers/`, `components/`, `mocks/`, `__tests__/`. Create a sub-folder only when
-there is something to put in it — a folder holding one file is a category, not a
-subject.
+The repository groups by **subject, not by file type**, and a subject is a
+package. A vertical (`apps/account`, `apps/home`) owns everything that changes
+with it: its pages at the top of `src/`, then `hooks/`, `helpers/`,
+`components/`, `mocks/`, `__tests__/`. Create a sub-folder only when there is
+something to put in it — a folder holding one file is a category, not a subject.
 
-`layout/` and `testing/` are infrastructure: they may import verticals, and the
-reverse is the smell.
+`apps/shell` owns the chrome: `index.html`, the layout, the router, the
+providers and the Sentry client. `packages/testing` is the integration
+harness, `packages/tokens` the StyleX variables and `packages/account-core`
+the account's platform-free half - the schema, the phone parser, the API
+client, the query and the mocks. All three are leaves that import nothing of
+an app's, and the reverse is the smell.
 
-Imports are **relative inside a folder, namespaced across one** — `./helpers/api`,
-but `@testing/render-route`. Namespaces are declared twice, in `alias.ts` and in
-`tsconfig.json` `paths`; one wired into only half of that fails either at
-type-check or in the browser tests.
+`apps/mobile` is the same product on iOS and Android: ONE Expo app, not three
+remotes, because a binary has no independent deployment to buy
+(`docs/adr/0007`). It shares `packages/account-core` with the web and writes
+its own everything else - Expo Router where the web has React Router,
+Unistyles where the web has StyleX. It is the one app whose files the root
+`tsconfig.json` excludes, because React Native is not the browser's program.
+
+Each vertical is also a **remote**: its own Vite build, served from its own
+origin, fetched by the shell when a route needs it (`docs/adr/0003`). What a
+vertical exposes to the SHELL is its `pages.ts`, reached as `account/pages` —
+a federated specifier, never a package import. `federation.config.ts` names
+the remotes and the packages the builds must share one copy of.
+
+A vertical that needs another's component consumes it the same way - over the
+wire, as `account/preview`, declared in `consumes` of its Vite config - never
+as `@demo/account/...`. The import then names a deployment it depends on,
+which is the cost worth seeing. `apps/home` embedding the account's preview is
+the one case.
+
+Imports are **relative inside a package, `@demo/<package>/<subpath>` across
+one** — `./helpers/api`, but `@demo/testing/render-route`. What a package
+exposes is its `exports` field, and nothing else about it is reachable. Yarn
+resolves the name and TypeScript reads the same field, so the mapping is
+written once (`docs/adr/0006`).
+
+Add a package, and it is `apps/*` or `packages/*` in the root `workspaces`,
+with a **scoped** name. A package named `account` rather than `@demo/account`
+would make the shell's `import("account/pages")` resolve as a real subpath and
+silently bundle what it must federate.
+
+The test tier composes at the ROOT, not between apps: the shell's layout tests
+use the account's mocks while the account's tests mount the shell's routes, so
+an app-to-app dependency would be a cycle. `vitest.setup.ts` is where the two
+meet, and the root `package.json` is where those dependencies are declared.
+
+## Services
+
+`server/` is two processes, each named after its subject the way `src/` is, and
+they are **not the same runtime**. `Accounts/` is ASP.NET Core over Postgres: it
+owns the accounts table and the surface the browser reaches. `Notifications/` is
+Node - `node:http` and TypeScript, run without a build step - and owns what a
+message to a person says; it is reached only by `Accounts/`, over HTTP. That
+split is `docs/adr/0005`, and the point of it is that a trace crosses them
+anyway.
+
+Neither can reach the other's types, and now there is no build that could make
+it possible. A shape they exchange is declared on both sides - a C# record here,
+a TypeScript interface there - and that duplication is the boundary
+(`docs/adr/0004`). The casing on the wire is .NET's `JsonSerializerDefaults.Web`,
+so the TypeScript names are camelCase because that is what arrives, not because
+TypeScript prefers it.
+
+The Sentry setup is duplicated too, in `Accounts/SentrySetup.cs` and
+`Notifications/instrument.ts`, and nothing enforces that the two agree. Editing
+one is editing half of it.
 
 ## Writing components
 
 Styles are StyleX, declared in the component file, built from the tokens in
-`src/tokens.stylex.ts`. No raw hex, no magic `rem`, no hand-built `className`.
+`packages/tokens`. No raw hex, no magic `rem`, no hand-built `className`.
 StyleX is a choice of this repository and lives here; anything a skill already
 states does not.
+
+The tokens are imported as `@demo/tokens/tokens.stylex`, and **no other
+spelling works**: the babel plugin tests the import specifier for a `.stylex`
+suffix before it resolves anything, so `@demo/tokens` is rejected with a
+message that names neither the cause nor the file.
 
 ## Tests
 
 A test's **filename**, not its folder, decides which tier runs it:
 `*.unit.test.ts` in Node, `*.integration.test.tsx` in a real Chromium against
-MSW, `e2e/*.spec.ts` in Playwright against the real API process.
+MSW, `*.native.test.tsx` under jest-expo against the same MSW handlers,
+`e2e/*.spec.ts` in Playwright against the real API process.
+
+The native tier is the one with a runner of its own - Vitest's browser mode has
+no device to render a React Native screen in - so it is `yarn test:native`
+beside `yarn test`, the way the .NET half is `yarn server:test`.
 
 ## Before you finish
 
@@ -54,12 +119,27 @@ MSW, `e2e/*.spec.ts` in Playwright against the real API process.
 yarn verify && yarn test
 ```
 
-Both green, every time. Add `yarn e2e` when the change crosses the wire — a
-field that never reaches the backend still type-checks and still passes the
-integration suite.
+Both green, every time. Add `yarn server:test` when the change touches
+`server/Accounts/` — it is the .NET half's tests alone, and the Node half's
+run under `yarn test` like any other unit test. Add `yarn test:native` when it
+touches `apps/mobile` or `packages/account-core` — the mobile tier has its own
+runner and `yarn test` does not reach it. Add `yarn e2e` when the change
+crosses the wire: a field that never reaches the backend still type-checks and
+still passes the integration suite.
 
-Seeing a visual change in the browser is part of finishing it: `yarn dev`, with
-`yarn db:start` and then `yarn api:start` running alongside for data.
+`yarn build` is cached by Turborepo, so a second run reports `FULL TURBO` and
+builds nothing. That is the cache working, not a skipped build;
+`turbo run build --force` is the escape hatch if you need to see it run.
+
+Seeing a visual change in the browser is part of finishing it: `yarn start`,
+which brings up the database, both backend services and the three frontend
+builds together.
+
+On mobile that is `yarn mobile:start`, against those same services — and the
+first run on a machine needs `yarn mobile:prebuild && yarn mobile:ios`, because
+Unistyles and Sentry are native modules and there is therefore no Expo Go path.
+`apps/mobile/.env.example` says which address the device reaches the API at,
+which is not `localhost` on every platform.
 
 ## Agent docs
 

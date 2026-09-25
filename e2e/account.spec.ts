@@ -5,9 +5,9 @@
  *   live in the integration and unit tests).
  */
 import { test, expect, type Page } from "@playwright/test";
-import { accountFactory, createFrenchPhone } from "@account/mocks/db-utils";
-import { LANGUAGE_LABELS } from "@account/helpers/validation";
-import { startSession } from "./session";
+import { accountFactory, createFrenchPhone } from "@demo/account-core/mocks/db-utils";
+import { LANGUAGE_LABELS } from "@demo/account-core/validation";
+import { readNotifications, startSession } from "./session";
 
 /**
  * The <dd> holding one term's value on the summary, e.g. summaryValue(page,
@@ -30,7 +30,7 @@ test("visitor navigates to their account, edits every field and is returned to t
   // the specs running beside it cannot touch it.
   const phone = createFrenchPhone();
   const account = accountFactory.build({ telephone: phone.e164 });
-  await startSession(page, request, account);
+  const session = await startSession(page, request, account);
 
   const editedPhone = createFrenchPhone();
   const edited = accountFactory.build({
@@ -103,4 +103,24 @@ test("visitor navigates to their account, edits every field and is returned to t
   await expect(summaryValue(page, "Phone")).toHaveText(editedPhone.national);
   await expect(summaryValue(page, "Language")).toHaveText(LANGUAGE_LABELS[edited.langue]);
   await expect(summaryValue(page, "Bio")).toHaveText(edited.bio);
+
+  // Then the save has reached the OTHER backend service. Nothing in the browser
+  // called it: the account API did, over HTTP, while it was serving the PUT
+  // above, through server/Accounts/NotificationsClient.cs. This assertion
+  // is the only place in the suite where the split backend is observable, and
+  // it is here rather than in a unit test because a mocked HTTP client would
+  // prove the call was written, not that it lands.
+  //
+  // Exactly one: seeding goes through /__test__/account, which notifies nobody,
+  // so this is the save the visitor just made and nothing else.
+  const notifications = await readNotifications(request, session);
+  expect(notifications).toHaveLength(1);
+  // Addressed to the email that was just typed in, which is the field proving
+  // the change itself crossed the wire and not merely a ping.
+  expect(notifications[0]?.to).toBe(edited.email);
+  // ...and written in the language that was just selected, which is the other
+  // field the two services agreed to exchange (server/Notifications/messages.ts).
+  expect(notifications[0]?.subject).toBe(
+    edited.langue === "fr" ? "Votre compte a été mis à jour" : "Your account was updated",
+  );
 });

@@ -1,1 +1,5 @@
-{}
+{
+  "enabledPlugins": {
+    "frontend-skills@newforma-konekt": true
+  }
+}

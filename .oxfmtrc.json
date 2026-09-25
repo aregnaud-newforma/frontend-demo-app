@@ -2,9 +2,10 @@
   "printWidth": 100,
   "sortPackageJson": false,
   "ignorePatterns": [
-    "dist/**",
+    "**/dist/**",
+    ".turbo/**",
     "test-results/**",
-    "public/mockServiceWorker.js",
+    "apps/shell/public/mockServiceWorker.js",
     // drizzle-kit's output: the SQL and its snapshots are regenerated, never
     // edited, and a formatter pass would only diff against the next run.
     "server/migrations/**",

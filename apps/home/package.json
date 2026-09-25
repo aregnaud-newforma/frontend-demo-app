@@ -1,0 +1,28 @@
+{
+  "name": "@demo/home",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    "./pages": "./src/pages.ts",
+    "./HomePage": "./src/HomePage.tsx"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@demo/tokens": "1.0.0",
+    "@sentry/react": "^11.0.0",
+    "@stylexjs/stylex": "^0.19.0",
+    "@tanstack/react-query": "^5.101.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-router": "^8"
+  },
+  "devDependencies": {
+    "@demo/account-core": "1.0.0",
+    "@demo/testing": "1.0.0"
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  // What every task's hash has to include no matter which package it belongs
+  // to. `.env` is here because the build scripts read it through node's
+  // `--env-file-if-exists`, which Turborepo cannot see; stylex.config.ts
+  // because its `rootDir` decides the CSS variable names of every build
+  // (packages/tokens/tokens.stylex.ts says why it must stay at the root).
+  "globalDependencies": [
+    ".env",
+    ".nvmrc",
+    "tsconfig.json",
+    "stylex.config.ts",
+    "vite.base.ts",
+    "federation.config.ts"
+  ],
+  "globalEnv": ["NODE_ENV", "CI"],
+  "tasks": {
+    // ROOT TASKS (`//#`). A task is one when it answers about the whole
+    // repository rather than about a package:
+    //
+    // - oxlint and oxfmt are a single Rust pass over every file, and splitting
+    //   them per package would be slower and would need the config copied.
+    // - the .NET tasks are driven by server/server.slnx, which is not in the
+    //   npm graph at all.
+    // - e2e starts five processes and a Postgres, and drives the built app
+    //   across all of them.
+    // - the eval harness cuts git worktrees off `git rev-parse --show-toplevel`
+    //   (evals/config.ts), so it only works from the root.
+    "//#lint": {},
+    "//#format:check": {},
+    // Scoped to server/, or any frontend edit would invalidate them: a root
+    // task's default inputs are the whole root package. bin/ and obj/ are
+    // gitignored and therefore already out.
+    "//#server:build": { "inputs": ["server/**", "global.json"] },
+    "//#server:test": { "inputs": ["server/**", "global.json"] },
+
+    // One Vitest run whose two projects span every package, and it stays that
+    // way on purpose: the contract AGENTS.md states - the FILENAME, not the
+    // folder, decides a test's tier - is a statement about the repository, and
+    // per-package configs would let a package drift from it with nothing to
+    // catch the drift. It is also what keeps the test tier free of a topology:
+    // the layout's tests use the account's mocks while the account's tests
+    // mount the shell's routes, so any app-to-app test dependency would be a
+    // cycle.
+    "//#test": { "outputs": ["coverage/**"] },
+
+    // Playwright drives the BUILT app, so the three builds are turbo's problem
+    // now rather than something each `webServer` entry re-runs. Not cached: it
+    // starts a Postgres, two services and three preview servers.
+    "//#e2e": {
+      "dependsOn": ["@demo/shell#build", "@demo/account#build", "@demo/home#build"],
+      "cache": false,
+      "env": ["DATABASE_URL", "SENTRY_*"]
+    },
+
+    // One per app - the three Vite builds, plus the mobile app's `expo export`,
+    // which bundles the same way Metro does on a device and so is the only
+    // thing in CI that proves that graph resolves across the workspace. It
+    // writes dist/ like the others; what it does NOT do is produce an .ipa,
+    // which is EAS's job and not a task here.
+    //
+    // `^build` is free today - packages/ export TypeScript source and have no
+    // build - and is here for the day one of them needs it.
+    //
+    // `home` is NOT made to wait for `account`, although its bundle carries the
+    // account's remoteEntry URL: that URL is a string computed from
+    // federation.config.ts, which is in globalDependencies, so a changed port
+    // re-hashes home's build already. An edge would serialise two builds that
+    // can run at once, for nothing.
+    //
+    // SENTRY_AUTH_TOKEN is in `env` for a reason beyond the upload:
+    // vite.base.ts keys `sourcemap` on it, so set and unset are two different
+    // bundles. Turbo 2 also runs tasks in strict env mode, which means this
+    // list is what gets FORWARDED into the task - without it the variables
+    // loaded from .env are filtered out and the build silently produces no
+    // source maps.
+    //
+    // EXPO_PUBLIC_* belongs in `env` for exactly the reason VITE_* does: Expo
+    // INLINES those variables into the bundle, so two values are two different
+    // artefacts and a cache that could not tell them apart would serve a build
+    // pointed at the wrong API.
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "!**/__tests__/**", "!**/*.test.ts", "!**/*.test.tsx"],
+      "outputs": ["dist/**"],
+      "env": ["SENTRY_*", "VITE_*", "EXPO_PUBLIC_*", "NODE_ENV"]
+    },
+    // The three web builds only. The mobile app's dev server is `expo start`,
+    // and its script is named `start` rather than `dev` precisely so this fan-
+    // out does not bring Metro up in every web session - `yarn mobile:start` is
+    // how you ask for it.
+    "dev": { "cache": false, "persistent": true },
+    "preview": { "dependsOn": ["build"], "cache": false, "persistent": true }
+  }
+}

@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: accepted, tooling superseded by 0002 (Postgres stands; Drizzle does not)
 date: 2026-09-23
 ---
 

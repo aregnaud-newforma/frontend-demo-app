@@ -1,0 +1,102 @@
+<!--
+  The account API: ASP.NET Core minimal APIs over Postgres through EF Core, see
+  Program.cs for what it serves and docs/adr/0002 for why it is .NET at all. One
+  of two backend services since docs/adr/0004; ../Notifications is the other, and
+  since docs/adr/0005 it is Node - so this is the only .NET service left, and
+  this file is the whole of the repository's .NET dependency list.
+
+  The SDK version is pinned in ../../global.json, which is to `dotnet` what
+  .nvmrc is to Node; `rollForward: latestFeature` accepts any newer 10.0.x patch.
+  The same file names the test runner, see ../Accounts.Tests/Accounts.Tests.csproj.
+-->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The same bar as `tsc` with `noEmit` under `strict`: a warning is a failure. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- No culture-aware formatting anywhere in this API, so no ICU to ship. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RootNamespace>Accounts</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    What turns a .NET frame in Sentry from a bare method name into the line of
+    code that threw, the way a source map does for the browser half.
+
+    Two halves. EmbedAllSources puts the source text INSIDE the portable PDB;
+    SentryUploadSymbols hands that PDB to Sentry, through the `sentry-cli` the
+    Sentry package ships and MSBuild targets that default to false. Sentry then
+    extracts the sources it needs and shows the frame in context.
+
+    NOT `SentryUploadSources`, the documented alternative, which silently does
+    nothing here. The .NET SDK writes a Source Link map into every PDB (the
+    repo path, as a raw.githubusercontent.com URL), and `sentry-cli` treats a
+    file that has a Source Link the same as one whose text is embedded: it
+    skips it. Every file has one, so it bundles nothing, reports "Resolved
+    source code for 0 debug information files" and succeeds. Sentry then never
+    follows the link either - symbolic issue #735 is still open. The two
+    properties are mutually exclusive anyway; the targets warn and turn
+    SentryUploadSources off when both are set.
+
+    Sources in every Release build, so the artifact does not change shape with
+    whoever holds a token, and the upload only when SENTRY_AUTH_TOKEN is in the
+    environment - the same switch the browser's source maps hang off
+    (vite.base.ts). So `yarn verify`, `yarn server:test` and `dotnet run` never
+    upload: they are Debug, and Debug symbols describe a build nothing runs.
+
+    The token has to be the ORGANIZATION kind (`sntrys_...`, see .env.example);
+    debug files take no other. It carries its own region, which is why there is
+    no SentryUrl here and why the Vite plugin's `url` has no counterpart.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <EmbedAllSources>true</EmbedAllSources>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' and '$(SENTRY_AUTH_TOKEN)' != ''">
+    <SentryOrg>alexisregnaud</SentryOrg>
+    <!-- The API's own project, as in .env.example and Program.cs. -->
+    <SentryProject>demo-account-backend</SentryProject>
+    <SentryUploadSymbols>true</SentryUploadSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reads the repo's .env into the process, so DATABASE_URL and SENTRY_DSN
+         reach `dotnet run` the way Node's env-file flag carried them before. -->
+    <PackageReference Include="DotNetEnv" Version="3.2.0" />
+    <!-- Named outright, at the version Design below carries, rather than left to
+         Npgsql's older transitive floor: the two would otherwise disagree in
+         every project that references this one (../Accounts.Tests), which the build
+         reports as an unresolvable conflict. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
+    <!-- Design-time only: what `dotnet ef migrations add` needs (see ../../.config). -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+  </ItemGroup>
+
+  <!--
+    The Sentry packages, named here rather than reached through a shared
+    project. ../Observability/ used to hold them and the setup both services
+    shared; with the notifications service on @sentry/node (docs/adr/0005) there
+    was one consumer left, and a library with one consumer is not a boundary.
+    SentrySetup.cs moved in beside Program.cs and these two lines came with it.
+
+    They carry the MSBuild targets as well - the `SentryUploadSymbols` block
+    above is theirs - which the package ships under `buildTransitive/`. That is
+    what made them flow through the old project reference, and naming them
+    directly is the shorter path to the same place.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Sentry.AspNetCore" Version="6.11.1" />
+    <!-- The profiler, which ships apart from the SDK because it carries the
+         .NET runtime's own sampling machinery. ALPHA, and .NET 8+ only - see
+         SentrySetup.cs for what it is turned on with. -->
+    <PackageReference Include="Sentry.Profiling" Version="6.11.1" />
+  </ItemGroup>
+
+</Project>
