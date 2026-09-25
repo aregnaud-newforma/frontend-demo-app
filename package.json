@@ -69,6 +69,9 @@
     ]
   },
   "dependencies": {
+    "@datadog/browser-logs": "^7.14.0",
+    "@datadog/browser-rum": "^7.14.0",
+    "@datadog/browser-rum-react": "^7.14.0",
     "@sentry/node": "^11",
     "@sentry/profiling-node": "^11",
     "@sentry/react": "^11.0.0",
@@ -82,6 +85,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",
+    "@datadog/vite-plugin": "^3.3.0",
     "@faker-js/faker": "^9.3.0",
     "@langfuse/client": "^5.11.0",
     "@langfuse/otel": "^5.11.0",

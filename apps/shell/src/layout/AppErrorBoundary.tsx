@@ -1,4 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
+import { addReactError } from "@datadog/browser-rum-react";
 import { ErrorBoundary, type FallbackRender } from "@sentry/react";
 import { CrashScreen } from "./CrashScreen";
 import { colors, space, text } from "@demo/tokens/tokens.stylex";
@@ -54,6 +55,19 @@ const renderCrashScreen: FallbackRender = ({ resetError }) => (
   </div>
 );
 
+/**
+ * What Datadog is told, since a caught error never reaches the `window.onerror`
+ * handler its SDK installs either. Through Sentry's `onError` rather than a
+ * second boundary nested in this one: the component stack is the same, and one
+ * boundary means one fallback.
+ */
+const reportToDatadog = (error: unknown, componentStack: string) =>
+  addReactError(error, { componentStack });
+
 export function AppErrorBoundary({ children }: { children: React.ReactNode }) {
-  return <ErrorBoundary fallback={renderCrashScreen}>{children}</ErrorBoundary>;
+  return (
+    <ErrorBoundary fallback={renderCrashScreen} onError={reportToDatadog}>
+      {children}
+    </ErrorBoundary>
+  );
 }

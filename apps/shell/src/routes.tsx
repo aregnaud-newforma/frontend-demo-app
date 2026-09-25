@@ -1,5 +1,7 @@
-import { createBrowserRouter, type RouteObject } from "react-router";
+import type { RouteObject } from "react-router";
+import { createBrowserRouter } from "@datadog/browser-rum-react/react-router-v8";
 import { wrapCreateBrowserRouter } from "@sentry/react";
+import { initDatadog } from "./datadog";
 import { PageLoading } from "./layout/PageLoading";
 import { RootLayout } from "./layout/RootLayout";
 import { RouteErrorBoundary } from "./layout/RouteErrorBoundary";
@@ -8,9 +10,11 @@ import { initSentry, routerInstrumentation } from "./sentry";
 /*
  * Before `wrapCreateBrowserRouter` at the bottom of this file, which is Sentry's
  * own instruction - "call this AFTER Sentry.init()" - and the reason the call
- * lives here rather than in ./main.tsx. ../sentry.ts says the rest.
+ * lives here rather than in ./main.tsx. ../sentry.ts says the rest. Datadog's
+ * router wants the same order, for the reason ./datadog.ts gives.
  */
 initSentry();
+initDatadog();
 
 /**
  * The whole route tree, written out rather than generated.
@@ -114,6 +118,11 @@ export const createRoutes = (): RouteObject[] => [
  * from the URL change, which a data router makes only after the page's remote
  * has loaded, and the hook is what sees the click. ../sentry.ts says the rest.
  * The tests' memory router does without it - Sentry is off there.
+ *
+ * `createBrowserRouter` is Datadog's, and Sentry wraps it: Datadog's is
+ * React Router's own with a subscriber that names each RUM view by the route
+ * that matched, so the two wrappers stack without either knowing, and both
+ * tools name a navigation `/account/edit` rather than by its URL.
  */
 export const router = wrapCreateBrowserRouter(createBrowserRouter)(createRoutes(), {
   instrumentations: [routerInstrumentation],

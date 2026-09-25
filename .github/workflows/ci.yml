@@ -94,7 +94,7 @@ jobs:
     # every pull request from a fork, since secrets are withheld there - the
     # build runs unchanged and emits no map at all. See apps/shell/vite.config.ts.
     #
-    # All four are in the `build` task's `env` in turbo.json, which is what
+    # All of them are in the `build` task's `env` in turbo.json, which is what
     # keeps the cache honest: a cache hit skips the upload, so a token-bearing
     # build must never be served from a token-less entry. SENTRY_RELEASE being
     # the sha is the load-bearing part - it makes every commit's build hash
@@ -106,6 +106,11 @@ jobs:
       # and its stamped DSN go to a project of its own.
       SENTRY_DSN_ACCOUNT: ${{ secrets.SENTRY_DSN_ACCOUNT }}
       SENTRY_DSN_HOME: ${{ secrets.SENTRY_DSN_HOME }}
+      # The same maps to Datadog, under the same SENTRY_RELEASE below
+      # (vite.base.ts's `appVersion`). The site is a repository variable, not a
+      # secret: it names the organisation's region and is in every event anyway.
+      DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+      VITE_DATADOG_SITE: ${{ vars.VITE_DATADOG_SITE }}
       # WHICH BUILD this is, in one word for all five Sentry projects. The Vite
       # plugin would derive the same sha from git on its own; naming it here is
       # what makes the three frontend builds and the two backends agree on a

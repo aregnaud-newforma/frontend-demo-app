@@ -1,4 +1,5 @@
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
+import { datadogRum } from "@datadog/browser-rum";
 import * as Sentry from "@sentry/react";
 
 /**
@@ -37,16 +38,25 @@ export function createQueryClient() {
      * EVERY failure, expected ones included: a session with no account answers
      * 404, and that lands here too. Fine for a demo, and named rather than
      * hidden - a real app filters on the status here before capturing.
+     *
+     * Datadog is told the same, for the same reason: its global handler is
+     * bypassed exactly as Sentry's is.
      */
     queryCache: new QueryCache({
-      onError: (error, query) =>
+      onError: (error, query) => {
         // The key as a tag, because one thrown `Error: Request failed with
         // status 500` looks like any other in the issue list; the key is what
         // says WHICH fetch it was.
-        Sentry.captureException(error, { tags: { queryKey: JSON.stringify(query.queryKey) } }),
+        const queryKey = JSON.stringify(query.queryKey);
+        Sentry.captureException(error, { tags: { queryKey } });
+        datadogRum.addError(error, { queryKey });
+      },
     }),
     mutationCache: new MutationCache({
-      onError: (error) => Sentry.captureException(error),
+      onError: (error) => {
+        Sentry.captureException(error);
+        datadogRum.addError(error);
+      },
     }),
     defaultOptions: {
       queries: {
