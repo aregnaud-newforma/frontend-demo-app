@@ -56,6 +56,7 @@ yarn db:generate          # a migration into server/Accounts/Migrations/ - yarn 
 yarn test                 # unit + integration   (yarn test:watch to keep it open)
 yarn test:native          # the mobile app's tier (jest-expo); yarn test does not reach it
 yarn e2e                  # end-to-end; starts both services and the preview build itself
+yarn lighthouse           # Lighthouse CI over the preview build; start preview + both services first
 yarn verify               # oxlint + oxfmt --check + both tsc projects + dotnet build - the CI gate
 yarn lint                 # oxlint  (yarn lint:fix to apply what it can)
 yarn format               # oxfmt   (yarn format:check to only report)

@@ -1,0 +1,75 @@
+# Lighthouse CI over the built web app: what lighthouserc.yml audits and
+# asserts, with the five processes it needs started here first.
+#
+# A workflow of its own rather than a job in ci.yml: ci.yml is the gate
+# AGENTS.md defines, and this is a measurement beside it. Its accessibility
+# assertion still fails the run, and a PR still shows that as a red check.
+name: Lighthouse
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    name: lighthouse (shell + remotes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The same Postgres as ci.yml's e2e job, which says why it is declared here
+    # rather than read from compose.yaml.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: frontend_demo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=frontend_demo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: yarn install --frozen-lockfile
+      # Backgrounded, so they outlive this step; the runner stops them when the
+      # job ends. `yarn preview` builds the three apps first (turbo.json).
+      - name: Start the services and the preview builds
+        run: |
+          nohup yarn accounts:start > accounts.log 2>&1 &
+          nohup yarn notifications:start > notifications.log 2>&1 &
+          nohup yarn preview > preview.log 2>&1 &
+      # The URLs playwright.config.ts waits on, for the same reason: a shell that
+      # answers before its remotes do is not up. The ports are federation.config.ts's.
+      - name: Wait for all five
+        run: |
+          for url in \
+            http://localhost:3001/health \
+            http://localhost:3002/health \
+            http://localhost:4173 \
+            http://localhost:4174/remoteEntry.js \
+            http://localhost:4175/remoteEntry.js; do
+            timeout 180 bash -c "until curl -sf $url > /dev/null; do sleep 2; done" \
+              || { echo "$url never answered"; tail -n 50 *.log; exit 1; }
+          done
+      # ubuntu-latest ships Chrome, which lhci finds on its own. The GitHub App
+      # token is optional: with it, each URL gets a status check on the PR that
+      # links to its report; without it, the links are in this step's log.
+      - run: yarn lighthouse
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
