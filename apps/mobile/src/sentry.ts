@@ -43,6 +43,16 @@ import * as Sentry from "@sentry/react-native";
  * `project`, is a symbolicated native stack.
  */
 
+/*
+ * Each screen under ./app is exported through `Sentry.withProfiler`, which adds
+ * a span for the screen's mount, and one for how long it stayed rendered, to
+ * whatever navigation transaction is open. The React Native SDK instruments
+ * requests on its own and nothing inside a component, so without it a
+ * navigation span says how long the screen took and not whether React was the
+ * reason. Without a client the wrapper records nothing, so unlike `Sentry.wrap`
+ * it needs no `sentryEnabled` check.
+ */
+
 export const navigationIntegration = Sentry.reactNavigationIntegration({
   // The tab bar and the stack push the same routes; one span per navigation is
   // what makes them comparable over time.
@@ -72,6 +82,15 @@ export function initSentry() {
     // inherit the decision from the header this SDK sends, so lowering it here
     // lowers it for all three.
     tracesSampleRate: 1,
+    // A profile is the sampled call stack under a transaction - Hermes's for the
+    // JS, the platform's for the native threads - so the trace says the screen
+    // took 800ms and the profile says which functions spent them. The web's
+    // twin is `browserProfilingIntegration`. A fraction OF the sampled
+    // transactions, so it can never profile more than `tracesSampleRate` keeps.
+    //
+    // The per-transaction rate rather than `_experiments.profilingOptions`,
+    // which is the web's `trace` lifecycle but still marked experimental here.
+    profilesSampleRate: 1,
     // What ties a mobile span to the .NET service's span on the other side of
     // the request: without an origin listed, the SDK attaches no
     // `sentry-trace` header and the two halves are two traces.
