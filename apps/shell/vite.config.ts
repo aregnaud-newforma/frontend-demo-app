@@ -48,6 +48,14 @@ const outDir = "dist";
 // A function of `command`, because the remotes' URLs are baked into the bundle
 // and differ between `vite dev` and a build - see `remoteEntryUrl`.
 export default defineConfig(({ command }) => ({
+  // The repository's .env, not one in apps/shell/. Vite looks for it in the
+  // project root, which stopped being the repository's when the app split into
+  // apps/: `vite build` never noticed, because package.json's `build:*`
+  // scripts hand the variables in through `process.env`, but `vite dev` is run
+  // with no such flag and read no DSN at all, so Sentry stayed off in silence.
+  // Only the shell: it is the build that initialises Sentry, and no remote
+  // reads `import.meta.env`.
+  envDir: "../..",
   build: { outDir, target: browserTargets, sourcemap },
   // The Sentry plugin goes last: it reads what the others emitted.
   plugins: [
