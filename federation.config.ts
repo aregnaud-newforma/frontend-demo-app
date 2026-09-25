@@ -78,10 +78,11 @@ export const remoteRef = (name: RemoteName, command: "build" | "serve") => ({
  * - `@sentry/react`: the SDK is initialised once, in the shell, and a remote's
  *   `Sentry.startSpan` from another copy would report to a client that was
  *   never set up: no error, no span.
- * - `@datadog/browser-rum` / `@datadog/browser-rum-react`: the same, for
- *   Datadog. The React package keeps the RUM API it was started with in a
- *   module variable, so `addReactError` from a remote's own copy would queue
- *   the error for an init that never comes.
+ * - `@datadog/browser-rum` / `@datadog/browser-rum-react` /
+ *   `@datadog/browser-logs`: the same, for Datadog. Each SDK queues what it is
+ *   given until its `init`, and the shell's copy is the only one that is ever
+ *   initialised - `addReactError` or `logger.info` from a remote's own copy
+ *   would wait for an init that never comes.
  *
  * `singleton` makes the runtime hand every consumer the first copy loaded and
  * warn if a remote asked for a version the shell's copy does not satisfy. The
@@ -95,4 +96,5 @@ export const shared = {
   "@sentry/react": { singleton: true },
   "@datadog/browser-rum": { singleton: true },
   "@datadog/browser-rum-react": { singleton: true },
+  "@datadog/browser-logs": { singleton: true },
 };
