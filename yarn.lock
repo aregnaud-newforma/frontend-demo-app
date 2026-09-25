@@ -714,6 +714,18 @@
     "@datadog/browser-rum-core" "7.14.0"
     "@datadog/js-core" "0.0.15"
 
+"@datadog/datadog-ci@^5.24.1":
+  version "5.24.1"
+  resolved "https://registry.yarnpkg.com/@datadog/datadog-ci/-/datadog-ci-5.24.1.tgz#d8d546ffac215129f10dc5e9fcd69cca15eb393a"
+  integrity sha512-mar+A2XjOflBbe6A73hMbIzH9QtKJPYhlf6VHojJETfPBIOpcRG8i2GGjgaYV1IsH0F8IFGFlyZUbTy3SWybIw==
+
+"@datadog/flagging-core@~2.0.1":
+  version "2.0.2"
+  resolved "https://registry.yarnpkg.com/@datadog/flagging-core/-/flagging-core-2.0.2.tgz#333d7a5701306f7311861c1c0a3ce0be6138cc38"
+  integrity sha512-2+oWyqz/EMNXtsgyW3NtueFgL0TciWInyMg/6bEUZhfr7UgPzCQ88Nag9FGoPCig19F/tHXE5hLiQccjkRUMWQ==
+  dependencies:
+    spark-md5 "^3.0.2"
+
 "@datadog/js-core@0.0.15":
   version "0.0.15"
   resolved "https://registry.yarnpkg.com/@datadog/js-core/-/js-core-0.0.15.tgz#276179f3f0cc5094865b175637489577622c89f1"
@@ -740,6 +752,14 @@
   integrity sha512-6JQVv7LGBYG6uiY2wtno5paqP/G1UFXK1tA4LZEt2Bc9AzbCMtO2yrs1VfYDzMyVaFSj0+6QLdR8Hu5DQUODmw==
   dependencies:
     "@datadog/libdatadog-wasm" "0.21.0"
+
+"@datadog/mobile-react-native@^3.8.0":
+  version "3.8.0"
+  resolved "https://registry.yarnpkg.com/@datadog/mobile-react-native/-/mobile-react-native-3.8.0.tgz#ce693aa4bdd91d1152495d75d66b88ed19884630"
+  integrity sha512-n/DNUHig3P/SSAR/PM1lMoy38RenGv6KbiD7mlhcogA+F7CJ3BqfDHCDs1se1GUBfq2CWn536G1e/KeT7X7nxg==
+  dependencies:
+    "@datadog/flagging-core" "~2.0.1"
+    big-integer "^1.6.52"
 
 "@datadog/native-appsec@11.0.2":
   version "11.0.2"
@@ -4658,7 +4678,7 @@ basic-ftp@^5.0.2:
   resolved "https://registry.yarnpkg.com/basic-ftp/-/basic-ftp-5.3.1.tgz#3148ee9af43c0522514a4f973fecb1d3cbb6d71e"
   integrity sha512-bopVNp6ugyA150DDuZfPFdt1KZ5a94ZDiwX4hMgZDzF+GttD80lEy8kj98kbyhLXnPvhtIo93mdnLIjpCAeeOw==
 
-big-integer@1.6.x:
+big-integer@1.6.x, big-integer@^1.6.52:
   version "1.6.52"
   resolved "https://registry.yarnpkg.com/big-integer/-/big-integer-1.6.52.tgz#60a887f3047614a8e1bffe5d7173490a97dc8c85"
   integrity sha512-QxD8cf2eVqJOOz63z6JIN9BzvVs/dlySa5HGSBH5xtR8dPteIRQnBxxKqkNTiT6jbDTF6jAfrd4oMcND9RGbQg==
@@ -5730,6 +5750,11 @@ expo-constants@~57.0.19:
   integrity sha512-3eK1kZRwCdMizQLlM/PPlPwjaPnB5qKvdRDMBMnB1ZxmvWJBf9TB4uEO4DMMfIPaFUxYFs29dsR5fPr1gh3FTQ==
   dependencies:
     "@expo/env" "~2.4.3"
+
+expo-datadog@^57.0.0:
+  version "57.0.0"
+  resolved "https://registry.yarnpkg.com/expo-datadog/-/expo-datadog-57.0.0.tgz#d7309b94d6ebb63c842b1fc0f8377b76dbf39788"
+  integrity sha512-Uj7ngM2evs8vrplYf/hOTSMezxhQdPKsUoODoYaGEH+ucKg0hpyJo/OWy/eg4prlQ6Vplb+OfGPG1VEibrOgTQ==
 
 expo-file-system@~57.0.7:
   version "57.0.7"
@@ -9672,6 +9697,11 @@ source-map@^0.8.0:
   version "0.8.0"
   resolved "https://registry.yarnpkg.com/source-map/-/source-map-0.8.0.tgz#72b9006383bd9fc70d52e435c91c2d73249c60a4"
   integrity sha512-d8EqvL+k/SOXCreS/SUzg2ciyHqBBLcN/yuRjFsbvVhHTE2pgei7oAhmPM7kWFbkX6OSMQfUq4KbkF3au9lhYQ==
+
+spark-md5@^3.0.2:
+  version "3.0.2"
+  resolved "https://registry.yarnpkg.com/spark-md5/-/spark-md5-3.0.2.tgz#7952c4a30784347abcee73268e473b9c0167e3fc"
+  integrity sha512-wcFzz9cDfbuqe0FZzfi2or1sgyIrsDwmPwfZC4hiNidPdPINjeUwNfv5kldczoEAcjl9Y1L3SM7Uz2PUEQzxQw==
 
 speedline-core@^1.4.3:
   version "1.4.3"
