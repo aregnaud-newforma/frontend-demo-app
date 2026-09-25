@@ -40,6 +40,12 @@ if (process.env.DD_AGENT_HOST) {
   // the terminal `yarn start` shares with three other processes.
   process.env.DD_RUNTIME_METRICS_ENABLED ??= "false";
   process.env.DD_TRACE_STARTUP_LOGS ??= "false";
+  // The profiler, though, INSTEAD of Sentry's: ./instrument.ts reads this
+  // variable and leaves its own off, because two profilers sampling one V8
+  // isolate would skew both. Profiles go through the Agent's trace port and
+  // link to the spans they sampled, the way Sentry's link to its transactions.
+  // "false" in .env gives profiling back to Sentry.
+  process.env.DD_PROFILING_ENABLED ??= "true";
   // This service calls nothing over the network except Sentry, whose uploads
   // would otherwise show up in every trace as an outgoing request - with a DNS
   // lookup and a TCP connect under each. What the trace is for is the request

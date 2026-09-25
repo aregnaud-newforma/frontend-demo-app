@@ -1,3 +1,5 @@
+import { datadogLogs } from "@datadog/browser-logs";
+import { datadogRum } from "@datadog/browser-rum";
 import * as Sentry from "@sentry/react";
 import * as stylex from "@stylexjs/stylex";
 import { revalidateLogic, useForm, type AnyFieldApi } from "@tanstack/react-form";
@@ -147,9 +149,20 @@ function AccountFields({ account }: { account: Account }) {
      * `startSpan` ends the span when the promise it returns settles, so the
      * wrapper has to BE the mutationFn - wrapping `save.mutate` would end the
      * span the instant the mutation was queued and measure nothing.
+     *
+     * Datadog's twin is a RUM action of the same name, started and stopped
+     * around the same promise. An action rather than a duration vital because
+     * RUM ties to an action the resources and errors that happen while it is
+     * open - the `PUT /api/account` resource, and through its `traceparent`
+     * the backend trace - which is what the Sentry span gets by being their
+     * parent.
      */
-    mutationFn: (values: ValidAccount) =>
-      Sentry.startSpan({ name: "account.save", op: "ui.submit" }, () => updateAccount(values)),
+    mutationFn: (values: ValidAccount) => {
+      datadogRum.startAction("account.save");
+      return Sentry.startSpan({ name: "account.save", op: "ui.submit" }, () =>
+        updateAccount(values),
+      ).finally(() => datadogRum.stopAction("account.save"));
+    },
     onSuccess: (saved) => {
       // Write the server's response straight into the cache, THEN leave.
       queryClient.setQueryData(accountQueryKey, saved);
@@ -157,11 +170,17 @@ function AccountFields({ account }: { account: Account }) {
       // `dataCollection.userInfo` draws in ../sentry.ts. Which language someone
       // picked and whether they left the phone empty is what says the form
       // works; their name and email would only say who they are.
-      Sentry.logger.info("Account updated", {
+      const summary = {
         langue: saved.langue,
         hasTelephone: saved.telephone !== null,
         bioLength: saved.bio.length,
-      });
+      };
+      Sentry.logger.info("Account updated", summary);
+      // Datadog has no metrics API in the browser, so this log is also where
+      // the two metrics below come from there: a log-based metric counts
+      // "Account updated" by `@langue`, and another takes the distribution of
+      // `@bioLength`. Both are defined in Datadog, not here.
+      datadogLogs.logger.info("Account updated", summary);
       /*
        * The same event, counted rather than written down.
        *

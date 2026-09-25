@@ -77,7 +77,11 @@ public static class DatadogSetup
                     new("deployment.environment.name", builder.Environment.EnvironmentName.ToLowerInvariant()),
                 ]))
             .WithTracing(tracing => tracing
-                .AddAspNetCoreInstrumentation()
+                // An unhandled exception as an event on the request's span, with
+                // its type, message and stack - what Datadog's Error Tracking
+                // groups an issue by. Without it the span is only marked errored
+                // by its 500, and Sentry.AspNetCore is the only one that sees why.
+                .AddAspNetCoreInstrumentation(aspNetCore => aspNetCore.RecordException = true)
                 // The call to the notifications service and nothing else. The
                 // Sentry SDK sends its envelopes through HttpClient too, and
                 // every upload would otherwise be a span in the trace it is
