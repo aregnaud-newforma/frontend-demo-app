@@ -94,7 +94,7 @@ export const sourcemap = sentryAuthToken ? ("hidden" as const) : false;
 
 /** The shell's Sentry project, and every build's until it is given its own. */
 const defaultSentryProject = {
-  project: "demo-web-shell-frontend",
+  project: "demo-web-frontend",
   dsn: process.env.VITE_SENTRY_DSN,
 };
 
