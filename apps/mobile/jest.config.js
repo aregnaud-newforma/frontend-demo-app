@@ -36,6 +36,14 @@ module.exports = {
   setupFilesAfterEnv: [...(expoPreset.setupFilesAfterEnv ?? []), "<rootDir>/jest.setup.ts"],
   testMatch: ["<rootDir>/src/**/*.native.test.tsx"],
   /*
+   * The first test of each file pays for loading the app - expo-router, the
+   * screens, the mock network - because the render is what first requires
+   * them. That is 2.6s on a laptop and over jest's default 5s on a CI runner
+   * with fewer cores running three files at once, where it failed every first
+   * test while the rest of each file passed in milliseconds.
+   */
+  testTimeout: 30_000,
+  /*
    * `node` added to jest-expo's own `react-native` condition, and only for
    * that: MSW gates `msw/node` behind it in its exports map, so with the
    * preset's conditions alone the import fails with "Cannot find module

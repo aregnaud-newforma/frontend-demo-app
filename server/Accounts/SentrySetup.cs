@@ -50,7 +50,12 @@ public static class SentrySetup
             // not by its project, so all three parts still read as one trace -
             // while a .NET stack and a React stack stay in separate issue
             // streams.
-            options.Dsn = Environment.GetEnvironmentVariable("SENTRY_DSN");
+            //
+            // `?? ""` is what makes "off unless set" true. Handed a null DSN,
+            // this SDK does not stay quiet - it throws at startup, "You must
+            // supply a DSN to use Sentry", and the service never answers. An
+            // empty string is how it is told to be off.
+            options.Dsn = Environment.GetEnvironmentVariable("SENTRY_DSN") ?? "";
             // `development`, `production`: the browser half sends Vite's `MODE`,
             // the notifications service sends `NODE_ENV`, and these are the same
             // words in the same case, so the three are one environment in Sentry
