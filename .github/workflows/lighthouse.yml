@@ -165,6 +165,11 @@ jobs:
         if: ${{ !cancelled() && hashFiles('.lighthouseci/build-context.json') != '' }}
         with:
           name: lighthouse
+          # .lighthouseci/ is a dot-directory, which upload-artifact skips
+          # unless told otherwise - silently, with a warning and an empty run.
+          # `error` makes the next such surprise fail the step instead.
+          include-hidden-files: true
+          if-no-files-found: error
           path: |
             .lighthouseci/lhr-*.json
             .lighthouseci/build-context.json
