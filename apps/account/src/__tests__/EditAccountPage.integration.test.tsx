@@ -8,12 +8,16 @@ import { worker } from "@demo/testing/worker";
 import { deferred } from "@demo/testing/deferred";
 import { renderRoute } from "@demo/testing/render-route";
 import { app } from "@demo/shell/app-under-test";
-import { accounts } from "../mocks/db";
-import { ACCOUNT_URL } from "../mocks/handlers";
-import { accountValuesFactory, createFrenchPhone, seedAccount } from "../mocks/db-utils";
-import { LANGUAGE_LABELS } from "../helpers/validation";
-import type { AccountValues, Language } from "../helpers/validation";
-import type { AccountPayload } from "../helpers/api";
+import { accounts } from "@demo/account-core/mocks/db";
+import { ACCOUNT_URL } from "@demo/account-core/mocks/handlers";
+import {
+  accountValuesFactory,
+  createFrenchPhone,
+  seedAccount,
+} from "@demo/account-core/mocks/db-utils";
+import { LANGUAGE_LABELS } from "@demo/account-core/validation";
+import type { AccountValues, Language } from "@demo/account-core/validation";
+import type { AccountPayload } from "@demo/account-core/api";
 
 /*
  * Integration: page

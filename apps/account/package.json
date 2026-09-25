@@ -5,12 +5,7 @@
   "type": "module",
   "exports": {
     "./pages": "./src/pages.ts",
-    "./preview": "./src/preview.ts",
-    "./helpers/api": "./src/helpers/api.ts",
-    "./helpers/validation": "./src/helpers/validation.ts",
-    "./mocks/db": "./src/mocks/db.ts",
-    "./mocks/db-utils": "./src/mocks/db-utils.ts",
-    "./mocks/handlers": "./src/mocks/handlers.ts"
+    "./preview": "./src/preview.ts"
   },
   "scripts": {
     "dev": "vite",
@@ -18,6 +13,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@demo/account-core": "1.0.0",
     "@demo/tokens": "1.0.0",
     "@sentry/react": "^11.0.0",
     "@stylexjs/stylex": "^0.19.0",

@@ -29,8 +29,17 @@ something to put in it — a folder holding one file is a category, not a subjec
 
 `apps/shell` owns the chrome: `index.html`, the layout, the router, the
 providers and the Sentry client. `packages/testing` is the integration
-harness and `packages/tokens` the StyleX variables; both are leaves that
-import nothing of the app's, and the reverse is the smell.
+harness, `packages/tokens` the StyleX variables and `packages/account-core`
+the account's platform-free half - the schema, the phone parser, the API
+client, the query and the mocks. All three are leaves that import nothing of
+an app's, and the reverse is the smell.
+
+`apps/mobile` is the same product on iOS and Android: ONE Expo app, not three
+remotes, because a binary has no independent deployment to buy
+(`docs/adr/0007`). It shares `packages/account-core` with the web and writes
+its own everything else - Expo Router where the web has React Router,
+Unistyles where the web has StyleX. It is the one app whose files the root
+`tsconfig.json` excludes, because React Native is not the browser's program.
 
 Each vertical is also a **remote**: its own Vite build, served from its own
 origin, fetched by the shell when a route needs it (`docs/adr/0003`). What a
@@ -97,7 +106,12 @@ message that names neither the cause nor the file.
 
 A test's **filename**, not its folder, decides which tier runs it:
 `*.unit.test.ts` in Node, `*.integration.test.tsx` in a real Chromium against
-MSW, `e2e/*.spec.ts` in Playwright against the real API process.
+MSW, `*.native.test.tsx` under jest-expo against the same MSW handlers,
+`e2e/*.spec.ts` in Playwright against the real API process.
+
+The native tier is the one with a runner of its own - Vitest's browser mode has
+no device to render a React Native screen in - so it is `yarn test:native`
+beside `yarn test`, the way the .NET half is `yarn server:test`.
 
 ## Before you finish
 
@@ -107,7 +121,9 @@ yarn verify && yarn test
 
 Both green, every time. Add `yarn server:test` when the change touches
 `server/Accounts/` — it is the .NET half's tests alone, and the Node half's
-run under `yarn test` like any other unit test. Add `yarn e2e` when the change
+run under `yarn test` like any other unit test. Add `yarn test:native` when it
+touches `apps/mobile` or `packages/account-core` — the mobile tier has its own
+runner and `yarn test` does not reach it. Add `yarn e2e` when the change
 crosses the wire: a field that never reaches the backend still type-checks and
 still passes the integration suite.
 
@@ -118,6 +134,12 @@ builds nothing. That is the cache working, not a skipped build;
 Seeing a visual change in the browser is part of finishing it: `yarn start`,
 which brings up the database, both backend services and the three frontend
 builds together.
+
+On mobile that is `yarn mobile:start`, against those same services — and the
+first run on a machine needs `yarn mobile:prebuild && yarn mobile:ios`, because
+Unistyles and Sentry are native modules and there is therefore no Expo Go path.
+`apps/mobile/.env.example` says which address the device reaches the API at,
+which is not `localhost` on every platform.
 
 ## Agent docs
 

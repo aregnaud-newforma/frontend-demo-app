@@ -4,7 +4,8 @@ import * as Sentry from "@sentry/react";
 /**
  * The client every vertical's queries run on - the app owns the CACHE, while
  * each vertical owns what goes in it. The account's key lives with the fetch
- * that fills it, in account/hooks/use-account.ts, and nothing here knows it exists.
+ * that fills it, in packages/account-core/src/use-account.ts, and nothing here
+ * knows it exists.
  *
  * A factory, not a singleton module export, on purpose: the app builds one
  * client for its lifetime, and each TEST builds its own. Sharing a client

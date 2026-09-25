@@ -13,8 +13,8 @@ import "vitest-browser-react";
 import "@demo/shell/global.css";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { createWorker } from "@demo/testing/worker";
-import { accounts } from "@demo/account/mocks/db";
-import { handlers } from "@demo/account/mocks/handlers";
+import { accounts } from "@demo/account-core/mocks/db";
+import { handlers } from "@demo/account-core/mocks/handlers";
 
 // The one place the app's mock network is named. @demo/testing/worker takes the
 // handlers rather than importing them, so the harness depends on none of the

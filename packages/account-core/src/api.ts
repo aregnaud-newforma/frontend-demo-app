@@ -1,3 +1,4 @@
+import { apiBaseUrl } from "./api-base-url";
 import { parseFrenchPhone } from "./phone";
 import type { AccountValues, Language, ValidAccount } from "./validation";
 
@@ -46,12 +47,12 @@ export function toPayload(values: ValidAccount): AccountPayload {
 }
 
 /**
- * Single network boundary, both directions. Building the absolute URL from
- * window.location.origin keeps it working in the app, under Playwright, and
- * under Vitest Browser Mode
+ * Single network boundary, both directions. The absolute URL is built per call
+ * rather than held as a constant, because the origin it is built against
+ * differs per host and per run - ./api-base-url.ts says which.
  */
 function accountUrl() {
-  return new URL("/api/account", window.location.origin);
+  return new URL("/api/account", apiBaseUrl());
 }
 
 export async function getAccount(): Promise<Account> {

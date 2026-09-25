@@ -1,0 +1,25 @@
+{
+  // The mobile program, and the reason the root tsconfig.json excludes this
+  // directory: `expo/tsconfig.base` targets React Native - no DOM lib, JSX from
+  // react-native's own declarations - and the root config's `types` (vitest,
+  // vite/client) describe a browser this app never runs in.
+  //
+  // Named exactly `tsconfig.json`, which is what an editor finds by walking up
+  // from a file inside apps/mobile. `yarn verify` runs it with `tsc -p`.
+  //
+  // `include` is Expo's: `expo start` rewrites this key to whatever the current
+  // SDK expects, so anything added to it comes back changed.
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    // jest rather than vitest: the tests here run under jest-expo
+    // (./jest.config.js), which is the tier the FILENAME decides -
+    // *.native.test.tsx, where the web's integration tier is
+    // *.integration.test.tsx.
+    "types": ["jest", "node"]
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", "dist", "ios", "android"]
+}

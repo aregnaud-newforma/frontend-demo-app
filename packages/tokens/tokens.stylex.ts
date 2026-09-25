@@ -21,6 +21,10 @@ import * as stylex from "@stylexjs/stylex";
  * A package of its own rather than a file in a vertical: it belongs to no
  * feature, and every build - the shell and both remotes - has to compile the
  * same file to end up with the same CSS variables.
+ *
+ * ./tokens.native.ts is the same scale for React Native, and says why it is a
+ * second file rather than a second consumer of this one. A value changed here
+ * is a value to change there.
  */
 
 const DARK = "@media (prefers-color-scheme: dark)";

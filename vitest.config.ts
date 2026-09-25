@@ -51,7 +51,11 @@ export default defineConfig({
       // no behaviour to lose.
       exclude: [
         "**/__tests__/**",
-        "apps/account/src/mocks/**",
+        "packages/account-core/src/mocks/**",
+        // The mobile app is React Native: jest-expo runs it (apps/mobile/jest.config.js),
+        // so nothing here ever loads those files and `coverage.all` would
+        // otherwise report every one of them at 0%.
+        "apps/mobile/**",
         "apps/shell/src/main.tsx",
         "src/routes.tsx",
       ],

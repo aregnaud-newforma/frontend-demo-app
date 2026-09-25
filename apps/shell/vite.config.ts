@@ -21,7 +21,7 @@ import { fromRoot } from "../../stylex.config.ts";
  */
 
 // The app builds its request from window.location.origin (see
-// apps/account/src/helpers/api.ts), so /api/account is same-origin by
+// packages/account-core/src/api.ts), so /api/account is same-origin by
 // construction.
 // The real API runs in its own process on another port, which is exactly what
 // a proxy is for: the browser keeps talking to one origin - cookies and all -

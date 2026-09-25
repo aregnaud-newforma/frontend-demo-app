@@ -14,7 +14,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
-import type { Account } from "@demo/account/helpers/api";
+import type { Account } from "@demo/account-core/api";
 
 /** Where the account API actually listens. */
 const API_ORIGIN = "http://localhost:3001";

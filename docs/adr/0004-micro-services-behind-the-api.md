@@ -153,3 +153,9 @@ in the middle.
   so nothing that reports had to change. What did is the slug each build uploads
   to - `vite.base.ts` and both `.csproj` files - and every saved query or alert
   written against the old slug.
+- **The web's three are `demo-web-<subject>-frontend`.** When `apps/mobile`
+  arrived with `demo-mobile-frontend` (docs/adr/0007), "frontend" stopped
+  naming one platform, so `demo-shell-frontend`, `demo-account-frontend` and
+  `demo-home-frontend` became `demo-web-shell-frontend`,
+  `demo-web-account-frontend` and `demo-web-home-frontend`. The same rule as
+  above held: the DSNs did not change, the slug in `vite.base.ts` did.

@@ -25,7 +25,12 @@
     "preview:shell": "yarn workspace @demo/shell preview",
     "preview:account": "yarn workspace @demo/account preview",
     "preview:home": "yarn workspace @demo/home preview",
+    "mobile:start": "yarn workspace @demo/mobile start",
+    "mobile:prebuild": "yarn workspace @demo/mobile prebuild",
+    "mobile:ios": "yarn workspace @demo/mobile ios",
+    "mobile:android": "yarn workspace @demo/mobile android",
     "test": "vitest run",
+    "test:native": "yarn workspace @demo/mobile test",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:watch": "vitest",
@@ -44,7 +49,7 @@
     "lint:fix": "oxlint --fix",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "verify": "oxlint && oxfmt --check && tsc --noEmit && tsc -p tsconfig.app.json && dotnet build server --nologo -warnaserror",
+    "verify": "oxlint && oxfmt --check && tsc --noEmit && tsc -p tsconfig.app.json && tsc -p apps/mobile && dotnet build server --nologo -warnaserror",
     "browsers:install": "playwright install --with-deps chromium",
     "postinstall": "msw init apps/shell/public/ --save"
   },
@@ -73,7 +78,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@babel/core": "^8.0.1",
+    "@babel/core": "^7.29.7",
     "@faker-js/faker": "^9.3.0",
     "@langfuse/client": "^5.11.0",
     "@langfuse/otel": "^5.11.0",

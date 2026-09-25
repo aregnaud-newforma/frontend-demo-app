@@ -93,10 +93,13 @@ const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN;
 export const sourcemap = sentryAuthToken ? ("hidden" as const) : false;
 
 /** The shell's Sentry project, and every build's until it is given its own. */
-const defaultSentryProject = { project: "demo-shell-frontend", dsn: process.env.VITE_SENTRY_DSN };
+const defaultSentryProject = {
+  project: "demo-web-shell-frontend",
+  dsn: process.env.VITE_SENTRY_DSN,
+};
 
 /**
- * A remote's own Sentry project - `demo-<name>-frontend`, opted into by
+ * A remote's own Sentry project - `demo-web-<name>-frontend`, opted into by
  * setting `SENTRY_DSN_<NAME>` (see .env.example) - so its errors land in an
  * issue stream its team owns, with releases and source maps of its own. Unset,
  * the remote reports into the shell's project like everything else: nothing
@@ -105,7 +108,7 @@ const defaultSentryProject = { project: "demo-shell-frontend", dsn: process.env.
  */
 const sentryProjectFor = (name: RemoteName) => {
   const dsn = process.env[`SENTRY_DSN_${name.toUpperCase()}`];
-  return dsn ? { project: `demo-${name}-frontend`, dsn } : defaultSentryProject;
+  return dsn ? { project: `demo-web-${name}-frontend`, dsn } : defaultSentryProject;
 };
 
 /**

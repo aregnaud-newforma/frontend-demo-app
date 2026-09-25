@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { useAccount } from "../hooks/use-account";
+import { useAccount } from "@demo/account-core/use-account";
 import { ErrorBanner, LoadingStatus } from "./PageState";
 import { colors, radius, space, text } from "@demo/tokens/tokens.stylex";
 

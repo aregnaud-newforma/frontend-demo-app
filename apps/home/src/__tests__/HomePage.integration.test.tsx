@@ -21,7 +21,7 @@
  * memory history, queries by role.
  */
 import { expect, it, describe } from "vitest";
-import { seedAccount } from "@demo/account/mocks/db-utils";
+import { seedAccount } from "@demo/account-core/mocks/db-utils";
 import { renderRoute } from "@demo/testing/render-route";
 import { app } from "@demo/shell/app-under-test";
 

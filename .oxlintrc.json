@@ -74,6 +74,32 @@
       // the entry points of ITS build, and pull its stylesheet in the same way.
       "files": ["apps/shell/src/main.tsx", "apps/*/src/pages.ts", "apps/*/src/preview.ts"],
       "rules": { "import/no-unassigned-import": "off" }
+    },
+    {
+      // React Native, where three of the rules above are reasoning about a
+      // platform this app does not run on.
+      //
+      // jsx-a11y reads JSX element NAMES - it knows what an <img> or a <button>
+      // needs, and a <Pressable> means nothing to it, so every rule in it is
+      // either silent or wrong here. Accessibility is not dropped with it: the
+      // components carry `accessibilityRole`, `accessibilityLabel` and
+      // `accessibilityLiveRegion`, and the *.native.test.tsx suite queries by
+      // label rather than by test id, which is the check a linter cannot make.
+      //
+      // The two unassigned imports are the app's entry point and its jest
+      // setup, both of which exist ONLY for their side effects and in an order
+      // that matters - each file says why.
+      //
+      // `no-unstable-nested-components` is the one real trade: a native screen
+      // declares its header button as `headerRight: () => ...`, which is the
+      // navigator's API rather than a component tree, so there is no version of
+      // it the rule would accept.
+      "files": ["apps/mobile/**"],
+      "plugins": ["typescript", "unicorn", "oxc", "react", "import", "promise"],
+      "rules": {
+        "import/no-unassigned-import": "off",
+        "react/no-unstable-nested-components": "off"
+      }
     }
   ]
 }

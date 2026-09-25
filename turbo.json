@@ -53,8 +53,14 @@
       "env": ["DATABASE_URL", "SENTRY_*"]
     },
 
-    // One per app. `^build` is free today - packages/ export TypeScript source
-    // and have no build - and is here for the day one of them needs it.
+    // One per app - the three Vite builds, plus the mobile app's `expo export`,
+    // which bundles the same way Metro does on a device and so is the only
+    // thing in CI that proves that graph resolves across the workspace. It
+    // writes dist/ like the others; what it does NOT do is produce an .ipa,
+    // which is EAS's job and not a task here.
+    //
+    // `^build` is free today - packages/ export TypeScript source and have no
+    // build - and is here for the day one of them needs it.
     //
     // `home` is NOT made to wait for `account`, although its bundle carries the
     // account's remoteEntry URL: that URL is a string computed from
@@ -68,12 +74,21 @@
     // list is what gets FORWARDED into the task - without it the variables
     // loaded from .env are filtered out and the build silently produces no
     // source maps.
+    //
+    // EXPO_PUBLIC_* belongs in `env` for exactly the reason VITE_* does: Expo
+    // INLINES those variables into the bundle, so two values are two different
+    // artefacts and a cache that could not tell them apart would serve a build
+    // pointed at the wrong API.
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", "!**/__tests__/**", "!**/*.test.ts", "!**/*.test.tsx"],
       "outputs": ["dist/**"],
-      "env": ["SENTRY_*", "VITE_*", "NODE_ENV"]
+      "env": ["SENTRY_*", "VITE_*", "EXPO_PUBLIC_*", "NODE_ENV"]
     },
+    // The three web builds only. The mobile app's dev server is `expo start`,
+    // and its script is named `start` rather than `dev` precisely so this fan-
+    // out does not bring Metro up in every web session - `yarn mobile:start` is
+    // how you ask for it.
     "dev": { "cache": false, "persistent": true },
     "preview": { "dependsOn": ["build"], "cache": false, "persistent": true }
   }

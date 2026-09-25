@@ -66,5 +66,13 @@
     "types",
     "vitest.setup.ts",
     "*.config.ts"
-  ]
+  ],
+  // The one exception to "every TypeScript file in the repo", and the reason it
+  // is an exception rather than a hole: apps/mobile is React Native. Its lib is
+  // not the DOM, its `types` are jest and expo rather than vitest and vite, and
+  // its JSX comes from react-native's own declarations - a program that held
+  // both would have to widen until neither half was really checked. It has its
+  // own tsconfig.json (extending expo/tsconfig.base), which is what the editor
+  // finds by walking up from a file inside it, and `yarn verify` runs it.
+  "exclude": ["apps/mobile"]
 }

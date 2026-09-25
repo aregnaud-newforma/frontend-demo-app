@@ -8,10 +8,10 @@ import { worker } from "@demo/testing/worker";
 import { deferred } from "@demo/testing/deferred";
 import { renderRoute } from "@demo/testing/render-route";
 import { app } from "@demo/shell/app-under-test";
-import { accounts } from "../mocks/db";
-import { ACCOUNT_URL } from "../mocks/handlers";
-import { createFrenchPhone, seedAccount } from "../mocks/db-utils";
-import { LANGUAGE_LABELS } from "../helpers/validation";
+import { accounts } from "@demo/account-core/mocks/db";
+import { ACCOUNT_URL } from "@demo/account-core/mocks/handlers";
+import { createFrenchPhone, seedAccount } from "@demo/account-core/mocks/db-utils";
+import { LANGUAGE_LABELS } from "@demo/account-core/validation";
 
 /*
  * Integration: page

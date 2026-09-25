@@ -5,9 +5,14 @@ import { Link, useNavigate } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FieldError, errorProps } from "./components/FieldError";
 import { ErrorBanner, LoadingStatus } from "./components/PageState";
-import { toValues, updateAccount, type Account } from "./helpers/api";
-import { accountQueryKey, useAccount } from "./hooks/use-account";
-import { LANGUAGES, LANGUAGE_LABELS, accountSchema, type ValidAccount } from "./helpers/validation";
+import { toValues, updateAccount, type Account } from "@demo/account-core/api";
+import { accountQueryKey, useAccount } from "@demo/account-core/use-account";
+import {
+  LANGUAGES,
+  LANGUAGE_LABELS,
+  accountSchema,
+  type ValidAccount,
+} from "@demo/account-core/validation";
 import { colors, radius, shadow, space, text } from "@demo/tokens/tokens.stylex";
 
 const styles = stylex.create({

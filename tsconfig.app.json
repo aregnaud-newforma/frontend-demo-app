@@ -36,8 +36,11 @@
     "**/__tests__/**",
     "**/*.test.ts",
     "**/*.test.tsx",
-    "apps/*/src/mocks/**",
     "apps/*/src/app-under-test.ts",
-    "packages/testing/**"
+    "packages/testing/**",
+    // React Native, checked by its own config - apps/mobile/tsconfig.json
+    // extends expo/tsconfig.base, whose lib and jsx settings are not this
+    // program's. `yarn verify` runs `tsc -p apps/mobile` beside this one.
+    "apps/mobile/**"
   ]
 }

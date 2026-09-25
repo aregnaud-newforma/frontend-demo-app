@@ -71,6 +71,13 @@ jobs:
       # is why they run here, where the runner's Docker is, and not under
       # `yarn test`, whose Node tier has no service to lean on.
       - run: yarn server:test
+      # The mobile app's tier. Its own runner - jest-expo, because the screens
+      # are React Native and Vitest's browser mode has no device to render them
+      # in - so it is a command of its own beside `yarn test` rather than part
+      # of it (apps/mobile/jest.config.js says the rest). No simulator and no
+      # native build involved: these render through React, against the same MSW
+      # handlers the browser tier uses.
+      - run: yarn test:native
 
   build:
     name: build (bundle + source maps + debug files)

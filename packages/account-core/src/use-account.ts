@@ -1,5 +1,5 @@
 import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
-import { getAccount, type Account } from "../helpers/api";
+import { getAccount, type Account } from "./api";
 
 export const accountQueryKey = ["account"] as const;
 

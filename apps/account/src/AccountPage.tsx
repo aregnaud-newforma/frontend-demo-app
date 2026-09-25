@@ -1,8 +1,8 @@
 import * as stylex from "@stylexjs/stylex";
 import { Link } from "react-router";
-import { toValues } from "./helpers/api";
-import { useAccount } from "./hooks/use-account";
-import { LANGUAGE_LABELS } from "./helpers/validation";
+import { toValues } from "@demo/account-core/api";
+import { useAccount } from "@demo/account-core/use-account";
+import { LANGUAGE_LABELS } from "@demo/account-core/validation";
 import { SummaryRow } from "./components/SummaryRow";
 import { ErrorBanner, LoadingStatus } from "./components/PageState";
 import { colors, radius, space, text } from "@demo/tokens/tokens.stylex";

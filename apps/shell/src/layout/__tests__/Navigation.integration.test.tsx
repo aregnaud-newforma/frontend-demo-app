@@ -25,7 +25,7 @@
  * unscoped `link named "Your account"` would be ambiguous by construction.
  */
 import { expect, it } from "vitest";
-import { seedAccount } from "@demo/account/mocks/db-utils";
+import { seedAccount } from "@demo/account-core/mocks/db-utils";
 import { renderRoute } from "@demo/testing/render-route";
 import { app } from "../../app-under-test";
 

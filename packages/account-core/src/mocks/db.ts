@@ -10,7 +10,7 @@
 // the collection is described with a plain Zod schema, and it is ESM-only.
 import { Collection } from "@msw/data";
 import * as z from "zod";
-import { LANGUAGES } from "../helpers/validation";
+import { LANGUAGES } from "../validation";
 
 export const accounts = new Collection({
   schema: z.object({

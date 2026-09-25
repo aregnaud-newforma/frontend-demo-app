@@ -19,8 +19,8 @@
 import { faker } from "@faker-js/faker";
 import { UniqueEnforcer } from "enforce-unique";
 import { Factory, type DeepPartial } from "fishery";
-import { LANGUAGES, type AccountValues } from "../helpers/validation";
-import type { Account } from "../helpers/api";
+import { LANGUAGES, type AccountValues } from "../validation";
+import type { Account } from "../api";
 import { accounts } from "./db";
 
 // Faker will happily hand out the same email twice in one run. That is fine
