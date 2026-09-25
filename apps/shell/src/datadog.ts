@@ -21,9 +21,14 @@ import { reactPlugin } from "@datadog/browser-rum-react";
  * Datadog 7 writes a `baggage` header by default, and Sentry already writes
  * one to carry its sampling decision to the account API; two SDKs appending
  * to the same header leaves the backend to untangle them. Sentry keeps
- * `baggage`, and Datadog has `traceparent` and `x-datadog-*` to itself - once
- * `allowedTracingUrls` names the API, which it does not yet, because no
- * backend reports to Datadog to continue the trace.
+ * `baggage`, and Datadog has `traceparent` to itself.
+ *
+ * `allowedTracingUrls` is what writes that `traceparent`, on every call to the
+ * account API, so a RUM resource and the backend trace it started are one
+ * thing in Datadog. W3C only, because the API continues it through
+ * OpenTelemetry and reads nothing else (server/Accounts/DatadogSetup.cs). Only
+ * `/api/` on this origin: the Vite proxy forwards those, and a header on any
+ * other origin would trip a CORS preflight the remotes never answer.
  *
  * No `profilingSampleRate`, which leaves Datadog's profiler at its default of
  * 0. Sentry already profiles every trace through the same JS Self-Profiling
@@ -64,6 +69,12 @@ export function initDatadog() {
     defaultPrivacyLevel: "mask",
     plugins: [reactPlugin({ router: true })],
     propagateTraceBaggage: false,
+    allowedTracingUrls: [
+      {
+        match: (url: string) => url.startsWith(`${location.origin}/api/`),
+        propagatorTypes: ["tracecontext"],
+      },
+    ],
   });
 
   datadogLogs.init({ clientToken, site, service, env, version });

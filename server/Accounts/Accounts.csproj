@@ -99,4 +99,22 @@
     <PackageReference Include="Sentry.Profiling" Version="6.11.1" />
   </ItemGroup>
 
+  <!--
+    The Datadog half, through OpenTelemetry rather than Datadog's own .NET
+    tracer: that tracer is a CLR profiler with no macOS build, and macOS is where
+    `yarn start` runs. These export to the local Datadog Agent over OTLP instead
+    (compose.yaml). DatadogSetup.cs says the rest, and docs/adr/0008 why.
+
+    One package per thing traced: the request coming in, the call out to the
+    notifications service, and the query to Postgres - the same three spans
+    Sentry.AspNetCore produces on its own.
+  -->
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
+    <PackageReference Include="Npgsql.OpenTelemetry" Version="10.0.3" />
+  </ItemGroup>
+
 </Project>
