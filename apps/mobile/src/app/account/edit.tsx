@@ -107,7 +107,7 @@ const controlStyle = (field: AnyFieldApi) => [
   field.state.meta.errors.length > 0 && styles.controlInvalid,
 ];
 
-export default function EditAccountScreen() {
+function EditAccountScreen() {
   const { data: account, isError: loadFailed } = useAccount();
 
   return (
@@ -124,6 +124,9 @@ export default function EditAccountScreen() {
     </Screen>
   );
 }
+
+// A mount span per visit - ../../sentry.ts says why.
+export default Sentry.withProfiler(EditAccountScreen);
 
 function AccountFields({ account }: { account: Account }) {
   const queryClient = useQueryClient();

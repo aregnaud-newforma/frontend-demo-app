@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/react-native";
 import { Link, Stack } from "expo-router";
 import { View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
@@ -39,7 +40,7 @@ const styles = StyleSheet.create((theme) => ({
   },
 }));
 
-export default function AccountScreen() {
+function AccountScreen() {
   const { data: account, isError: loadFailed } = useAccount();
 
   return (
@@ -58,6 +59,9 @@ export default function AccountScreen() {
     </Screen>
   );
 }
+
+// A mount span per visit - ../../sentry.ts says why.
+export default Sentry.withProfiler(AccountScreen);
 
 function AccountSummary({ account }: { account: Account }) {
   const values = toValues(account);

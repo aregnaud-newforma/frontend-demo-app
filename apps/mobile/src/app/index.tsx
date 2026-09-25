@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/react-native";
 import { router } from "expo-router";
 import { Pressable, Text } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
@@ -47,7 +48,7 @@ const styles = StyleSheet.create((theme) => ({
   },
 }));
 
-export default function HomeScreen() {
+function HomeScreen() {
   return (
     <Screen>
       {/* No <Stack.Screen> and no header: this tab is a single screen with
@@ -74,3 +75,6 @@ export default function HomeScreen() {
     </Screen>
   );
 }
+
+// A mount span per visit - ../sentry.ts says why.
+export default Sentry.withProfiler(HomeScreen);
