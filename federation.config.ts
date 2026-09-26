@@ -45,14 +45,8 @@ export const dts = false;
  * reload across all three. A real deployment would substitute its own hosts
  * here - the URL is a build-time value either way.
  */
-export const remoteOrigin = (
-  name: RemoteName,
-  command: "build" | "serve",
-): `http://localhost:${number}/` =>
-  `http://localhost:${remotes[name][command === "build" ? "preview" : "dev"]}/`;
-
 export const remoteEntryUrl = (name: RemoteName, command: "build" | "serve") =>
-  `${remoteOrigin(name, command)}${remoteEntry}`;
+  `http://localhost:${remotes[name][command === "build" ? "preview" : "dev"]}/${remoteEntry}`;
 
 /**
  * One remote as a consumer declares it - the shell for every remote, a remote

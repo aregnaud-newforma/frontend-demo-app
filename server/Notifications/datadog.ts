@@ -16,8 +16,20 @@
 // services (see ../../.env.example). Unset, the tracer is never started, which
 // is what CI and the E2E job want: there is no Agent there to send to.
 
-// A module rather than a script, for the top-level `await` below.
-export {};
+import { createSocket, type Socket } from "node:dgram";
+import type { Tracer } from "dd-trace";
+
+// WHICH BUILD this is, when nothing said: the commit `yarn notifications:start`
+// passes as GIT_COMMIT, the bare sha the browser's builds report too
+// (../../vite.base.ts). Read after --env-file, so a SENTRY_RELEASE the .env sets
+// still wins, and here because this file runs first: DD_VERSION below and
+// ./instrument.ts's release both read the result.
+if (!process.env.SENTRY_RELEASE && process.env.GIT_COMMIT) {
+  process.env.SENTRY_RELEASE = process.env.GIT_COMMIT;
+}
+
+let tracer: Tracer | undefined;
+let logSocket: Socket | undefined;
 
 if (process.env.DD_AGENT_HOST) {
   // dd-trace reads its configuration from the environment as it initialises,
@@ -53,6 +65,35 @@ if (process.env.DD_AGENT_HOST) {
   process.env.DD_TRACE_DISABLED_INSTRUMENTATIONS ??= "dns,net";
 
   await import("dd-trace/initialize.mjs");
-  const { default: tracer } = await import("dd-trace");
+  ({ default: tracer } = await import("dd-trace"));
   tracer.use("http", { client: false });
+
+  // Where this service's logs go for Datadog: a UDP port the Agent listens on
+  // (./datadog-logs.yaml), the Agent collecting them as a deployed one collects
+  // stdout. Not a file it tails: through Docker Desktop's file sharing the
+  // Agent reads a bind-mounted file one write behind, so the last line before a
+  // quiet spell never arrives. And not OpenTelemetry's logs API, which the
+  // account API uses: dd-trace's version of it installs a global context
+  // manager, and that global is Sentry's here.
+  //
+  // Unreferenced, so an open socket never keeps the process alive.
+  logSocket = createSocket("udp4").unref();
+}
+
+/**
+ * One log line for Datadog, as JSON, stamped with the trace and span active
+ * when it was written - `dd.trace_id` is what Datadog joins a log to its trace
+ * by - and with the service, env and version the tracer runs under. A no-op
+ * when the tracer is off.
+ */
+export function datadogLog(
+  status: "info" | "error",
+  message: string,
+  attributes: Record<string, unknown> = {},
+) {
+  if (!tracer || !logSocket) return;
+  const record = { timestamp: new Date().toISOString(), status, message, ...attributes };
+  const span = tracer.scope().active();
+  if (span) tracer.inject(span, "log", record);
+  logSocket.send(`${JSON.stringify(record)}\n`, 10518, process.env.DD_AGENT_HOST);
 }

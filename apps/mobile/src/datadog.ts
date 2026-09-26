@@ -3,6 +3,7 @@ import {
   PropagatorType,
   TrackingConsent,
 } from "@datadog/mobile-react-native";
+import Constants from "expo-constants";
 
 /**
  * Datadog RUM for the app, BESIDE ./sentry.ts rather than instead of it - the
@@ -25,6 +26,8 @@ const clientToken = process.env.EXPO_PUBLIC_DATADOG_CLIENT_TOKEN;
 // The API's host, which is what `firstPartyHosts` matches a request by.
 const apiUrl = process.env.EXPO_PUBLIC_API_URL;
 const apiHost = apiUrl ? new URL(apiUrl).hostname : undefined;
+const extraVersion: unknown = Constants.expoConfig?.extra?.appVersion;
+const appVersion = typeof extraVersion === "string" ? extraVersion : undefined;
 
 export const datadogConfiguration =
   applicationId && clientToken && process.env.NODE_ENV !== "test"
@@ -43,6 +46,10 @@ export const datadogConfiguration =
           // Named after the Sentry project this app reports to, as the web's
           // is, so one name finds the app in either tool.
           service: "demo-mobile-frontend",
+          // The commit, as the web and the backend report it - ../app.config.ts
+          // puts it in the manifest, and files the native uploads under it too.
+          // Unset, the SDK falls back to app.json's `1.0.0`.
+          version: appVersion,
           rumConfiguration: {
             applicationId,
             trackInteractions: true,

@@ -39,6 +39,17 @@ using Microsoft.EntityFrameworkCore;
 // itself and has no .env.
 DotNetEnv.Env.TraversePath().Load();
 
+// WHICH BUILD this is, when nothing said: the commit `yarn accounts:start`
+// passes as GIT_COMMIT, which is the bare sha the browser's builds report too
+// (../../vite.base.ts). Here rather than in the script, so a SENTRY_RELEASE the
+// .env sets still wins - the file is only read by the line above. Sentry and
+// Datadog both read the result (SentrySetup.cs, DatadogSetup.cs).
+if (Environment.GetEnvironmentVariable("SENTRY_RELEASE") is not { Length: > 0 }
+    && Environment.GetEnvironmentVariable("GIT_COMMIT") is { Length: > 0 } commit)
+{
+    Environment.SetEnvironmentVariable("SENTRY_RELEASE", commit);
+}
+
 var demoAccount = new Account(
     Id: "demo-account",
     Nom: "Durand",

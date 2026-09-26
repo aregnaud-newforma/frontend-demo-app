@@ -40,16 +40,18 @@ tabs with the form pushed on the account's stack.
 ## Scripts
 
 ```bash
-yarn start                # everything in one terminal: db:start, then both services and dev
+yarn start                # everything in one terminal: server:start and dev
 yarn mobile:start         # the Expo dev server, against those same services
 yarn mobile:prebuild      # once per machine: the native projects a dev build needs
 yarn mobile:ios           # build and run it on the simulator (mobile:android for the other)
 yarn dev                  # the shell and both remotes, each on its own port; the shell proxies /api
 yarn build                # tsc, then the three builds into apps/*/dist - cached, so a second run is a no-op
-yarn preview              # the three builds served as they deploy (build first)
+yarn preview              # server:start, and the three builds served as they deploy (built first)
+yarn preview:web          # the three builds alone, without the services
 yarn db:start             # the Postgres behind the accounts service, and wait for it
 yarn accounts:start       # the account API (.NET) alone; migrates the database on start
 yarn notifications:start  # the notifications service (Node), which the account API calls
+yarn server:start         # db:start, then both services
 yarn server:test          # the account API's tests (xunit); starts a Postgres container itself
 yarn server:build         # its Release build, which uploads its debug files
 yarn db:generate          # a migration into server/Accounts/Migrations/ - yarn db:generate AddX

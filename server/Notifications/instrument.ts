@@ -43,10 +43,11 @@ Sentry.init({
   // the variable that carries it here, and unset means the same default the
   // other two have.
   environment: process.env.NODE_ENV ?? "development",
-  // WHICH BUILD this is, in the same words as every other part. Unset is fine;
-  // the parts just stop lining up in a release comparison. One
+  // WHICH BUILD this is, in the same words as every other part. One
   // `SENTRY_RELEASE=$(git rev-parse HEAD)` covers the browser's three builds,
-  // the account API and this.
+  // the account API and this, and ./datadog.ts fills it with the commit when
+  // `yarn notifications:start` runs this. Unset is still fine; the parts just
+  // stop lining up in a release comparison.
   release: process.env.SENTRY_RELEASE,
   // The same thing the browser half does (../../src/sentry.ts) and the account
   // API does, on the third side of the request: the trace says the POST took

@@ -219,6 +219,22 @@ function AccountFields({ account }: { account: Account }) {
       // INPUT. Parsing here is what produces the OUTPUT the api layer wants.
       save.mutate(accountSchema.parse(value));
     },
+    /*
+     * A save the schema refused before it could be sent. Nothing reaches the
+     * network and nothing throws, so without this RUM holds only a click on
+     * "Save" followed by nothing - and which field stopped the visitor is the
+     * question worth asking of it.
+     *
+     * An action, not a vital: it is something the visitor did, and it belongs
+     * in the replay at the moment they did it. One per refused click, so a
+     * visitor who tries three times counts three - the retries are part of
+     * what the field cost them.
+     */
+    onSubmitInvalid: ({ formApi }) => {
+      datadogRum.addAction("account.save_rejected", {
+        fields: Object.keys(formApi.getAllErrors().fields),
+      });
+    },
   });
 
   return (

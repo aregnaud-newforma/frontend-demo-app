@@ -1,7 +1,26 @@
+import { execSync } from "node:child_process";
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
 /**
- * app.json, plus the one plugin that depends on who is building.
+ * WHICH BUILD this is: the Datadog `version` src/datadog.ts reports, by the
+ * rule ../../vite.base.ts gives the web - SENTRY_RELEASE, else the commit - so
+ * a session lines up with the web's and the backend's under one sha. Not
+ * app.json's `version`, which stays the store's `1.0.0`.
+ *
+ * The native uploads of a Release build must be filed under the same string,
+ * or a crash's source map is never matched to it. They read
+ * DATADOG_RELEASE_VERSION rather than the app's version when it is set, and
+ * Expo evaluates this file inside the `expo run:ios` / `expo run:android`
+ * process whose environment Xcode and Gradle inherit - so setting it here is
+ * what carries it to them. An Xcode build started by hand does not pass
+ * through here, and uploads under `1.0.0`.
+ */
+const appVersion =
+  process.env.SENTRY_RELEASE || execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
+process.env.DATADOG_RELEASE_VERSION = appVersion;
+
+/**
+ * app.json, plus what depends on who is building and from which commit.
  *
  * `expo-datadog` adds build phases that upload the dSYMs, JS source maps and
  * Proguard mappings of a native Release build to Datadog. It is added only when
@@ -17,6 +36,7 @@ import type { ConfigContext, ExpoConfig } from "expo/config";
  */
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...(config as ExpoConfig),
+  extra: { ...config.extra, appVersion },
   plugins: [
     ...(config.plugins ?? []),
     ...(process.env.DATADOG_API_KEY

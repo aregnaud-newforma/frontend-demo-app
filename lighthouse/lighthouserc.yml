@@ -8,9 +8,8 @@
 # account the API returns - and one command with one ready pattern cannot say
 # when all five are. Whoever runs `yarn lighthouse` starts them first: the
 # workflow in .github/workflows/lighthouse.yml does, and locally it is
-# `yarn db:start`, then `yarn preview`, `yarn accounts:start` and
-# `yarn notifications:start` - plus `yarn lhci:start` for the server the
-# results go to, and LHCI_TOKEN in .env (.env.example says where it comes from).
+# `yarn preview`, which starts all five - plus `yarn lhci:start` for the server
+# the results go to, and LHCI_TOKEN in .env (.env.example says where it comes from).
 #
 # No session cookie is set, so the API answers with its demo account
 # (server/Accounts/Session.cs), which a fresh database seeds the same way on

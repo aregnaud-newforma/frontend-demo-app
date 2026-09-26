@@ -50,8 +50,8 @@ services:
       timeout: 5s
       retries: 30
 
-  # The Datadog Agent, which both backend services send their traces to, and
-  # which forwards them to Datadog beside the browser's RUM. `yarn datadog:start`
+  # The Datadog Agent, which both backend services send their traces and logs
+  # to, and which forwards them to Datadog beside the browser's RUM. `yarn datadog:start`
   # brings it up; `yarn start` does not, because it cannot start without an API
   # key and the demo has to run for someone who has none.
   #
@@ -79,15 +79,22 @@ services:
       # answer, and every poll would otherwise be a trace. Dropped here, once,
       # for both - the job Sentry's samplers do in each service.
       DD_APM_IGNORE_RESOURCES: GET /health
-      # Traces only. The host metrics the Agent would report are this laptop's.
+      # Logs, by the same two roads as the traces: the account API's over OTLP,
+      # the notifications service's on the UDP port its config below opens.
+      DD_LOGS_ENABLED: "true"
+      DD_OTLP_CONFIG_LOGS_ENABLED: "true"
+      # No metrics. The host metrics the Agent would report are this laptop's.
       DD_ENABLE_PAYLOADS_EVENTS: "false"
       DD_ENABLE_PAYLOADS_SERIES: "false"
       DD_ENABLE_PAYLOADS_SERVICE_CHECKS: "false"
       DD_ENABLE_PAYLOADS_SKETCHES: "false"
       DD_PROCESS_AGENT_ENABLED: "false"
+    volumes:
+      - ./server/Notifications/datadog-logs.yaml:/etc/datadog-agent/conf.d/notifications.d/conf.yaml:ro
     ports:
       - "8126:8126"
       - "4318:4318"
+      - "10518:10518/udp"
     healthcheck:
       test: ["CMD", "agent", "health"]
       interval: 5s

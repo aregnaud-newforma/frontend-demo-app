@@ -30,6 +30,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import * as Sentry from "@sentry/node";
 import tracer from "dd-trace";
+import { datadogLog } from "./datadog.ts";
 import { messageFor, type AccountChanged } from "./messages.ts";
 import { Outbox } from "./outbox.ts";
 
@@ -139,6 +140,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         // holding. The same line ../Accounts/Program.cs draws on its own log, and
         // the same one `sendDefaultPii: false` draws for the SDK.
         Sentry.logger.info("Notification rendered", { langue: change.langue });
+        datadogLog("info", "Notification rendered", { langue: change.langue });
       }),
     );
     json(response, 202, null);
@@ -173,6 +175,12 @@ const server = createServer((request, response) => {
     // server span errored, but with no type, message or stack - and a span
     // without them is one Datadog's Error Tracking cannot group into an issue.
     tracer.scope().active()?.setTag("error", error);
+    datadogLog("error", "Request failed", {
+      error:
+        error instanceof Error
+          ? { kind: error.name, message: error.message, stack: error.stack }
+          : { message: String(error) },
+    });
     console.error(error);
     if (!response.headersSent) {
       json(response, 500, { error: "Internal server error" });

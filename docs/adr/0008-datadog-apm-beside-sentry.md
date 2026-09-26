@@ -81,3 +81,11 @@ reads nor writes it:
   the same reason it cannot run Datadog's tracer.
   The browser follows the same rule: Datadog RUM profiles the page whenever it
   runs, and Sentry's browser profiling is left out then.
+- **Logs take the same two roads.** The account API sends its `ILogger` output
+  over OTLP beside its traces, and each record carries the current trace and
+  span. The notifications service cannot: dd-trace's OpenTelemetry logs install
+  a global context manager, which is Sentry's here. It sends JSON lines stamped
+  with `dd.trace_id` to a UDP port the Agent collects from
+  (`server/Notifications/datadog-logs.yaml`) - the local stand-in for the
+  stdout a deployed Agent collects. Not a file the Agent tails: through Docker
+  Desktop's file sharing it reads a bind-mounted file one write behind.

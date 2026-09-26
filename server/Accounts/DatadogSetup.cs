@@ -1,8 +1,10 @@
 using System.Diagnostics;
+using System.Reflection;
 using Npgsql;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
 using OpenTelemetry.Exporter;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
@@ -14,7 +16,7 @@ namespace Accounts;
 public static class DatadogSetup
 {
     /// <summary>
-    /// Traces for the account API, sent to the local Datadog Agent, and the
+    /// Traces and logs for the account API, sent to the local Datadog Agent, and the
     /// middle of a trace that starts in the browser's RUM and ends in the
     /// notifications service.
     ///
@@ -75,13 +77,24 @@ public static class DatadogSetup
                         : null)
                 .AddAttributes([
                     new("deployment.environment.name", builder.Environment.EnvironmentName.ToLowerInvariant()),
+                    .. SourceCode(),
                 ]))
             .WithTracing(tracing => tracing
-                // An unhandled exception as an event on the request's span, with
-                // its type, message and stack - what Datadog's Error Tracking
-                // groups an issue by. Without it the span is only marked errored
-                // by its 500, and Sentry.AspNetCore is the only one that sees why.
-                .AddAspNetCoreInstrumentation(aspNetCore => aspNetCore.RecordException = true)
+                // An unhandled exception on the request's span, with its type,
+                // message and stack. Twice, because each reader wants its own
+                // shape: `RecordException` writes OpenTelemetry's `exception`
+                // event, which the trace view shows, and the `error.*` tags are
+                // what Datadog's Error Tracking groups an issue by - it reads
+                // nothing from the event, and without them the span is only a
+                // red 500 that no issue ever collects.
+                .AddAspNetCoreInstrumentation(aspNetCore =>
+                {
+                    aspNetCore.RecordException = true;
+                    aspNetCore.EnrichWithException = (activity, exception) => activity
+                        .SetTag("error.type", exception.GetType().FullName)
+                        .SetTag("error.message", exception.Message)
+                        .SetTag("error.stack", exception.ToString());
+                })
                 // The call to the notifications service and nothing else. The
                 // Sentry SDK sends its envelopes through HttpClient too, and
                 // every upload would otherwise be a span in the trace it is
@@ -93,7 +106,60 @@ public static class DatadogSetup
                 {
                     otlp.Endpoint = new Uri($"http://{agentHost}:4318/v1/traces");
                     otlp.Protocol = OtlpExportProtocol.HttpProtobuf;
-                }));
+                }))
+            // What this service writes through `ILogger<T>`, to the same Agent
+            // by the same road. Each record carries the trace and span that were
+            // current when it was written - the request's, continued from the
+            // browser above - so Datadog shows it under that trace, and the trace
+            // beside it. The resource above tags it with the same service, env
+            // and version.
+            .WithLogging(
+                logging => logging.AddOtlpExporter(otlp =>
+                {
+                    otlp.Endpoint = new Uri($"http://{agentHost}:4318/v1/logs");
+                    otlp.Protocol = OtlpExportProtocol.HttpProtobuf;
+                }),
+                // The message as it reads, not its template: Datadog shows the
+                // body, and `{Langue}` is not worth reading. The placeholders
+                // still arrive as attributes of their own.
+                options => options.IncludeFormattedMessage = true);
+
+        // Information and up, and only Warning and up from the framework. This
+        // host logs at every level, so without a floor Datadog would also get
+        // HttpClient's Trace lines - which print each request's headers, the
+        // session id and Sentry's `baggage` among them. And the framework's
+        // running commentary stays out for the reason SentrySetup.cs keeps it
+        // out of Sentry: five lines per request before one of ours. `System`
+        // is HttpClient's, which names its categories that way.
+        builder.Logging
+            .AddFilter<OpenTelemetryLoggerProvider>(null, LogLevel.Information)
+            .AddFilter<OpenTelemetryLoggerProvider>("Microsoft", LogLevel.Warning)
+            .AddFilter<OpenTelemetryLoggerProvider>("System", LogLevel.Warning);
+    }
+
+    /// <summary>
+    /// The commit and repository this build was made from, which is what
+    /// Datadog's Source Code Integration needs to show a stack frame's code:
+    /// it fetches the file from GitHub at that commit. The Node service's
+    /// dd-trace reads both from the repository on its own; OpenTelemetry does
+    /// not, so they come from the assembly, where the SDK's Source Link wrote
+    /// them at build time - the commit after the <c>+</c> of the informational
+    /// version, the URL because Accounts.csproj sets <c>PublishRepositoryUrl</c>.
+    /// Nothing when the build was not made from a git checkout.
+    /// </summary>
+    private static IEnumerable<KeyValuePair<string, object>> SourceCode()
+    {
+        var assembly = typeof(DatadogSetup).Assembly;
+        if (assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')
+            is [_, var commit])
+        {
+            yield return new("git.commit.sha", commit);
+        }
+        if (assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+                .FirstOrDefault(metadata => metadata.Key == "RepositoryUrl")?.Value is { Length: > 0 } repository)
+        {
+            yield return new("git.repository_url", repository);
+        }
     }
 
     /// <summary>

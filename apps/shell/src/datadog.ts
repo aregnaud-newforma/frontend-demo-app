@@ -1,6 +1,8 @@
 import { datadogLogs } from "@datadog/browser-logs";
 import { datadogRum } from "@datadog/browser-rum";
 import { reactPlugin } from "@datadog/browser-rum-react";
+import { ownerOfStack } from "./datadog-owner";
+import { remoteLoadMeasure } from "./remote-load-timing";
 
 const applicationId = import.meta.env.VITE_DATADOG_APPLICATION_ID;
 const clientToken = import.meta.env.VITE_DATADOG_CLIENT_TOKEN;
@@ -62,11 +64,15 @@ export function initDatadog() {
   // and a token sent to the wrong one is refused without a word in the console.
   const site = import.meta.env.VITE_DATADOG_SITE || "datadoghq.com";
   // Named for the web app rather than the shell: the remotes report through
-  // this same init, so every build's views and errors are under it.
+  // this same init, and this is where their views - and any event no build's
+  // stamp claims - stay. An error, fetch or long task from a remote's own code
+  // is filed under that remote's service instead, by the stamps
+  // ../../../vite.base.ts's `datadogPlugin` puts in its chunks. The same string
+  // as `shellDatadogService` there, which stamps the shell's own chunks.
   const service = "demo-web-frontend";
   const env = import.meta.env.MODE;
-  // What the source maps were uploaded under (../../../vite.base.ts); an error
-  // reported under any other version is shown minified.
+  // The version every build's stamps carry (../../../vite.base.ts), so the
+  // shell's events and a remote's name the same build.
   const version = APP_VERSION;
 
   datadogRum.init({
@@ -87,7 +93,40 @@ export function initDatadog() {
         propagatorTypes: ["tracecontext"],
       },
     ],
+    // A fetch or XHR a remote sent, under that remote's service - on the event
+    // itself, since a service in the custom context is an attribute no filter
+    // sees. ./datadog-owner.ts says why the SDK's own attribution misses these.
+    beforeSend: (event, context) => {
+      if (event.type === "resource" && "handlingStack" in context && context.handlingStack) {
+        const owner = ownerOfStack(
+          context.handlingStack,
+          window.DD_SOURCE_CODE_CONTEXT ?? {},
+          service,
+        );
+        if (owner) {
+          event.service = owner.service;
+          event.version = owner.version ?? event.version;
+        }
+      }
+      return true;
+    },
   });
+
+  // Each remote's load time as a duration vital: ./remote-load-timing.ts
+  // measures it, and this is where it becomes Datadog's. `buffered` delivers
+  // the loads measured before the observer existed as well.
+  new PerformanceObserver((list) => {
+    const loads = list
+      .getEntriesByName(remoteLoadMeasure)
+      .filter((entry) => entry instanceof PerformanceMeasure);
+    for (const load of loads) {
+      datadogRum.addDurationVital(remoteLoadMeasure, {
+        startTime: performance.timeOrigin + load.startTime,
+        duration: load.duration,
+        context: load.detail,
+      });
+    }
+  }).observe({ type: "measure", buffered: true });
 
   datadogLogs.init({ clientToken, site, service, env, version });
 }

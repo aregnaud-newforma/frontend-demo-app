@@ -1,5 +1,6 @@
 {
   "enabledPlugins": {
-    "frontend-skills@newforma-konekt": true
+    "frontend-skills@newforma-konekt": true,
+    "datadog@claude-plugins-official": true
   }
 }

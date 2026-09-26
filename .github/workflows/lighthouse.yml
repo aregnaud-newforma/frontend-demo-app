@@ -98,12 +98,14 @@ jobs:
           global-json-file: global.json
       - run: yarn install --frozen-lockfile
       # Backgrounded, so they outlive this step; the runner stops them when the
-      # job ends. `yarn preview` builds the three apps first (turbo.json).
+      # job ends. `yarn preview:web` builds the three apps first (turbo.json).
+      # Not `yarn preview`, which also runs `db:start`: the Postgres here is the
+      # job's service container, already on 5432.
       - name: Start the services and the preview builds
         run: |
           nohup yarn accounts:start > accounts.log 2>&1 &
           nohup yarn notifications:start > notifications.log 2>&1 &
-          nohup yarn preview > preview.log 2>&1 &
+          nohup yarn preview:web > preview.log 2>&1 &
       # The URLs playwright.config.ts waits on, for the same reason: a shell that
       # answers before its remotes do is not up. The ports are federation.config.ts's.
       - name: Wait for all five
