@@ -22,7 +22,7 @@
     "build:account": "node --env-file-if-exists=.env ./node_modules/.bin/turbo run build --filter=@demo/account",
     "build:home": "node --env-file-if-exists=.env ./node_modules/.bin/turbo run build --filter=@demo/home",
     "preview": "concurrently -k -n server,web -c blue,green \"yarn server:start\" \"yarn preview:web\"",
-    "preview:web": "node --env-file-if-exists=.env ./node_modules/.bin/turbo run preview",
+    "preview:web": "node --env-file-if-exists=.env ./node_modules/.bin/turbo run preview --filter=@demo/shell --filter=@demo/account --filter=@demo/home",
     "preview:shell": "yarn workspace @demo/shell preview",
     "preview:account": "yarn workspace @demo/account preview",
     "preview:home": "yarn workspace @demo/home preview",
