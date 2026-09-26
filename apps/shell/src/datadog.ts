@@ -86,6 +86,10 @@ export function initDatadog() {
     profilingSampleRate: 100,
     defaultPrivacyLevel: "mask",
     plugins: [reactPlugin({ router: true })],
+    // What `startOperation` and its stops need, or the SDK drops them without
+    // a word: operations are experimental in the browser SDK. The one in
+    // ../../home/src/HomePage.tsx is the reason.
+    enableExperimentalFeatures: ["feature_operation_vital"],
     propagateTraceBaggage: false,
     allowedTracingUrls: [
       {

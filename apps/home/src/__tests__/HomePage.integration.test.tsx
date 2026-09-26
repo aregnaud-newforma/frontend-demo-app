@@ -20,7 +20,7 @@
  * Same rules as the account pages: a real Chromium, the real route tree over a
  * memory history, queries by role.
  */
-import { expect, it, describe } from "vitest";
+import { expect, it, describe, onTestFinished, vi } from "vitest";
 import { seedAccount } from "@demo/account-core/mocks/db-utils";
 import { renderRoute } from "@demo/testing/render-route";
 import { app } from "@demo/shell/app-under-test";
@@ -61,14 +61,24 @@ describe("HomePage", () => {
   });
 
   it("still welcomes the visitor when the account cannot be loaded", async () => {
-    // Given no account on the server, so the preview's query fails
+    // Given no account on the server, so the preview's query fails - and
+    // throws to the page's boundary, which React logs by design. Silenced so a
+    // PASSING run does not print a stack trace that reads like a failure.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => {
+      vi.restoreAllMocks();
+    });
 
     // When the user opens the root
     const page = await renderHomePage();
 
-    // Then the preview says so, in its own slot, and the rest of the page is
-    // untouched: the welcome and the way to the account are both still there.
-    await expect.element(page.previewError).toHaveTextContent("Could not load your account.");
+    // Then the preview's slot says so - in this page's words, since the
+    // preview throws to the page's boundary rather than saying it itself - and
+    // the rest of the page is untouched: the welcome and the way to the
+    // account are both still there.
+    await expect
+      .element(page.previewError)
+      .toHaveTextContent("Your account is unavailable right now.");
     await expect.element(page.welcome).toBeVisible();
     await expect.element(page.callToAction).toBeVisible();
   });
