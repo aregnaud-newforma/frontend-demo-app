@@ -45,6 +45,8 @@
     "db:start": "docker compose up --wait postgres",
     "lhci:start": "docker compose up --wait lhci && yarn lighthouse:pull",
     "datadog:start": "docker compose up --wait datadog-agent",
+    "synthetics:start": "docker compose up --wait synthetics-private-location",
+    "synthetics:run": "node --env-file-if-exists=.env --experimental-strip-types --disable-warning=ExperimentalWarning synthetics/datadog-env.ts datadog-ci synthetics run-tests --tunnel --search 'tag:\"repo:frontend-demo-app\"'",
     "db:generate": "dotnet ef migrations add --project server/Accounts",
     "accounts:start": "GIT_COMMIT=$(git rev-parse HEAD) dotnet run --project server/Accounts",
     "notifications:start": "GIT_COMMIT=$(git rev-parse HEAD) node --env-file-if-exists=.env --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/Notifications/datadog.ts --import ./server/Notifications/instrument.ts server/Notifications/server.ts",
@@ -89,6 +91,8 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",
+    "@datadog/datadog-ci": "^5.24.1",
+    "@datadog/datadog-ci-plugin-synthetics": "^5.24.1",
     "@datadog/vite-plugin": "^3.3.0",
     "@faker-js/faker": "^9.3.0",
     "@langfuse/client": "^5.11.0",

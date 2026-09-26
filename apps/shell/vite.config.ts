@@ -5,6 +5,7 @@ import {
   appPlugins,
   appVersion,
   browserTargets,
+  previewHost,
   runtimePlugins,
   shellDatadogService,
   shellSentryProject,
@@ -93,5 +94,11 @@ export default defineConfig(({ command }) => ({
     fromRoot("packages/tokens/tokens.stylex.ts"),
   ]),
   server: { port: 5173, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
-  preview: { port: previewPort, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
+  preview: {
+    host: previewHost,
+    port: previewPort,
+    strictPort: true,
+    proxy: apiProxy,
+    headers: profilingHeaders,
+  },
 }));

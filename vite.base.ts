@@ -52,6 +52,15 @@ export const browserTargets = ["chrome111", "edge111", "firefox114", "safari16.4
 // gives. apps/shell/src/remote-load-timing.ts says what the one here does.
 export const runtimePlugins = [fromRoot("apps/shell/src/remote-load-timing.ts")];
 
+// Where every `vite preview` listens: IPv4 loopback, spelled out. Left to
+// "localhost", Node binds ::1 alone on macOS, and a Docker container cannot
+// reach the host's ::1 - the Synthetics private location in ../compose.yaml
+// reaches the preview builds through host.docker.internal, which is IPv4.
+// Still loopback only, so nothing on the network sees the builds; browsers and
+// Node's fetch both fall back from ::1 to 127.0.0.1, so `localhost` URLs keep
+// working. `vite dev` is left alone: no container needs it.
+export const previewHost = "127.0.0.1";
+
 // plugin-react v6 transforms with Oxc, not Babel, so the React Compiler is not
 // an option on `react()` any more: it runs as its own Babel pass alongside it.
 export const appPlugins = (): PluginOption[] => [
@@ -369,6 +378,6 @@ export const remoteConfig = (
       fromRoot("packages/tokens/tokens.stylex.ts"),
     ]),
     server: { port: port.dev, strictPort: true, origin: `http://localhost:${port.dev}` },
-    preview: { port: port.preview, strictPort: true },
+    preview: { host: previewHost, port: port.preview, strictPort: true },
   };
 };

@@ -64,6 +64,7 @@
     "e2e",
     "evals",
     "lighthouse",
+    "synthetics",
     "types",
     "vitest.setup.ts",
     "*.config.ts"

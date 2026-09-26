@@ -61,6 +61,8 @@ yarn e2e                  # end-to-end; starts both services and the preview bui
 yarn lhci:start           # the Lighthouse CI dashboard on :9001, filled with what CI ran (needs LHCI_TOKEN in .env)
 yarn lighthouse           # Lighthouse CI over the preview build, uploaded to it; start preview + both services first
                           #   --affected for only the pages your changes since main reach
+yarn synthetics:start     # the Datadog Synthetics private location, beside a running preview (synthetics/README.md)
+yarn synthetics:run       # the Synthetic tests now, through datadog-ci's tunnel; fails when one does
 yarn verify               # oxlint + oxfmt --check + both tsc projects + dotnet build - the CI gate
 yarn lint                 # oxlint  (yarn lint:fix to apply what it can)
 yarn format               # oxfmt   (yarn format:check to only report)

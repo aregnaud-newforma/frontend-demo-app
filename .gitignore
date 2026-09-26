@@ -18,6 +18,10 @@ __screenshots__/
 # Lighthouse CI's runs and reports, written by `yarn lighthouse`.
 .lighthouseci/
 
+# The Synthetics private location's config, downloaded from Datadog when the
+# location is created (synthetics/README.md). It holds the worker's secret keys.
+synthetics/.private-location.json
+
 # Coverage
 coverage/
 
