@@ -178,6 +178,8 @@ app.MapPut("/api/account", async (
     {
         return NoAccount();
     }
+    // TEMPORARY: a deliberate bug to check Datadog Error Tracking. Revert it.
+    logger.LogInformation("Phone digits: {Digits}", updated.Telephone!.Length);
     // The SHAPE of what was saved, never the contents - `SendDefaultPii` is off
     // for the same reason, and a log is not the place to go around it. Named
     // placeholders rather than interpolation: each one reaches Sentry as its

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using Npgsql;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
@@ -75,13 +76,21 @@ public static class DatadogSetup
                         : null)
                 .AddAttributes([
                     new("deployment.environment.name", builder.Environment.EnvironmentName.ToLowerInvariant()),
+                    .. SourceCode(),
                 ]))
             .WithTracing(tracing => tracing
                 // An unhandled exception as an event on the request's span, with
                 // its type, message and stack - what Datadog's Error Tracking
                 // groups an issue by. Without it the span is only marked errored
                 // by its 500, and Sentry.AspNetCore is the only one that sees why.
-                .AddAspNetCoreInstrumentation(aspNetCore => aspNetCore.RecordException = true)
+                .AddAspNetCoreInstrumentation(aspNetCore =>
+                {
+                    aspNetCore.RecordException = true;
+                    aspNetCore.EnrichWithException = (activity, exception) => activity
+                        .SetTag("error.type", exception.GetType().FullName)
+                        .SetTag("error.message", exception.Message)
+                        .SetTag("error.stack", exception.ToString());
+                })
                 // The call to the notifications service and nothing else. The
                 // Sentry SDK sends its envelopes through HttpClient too, and
                 // every upload would otherwise be a span in the trace it is
@@ -94,6 +103,22 @@ public static class DatadogSetup
                     otlp.Endpoint = new Uri($"http://{agentHost}:4318/v1/traces");
                     otlp.Protocol = OtlpExportProtocol.HttpProtobuf;
                 }));
+    }
+
+    /// <summary>The commit and repository this build was made from, for Datadog's Source Code Integration.</summary>
+    private static IEnumerable<KeyValuePair<string, object>> SourceCode()
+    {
+        var assembly = typeof(DatadogSetup).Assembly;
+        if (assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')
+            is [_, var commit])
+        {
+            yield return new("git.commit.sha", commit);
+        }
+        if (assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+                .FirstOrDefault(metadata => metadata.Key == "RepositoryUrl")?.Value is { Length: > 0 } repository)
+        {
+            yield return new("git.repository_url", repository);
+        }
     }
 
     /// <summary>

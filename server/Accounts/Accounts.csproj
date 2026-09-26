@@ -20,6 +20,7 @@
     <!-- No culture-aware formatting anywhere in this API, so no ICU to ship. -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <RootNamespace>Accounts</RootNamespace>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
   </PropertyGroup>
 
   <!--
