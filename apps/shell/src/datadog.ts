@@ -25,9 +25,9 @@ export const datadogEnabled = credentials !== undefined;
  * the browser tests provoke failures on purpose.
  *
  * Called from ../routes.tsx next to `initSentry`, before the router is built:
- * the Datadog `createBrowserRouter` there starts a RUM view for the first
- * route as it is created, and `reactPlugin({ router: true })` is what tells
- * RUM to wait for those views instead of starting its own from the URL.
+ * ./rum-views.ts starts a RUM view for the first route as the router is
+ * created, and `reactPlugin({ router: true })` is what tells RUM to wait for
+ * those views instead of starting its own from the URL.
  *
  * `propagateTraceBaggage: false` is what lets the two coexist on a request.
  * Datadog 7 writes a `baggage` header by default, and Sentry already writes
