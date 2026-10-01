@@ -1,11 +1,15 @@
-import type { CSSOptions, PluginOption, UserConfig } from "vite";
+import { execSync } from "node:child_process";
+import { glob, rm } from "node:fs/promises";
+import type { CSSOptions, Plugin, PluginOption, UserConfig } from "vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import { federation } from "@module-federation/vite";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
+import { datadogVitePlugin } from "@datadog/vite-plugin";
 import {
   dts,
   remoteEntry,
+  remoteOrigin,
   remoteRef,
   remotes,
   shared,
@@ -59,38 +63,45 @@ export const stylexCss = (include: string[]): CSSOptions => ({
   postcss: { plugins: [stylexPostcss(include)] },
 });
 
-// Source maps, and the upload that makes them worth generating - both together
-// or neither, keyed on the token.
+/**
+ * WHICH BUILD this is: the Sentry release and the Datadog `version`, one string
+ * for both, because each tool finds a build's source maps by it and a map
+ * uploaded under any other string un-minifies nothing. CI names it
+ * (`SENTRY_RELEASE` in .github/workflows/ci.yml); anywhere else it is the
+ * commit, which is what the Sentry plugin would derive on its own. The shell's
+ * vite.config.ts hands it to the browser as `APP_VERSION`.
+ */
+export const appVersion =
+  process.env.SENTRY_RELEASE || execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
+
+// Source maps, and the uploads that make them worth generating - to Sentry, to
+// Datadog, or both, keyed on each one's credential. No credential, no map.
 //
-// A production bundle with no map gives Sentry minified frames: `t.default` at
+// A production bundle with no map gives minified frames: `t.default` at
 // column 4831, which names nothing. The maps fix that, but they are the source
-// code, so shipping them alongside the bundle publishes it. The plugin closes
-// that gap by uploading them to Sentry and DELETING them from the build's own
-// outDir afterwards - Sentry can un-minify the stack, the browser is served
-// nothing extra. Its OWN outDir, not dist/ as a whole: the three builds each
-// run this plugin, and one deleting another's maps before they were uploaded
-// would leave that build's frames minified with nothing to say why.
+// code, so shipping them alongside the bundle publishes it. The build closes
+// that gap by uploading them and DELETING them from its own outDir afterwards
+// (`deleteSourcemaps`) - the tools can un-minify the stack, the browser is
+// served nothing extra. Its OWN outDir, not dist/ as a whole: the three builds
+// each do this, and one deleting another's maps before they were uploaded would
+// leave that build's frames minified with nothing to say why.
 //
 // `hidden` is what stops the `//# sourceMappingURL=` comment being emitted: the
 // map is written, but nothing in the shipped file points at a file that is about
 // to be deleted.
 //
-// Without the token there is nowhere to upload to, so no map is generated
-// either - a plain `yarn build` leaves nothing behind to leak.
-//
-// `url` is NOT optional here. The plugin defaults to sentry.io, and this
-// organisation is hosted in the EU region, where an upload to the default host
-// is accepted by nothing.
-//
-// The token is read from `process.env`, and package.json's `build:*` scripts run
-// Vite through `node --env-file-if-exists=.env` for it: Vite reads .env into
-// `import.meta.env` for the CLIENT bundle and deliberately leaves `process.env`
-// alone, so a token sitting in .env is invisible here without that flag - the
-// build succeeds, uploads nothing, and says nothing about it. CI passes the
-// same variable its own way and needs no .env at all.
+// The credentials are read from `process.env`, and package.json's `build:*`
+// scripts run Vite through `node --env-file-if-exists=.env` for them: Vite reads
+// .env into `import.meta.env` for the CLIENT bundle and deliberately leaves
+// `process.env` alone, so a token sitting in .env is invisible here without that
+// flag - the build succeeds, uploads nothing, and says nothing about it. CI
+// passes the same variables its own way and needs no .env at all.
 const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN;
+// An API key, not the client token the browser SDK is given: the client token
+// can only send events, and an upload is refused with it.
+const datadogApiKey = process.env.DATADOG_API_KEY;
 
-export const sourcemap = sentryAuthToken ? ("hidden" as const) : false;
+export const sourcemap = sentryAuthToken || datadogApiKey ? ("hidden" as const) : false;
 
 /** The shell's Sentry project, and every build's until it is given its own. */
 const defaultSentryProject = {
@@ -119,11 +130,12 @@ const sentryProjectFor = (name: RemoteName) => {
  * that project. Stamped whether or not the project is the remote's own - a
  * stamp carrying the default DSN routes to the default, which is the same as
  * no stamp, and keeps every build's frames attributable in the same way.
+ *
+ * `url` is NOT optional. The plugin defaults to sentry.io, and this
+ * organisation is hosted in the EU region, where an upload to the default host
+ * is accepted by nothing.
  */
-export const sentrySourcemaps = (
-  outDir: string,
-  { project, dsn }: { project: string; dsn?: string },
-): PluginOption[] =>
+const sentryUpload = ({ project, dsn }: { project: string; dsn?: string }): PluginOption[] =>
   sentryAuthToken
     ? [
         sentryVitePlugin({
@@ -131,11 +143,73 @@ export const sentrySourcemaps = (
           project,
           url: "https://de.sentry.io",
           authToken: sentryAuthToken,
-          sourcemaps: { filesToDeleteAfterUpload: [`./${outDir}/**/*.map`] },
+          release: { name: appVersion },
           moduleMetadata: ({ release }) => ({ dsn, release }),
         }),
       ]
     : [];
+
+/**
+ * Datadog finds a map by `service`, `version` and the URL of the file it maps,
+ * so all three have to be what the browser reports. `service` is the one
+ * apps/shell/src/datadog.ts sets - every build reports through that init, so
+ * every build's maps are under it. `origin` is where this build is served, and
+ * it has to be the whole origin rather than `/`: the two remotes each ship a
+ * `remoteEntry.js`, and by path alone their maps would overwrite each other.
+ *
+ * The site comes from `VITE_DATADOG_SITE`, the variable the browser SDK reads,
+ * so the upload and the events cannot be sent to two different sites.
+ *
+ * `logLevel: "error"` because at `warn` the plugin names, for every chunk
+ * carrying a dependency, each node_modules file it cannot link to git - a
+ * screenful per build that says nothing. A failed upload is still printed.
+ */
+const datadogUpload = (origin: `http://${string}/`): PluginOption[] =>
+  datadogApiKey
+    ? datadogVitePlugin({
+        logLevel: "error",
+        auth: { apiKey: datadogApiKey, site: process.env.VITE_DATADOG_SITE || undefined },
+        errorTracking: {
+          sourcemaps: {
+            service: "demo-web-frontend",
+            releaseVersion: appVersion,
+            minifiedPathPrefix: origin,
+          },
+        },
+      })
+    : [];
+
+/**
+ * The maps' last step, once every upload has read them. Not Sentry's own
+ * `filesToDeleteAfterUpload`: that deletes in the plugin's `writeBundle`,
+ * while Datadog's uploads in `closeBundle`, which comes after - it would find
+ * nothing to send. Rolldown runs a hook's handlers one plugin after another,
+ * and `order: "post"` puts this one after Datadog's.
+ */
+const deleteSourcemaps = (outDir: string): Plugin => ({
+  name: "delete-sourcemaps",
+  apply: "build",
+  closeBundle: {
+    order: "post",
+    async handler() {
+      for await (const map of glob(`${outDir}/**/*.map`)) await rm(map);
+    },
+  },
+});
+
+/**
+ * Every upload this build makes, and the delete that follows them. `origin`
+ * is where the build is served - see `datadogUpload`.
+ */
+export const sourcemapUploads = (
+  outDir: string,
+  origin: `http://${string}/`,
+  sentryProject: { project: string; dsn?: string },
+): PluginOption[] => [
+  ...sentryUpload(sentryProject),
+  ...datadogUpload(origin),
+  ...(sourcemap ? [deleteSourcemaps(outDir)] : []),
+];
 
 export const shellSentryProject = defaultSentryProject;
 
@@ -206,7 +280,7 @@ export const remoteConfig = (
     plugins: [
       ...appPlugins(),
       federation({ name, filename: remoteEntry, exposes, remotes: consumed, shared, dts }),
-      ...sentrySourcemaps(outDir, sentryProjectFor(name)),
+      ...sourcemapUploads(outDir, remoteOrigin(name, "build"), sentryProjectFor(name)),
     ],
     // Absolute, because this build runs with apps/<name>/ as its cwd and the
     // tokens are outside it - ../stylex.config.ts's `fromRoot` says why a

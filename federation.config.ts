@@ -45,8 +45,14 @@ export const dts = false;
  * reload across all three. A real deployment would substitute its own hosts
  * here - the URL is a build-time value either way.
  */
+export const remoteOrigin = (
+  name: RemoteName,
+  command: "build" | "serve",
+): `http://localhost:${number}/` =>
+  `http://localhost:${remotes[name][command === "build" ? "preview" : "dev"]}/`;
+
 export const remoteEntryUrl = (name: RemoteName, command: "build" | "serve") =>
-  `http://localhost:${remotes[name][command === "build" ? "preview" : "dev"]}/${remoteEntry}`;
+  `${remoteOrigin(name, command)}${remoteEntry}`;
 
 /**
  * One remote as a consumer declares it - the shell for every remote, a remote
@@ -72,6 +78,10 @@ export const remoteRef = (name: RemoteName, command: "build" | "serve") => ({
  * - `@sentry/react`: the SDK is initialised once, in the shell, and a remote's
  *   `Sentry.startSpan` from another copy would report to a client that was
  *   never set up: no error, no span.
+ * - `@datadog/browser-rum` / `@datadog/browser-rum-react`: the same, for
+ *   Datadog. The React package keeps the RUM API it was started with in a
+ *   module variable, so `addReactError` from a remote's own copy would queue
+ *   the error for an init that never comes.
  *
  * `singleton` makes the runtime hand every consumer the first copy loaded and
  * warn if a remote asked for a version the shell's copy does not satisfy. The
@@ -83,4 +93,6 @@ export const shared = {
   "react-router": { singleton: true },
   "@tanstack/react-query": { singleton: true },
   "@sentry/react": { singleton: true },
+  "@datadog/browser-rum": { singleton: true },
+  "@datadog/browser-rum-react": { singleton: true },
 };

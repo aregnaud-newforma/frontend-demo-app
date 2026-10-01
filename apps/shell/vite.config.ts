@@ -3,10 +3,11 @@ import { federation } from "@module-federation/vite";
 import { dts, remoteRef, remotes, shared, type RemoteName } from "../../federation.config.ts";
 import {
   appPlugins,
+  appVersion,
   browserTargets,
-  sentrySourcemaps,
   shellSentryProject,
   sourcemap,
+  sourcemapUploads,
   stylexCss,
 } from "../../vite.base.ts";
 import { fromRoot } from "../../stylex.config.ts";
@@ -45,6 +46,10 @@ const profilingHeaders = { "Document-Policy": "js-profiling" };
 // writes into a directory of its own now.
 const outDir = "dist";
 
+// Where the build is served, which is what Datadog matches a map's file by -
+// ../../vite.base.ts's `datadogUpload` says why it is the whole origin.
+const previewPort = 4173;
+
 // A function of `command`, because the remotes' URLs are baked into the bundle
 // and differ between `vite dev` and a build - see `remoteEntryUrl`.
 export default defineConfig(({ command }) => ({
@@ -56,8 +61,11 @@ export default defineConfig(({ command }) => ({
   // Only the shell: it is the build that initialises Sentry, and no remote
   // reads `import.meta.env`.
   envDir: "../..",
+  // The build's version, for src/datadog.ts to report: Datadog looks a map up
+  // by it, so it has to be the one the maps were uploaded under.
+  define: { APP_VERSION: JSON.stringify(appVersion) },
   build: { outDir, target: browserTargets, sourcemap },
-  // The Sentry plugin goes last: it reads what the others emitted.
+  // The uploads go last: they read what the others emitted.
   plugins: [
     ...appPlugins(),
     federation({
@@ -70,7 +78,7 @@ export default defineConfig(({ command }) => ({
       shared,
       dts,
     }),
-    ...sentrySourcemaps(outDir, shellSentryProject),
+    ...sourcemapUploads(outDir, `http://localhost:${previewPort}/`, shellSentryProject),
   ],
   // The shell's own stylesheet: the layout, and the tokens every build shares.
   // What a page needs arrives with the page, in the remote's stylesheet.
@@ -82,5 +90,5 @@ export default defineConfig(({ command }) => ({
     fromRoot("packages/tokens/tokens.stylex.ts"),
   ]),
   server: { port: 5173, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
-  preview: { port: 4173, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
+  preview: { port: previewPort, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
 }));
