@@ -4,7 +4,7 @@
 #
 # The Criteria and the code that grades them are not in this repository: they
 # live beside the Skills they check, in the plugin repository, and this job
-# clones it. `rules-check.json` at the root is this repository's side of the
+# clones it. `evals.json` at the root is this repository's side of the
 # arrangement - which paths are source, and whether to ask the judge.
 #
 # Informative, not blocking: the check exits zero whatever the verdicts, so a
@@ -101,9 +101,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           # Started from this checkout: the repository graded is the one yarn
           # starts in, and `--cwd` only says where the script lives.
-          # Whether the judge runs is `judge` in rules-check.json, not a flag
-          # here: a decision about this repository, reviewed in a pull request
-          # rather than set in a settings page.
+          # Whether the judge runs is `judge` in evals.json, not a flag here: a
+          # decision about this repository, reviewed in a pull request rather
+          # than set in a settings page.
           yarn --silent --cwd "$RULES_CHECK" rules-check --base "origin/$BASE" --pr "$PR_NUMBER" \
             --title "$PR_TITLE" --body-file "$RUNNER_TEMP/body.md" \
             --report-file "$RUNNER_TEMP/report.json" \

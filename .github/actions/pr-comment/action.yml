@@ -6,7 +6,7 @@
 # HTML comment GitHub does not render, so a second workflow with its own
 # marker owns its own comment.
 #
-# Used by `rules-check.yml`. An action rather than a step there, because
+# Used by `evals.yml`. An action rather than a step there, because
 # finding and editing the comment is the same for any workflow that reports on
 # a pull request, and none of it is about the Rules check.
 name: Pull request comment
