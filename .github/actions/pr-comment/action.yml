@@ -6,8 +6,9 @@
 # HTML comment GitHub does not render, so a second workflow with its own
 # marker owns its own comment.
 #
-# Shared by `evals.yml` and `online.yml`; the shell lives here so both post
-# the same way and a fix reaches both.
+# Used by `evals.yml`. An action rather than a step there, because
+# finding and editing the comment is the same for any workflow that reports on
+# a pull request, and none of it is about the Rules check.
 name: Pull request comment
 description: Create or update the workflow's comment on the pull request.
 
