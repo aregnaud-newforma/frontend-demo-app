@@ -1,0 +1,143 @@
+# The Rules check: every pull request's diff, graded against the Criteria of
+# the plugins `.claude/settings.json` enables, reported to Langfuse as one
+# trace and to the pull request as one comment.
+#
+# The Criteria and the code that grades them are not in this repository: they
+# live beside the Skills they check, in the plugin repository, and this job
+# clones it. `rules-check.json` at the root is this repository's side of the
+# arrangement - which paths are source, and whether to ask the judge.
+#
+# Informative, not blocking: the check exits zero whatever the verdicts, so a
+# failing Rule never stops a merge. A red job is a check that could not run - a
+# missing secret, a judge that could not be reached - and the reasons are in
+# the job summary.
+name: Rules check
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rules-check:
+    name: grade the diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # `write` for the comment below; nothing else here needs more than reading.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # The head branch, not the merge commit, so the graded sha is one that
+      # exists and the branch name is the real one. Full history: the diff is
+      # taken from the merge base, which a shallow clone does not hold.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # Over HTTPS with a token. Azure DevOps has no per-repository deploy keys
+      # - an SSH key there belongs to an account and carries everything that
+      # account can do, across the whole organisation, writes included. A PAT
+      # scoped to Code (Read) is the only credential that can be narrowed to
+      # what this job needs.
+      #
+      # Shallow, at `master` unless the `SKILLS_REPO_REF` variable names another
+      # branch: the Criteria graded are the ones published today, and the trace
+      # records which commit that was. The variable is for a change to the
+      # check that is still in review there; leave it unset otherwise.
+      - name: Clone the Rules check
+        env:
+          SKILLS_REPO_TOKEN: ${{ secrets.SKILLS_REPO_TOKEN }}
+          SKILLS_REPO_REF: ${{ vars.SKILLS_REPO_REF }}
+        run: |
+          if [ -z "$SKILLS_REPO_TOKEN" ]; then
+            echo "::error::SKILLS_REPO_TOKEN is not set. It is an Azure DevOps PAT scoped to Code (Read) for BIMOneOnline/BIMOne/NKCopilotCustomAgents, which holds the Criteria and the code that grades them." >&2
+            exit 1
+          fi
+
+          # The token goes in the credential helper's input rather than the url,
+          # so it never reaches the command line, the process table, or a log
+          # line that git echoes back on failure.
+          git config --global credential.helper store
+          printf 'https://pat:%s@dev.azure.com\n' "$SKILLS_REPO_TOKEN" > ~/.git-credentials
+          chmod 600 ~/.git-credentials
+
+          git clone --depth 1 --branch "${SKILLS_REPO_REF:-master}" https://dev.azure.com/BIMOneOnline/BIMOne/_git/NKCopilotCustomAgents "$RUNNER_TEMP/skills"
+          echo "RULES_CHECK=$RUNNER_TEMP/skills/tools/skill-evals" >> "$GITHUB_ENV"
+      - run: yarn --cwd "$RULES_CHECK" install --frozen-lockfile
+
+      # Pinned: the judge's CLI version travels nowhere a score can read, so it
+      # must not move on its own. It moves with the Rules check's default judge.
+      - name: Install Copilot
+        run: npm install -g @github/copilot@1.0.83
+
+      - name: Grade
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
+          # Through the environment, not the command line: a title or a body
+          # is text somebody typed, and a quote in it must not end the command.
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          # `tee` would otherwise hide a non-zero exit.
+          set -o pipefail
+
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/body.md"
+
+          {
+            echo '## Rules check · `#'"$PR_NUMBER"'`'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Started from this checkout: the repository graded is the one yarn
+          # starts in, and `--cwd` only says where the script lives.
+          # Whether the judge runs is `judge` in rules-check.json, not a flag
+          # here: a decision about this repository, reviewed in a pull request
+          # rather than set in a settings page.
+          yarn --silent --cwd "$RULES_CHECK" rules-check --base "origin/$BASE" --pr "$PR_NUMBER" \
+            --title "$PR_TITLE" --body-file "$RUNNER_TEMP/body.md" \
+            --report-file "$RUNNER_TEMP/report.json" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # `!cancelled()`: a broken check is worth a comment too, and the job link
+      # is where its reasons are; a run a newer push cancelled is not, and says
+      # nothing. A green job with no report is a diff with no source file in it
+      # - the check said so and exited zero - and that gets no comment at all:
+      # a pull request about docs has nothing to read.
+      - name: Write the comment
+        id: comment
+        if: "!cancelled()"
+        env:
+          JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          OUTCOME: ${{ job.status }}
+        run: |
+          if [ -f "$RUNNER_TEMP/report.json" ]; then
+            yarn --silent --cwd "$RULES_CHECK" comment --rules-check "$RUNNER_TEMP/report.json" --job-url "$JOB_URL" \
+              > "$RUNNER_TEMP/comment.md"
+          elif [ "$OUTCOME" != "success" ]; then
+            {
+              echo '## Rules check'
+              echo
+              echo "The check could not run on this diff. What stopped it is in the [job]($JOB_URL); it is a broken check, not a verdict on this pull request."
+            } > "$RUNNER_TEMP/comment.md"
+          else
+            echo "No source file in the diff: nothing to say on the pull request."
+            exit 0
+          fi
+          echo "post=true" >> "$GITHUB_OUTPUT"
+      - if: "!cancelled() && steps.comment.outputs.post == 'true'"
+        uses: ./.github/actions/pr-comment
+        with:
+          marker: rules-check
+          body-file: ${{ runner.temp }}/comment.md
