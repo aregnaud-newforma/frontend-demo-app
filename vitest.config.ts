@@ -77,18 +77,14 @@ export default defineConfig({
           // Injects describe/it/expect as globals so test files need no imports.
           globals: true,
           environment: "node",
-          // `evals/` is the harness, not the app: its pure helpers (how a
-          // judge's reply is read) are unit tests like any other, and it has
-          // no browser half. `server/` is here for the half of the backend that
-          // is Node (docs/adr/0005) - the notifications service's message
-          // rendering is a pure function like any other. The account API is
-          // still .NET and its own tests still run under xunit
-          // (`yarn server:test`), which is why this is a pattern and not the
-          // whole folder.
+          // `server/` is here for the half of the backend that is Node
+          // (docs/adr/0005) - the notifications service's message rendering
+          // is a pure function like any other. The account API is still .NET
+          // and its own tests still run under xunit (`yarn server:test`),
+          // which is why this is a pattern and not the whole folder.
           include: [
             "apps/*/src/**/*.unit.test.{ts,tsx}",
             "packages/*/src/**/*.unit.test.{ts,tsx}",
-            "evals/**/*.unit.test.ts",
             "server/**/*.unit.test.ts",
           ],
         },

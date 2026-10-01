@@ -1,0 +1,4 @@
+{
+  "sourcePaths": ["apps/**", "packages/**", "server/**"],
+  "judge": true
+}
