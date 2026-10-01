@@ -127,6 +127,14 @@ export function initSentry() {
     environment: import.meta.env.MODE,
     integrations: [
       reactRouterBrowserTracingIntegration({
+        // No span for Datadog's own uploads, whose host is
+        // `browser-intake-<site>` for every site ./datadog.ts can be given.
+        // RUM posts a batch every few seconds for as long as the tab is open:
+        // during the pageload they padded it with `http.client` children, and
+        // after it every batch became one more root span in the pageload's
+        // trace, which then had a dozen roots and kept growing until the tab
+        // closed.
+        shouldCreateSpanForRequest: (url) => !url.includes("browser-intake-"),
         // The other half of `routerInstrumentation` at the top of this file:
         // a navigation span starts when the click was, so that the remote it
         // fetched on the way is inside it. Only navigation - a pageload's start
@@ -142,7 +150,17 @@ export function initSentry() {
       // Not when Datadog profiles the page instead - ./datadog.ts says why.
       ...(datadogEnabled ? [] : [Sentry.browserProfilingIntegration()]),
       Sentry.moduleMetadataIntegration(),
+      // Masks every text and blocks every media element by default - the line
+      // ./datadog.ts draws with `defaultPrivacyLevel: "mask"`, for the same
+      // name and phone number on the account page.
+      Sentry.replayIntegration(),
     ],
+    // A replay only for a session that errs: the SDK keeps the last minute in
+    // memory and sends it with the error, so every issue has one and a quiet
+    // session sends nothing. The replay goes to this DSN - the transport's
+    // fallback - even when the error goes to a remote's project.
+    replaysSessionSampleRate: 0,
+    replaysOnErrorSampleRate: 1,
     transport: Sentry.makeMultiplexedTransport(Sentry.makeFetchTransport),
     // Where the owner is decided. Here and not in the transport, because the
     // stamps are gone by then: `moduleMetadataIntegration` puts

@@ -49,9 +49,11 @@ export const datadogEnabled = credentials !== undefined;
  * The browser profiles nothing unless index.html was served with
  * `Document-Policy: js-profiling`, which ../vite.config.ts sends.
  *
- * Session replay is Datadog's alone - Sentry records none here - so one
- * session in five is recorded, the rate Datadog's own setup suggests.
- * `defaultPrivacyLevel: "mask"` hides every piece of text on the page, not only
+ * Every session is recorded, because this is a demo whose errors are meant to
+ * be read with their replay: at the one-in-five Datadog's own setup suggests,
+ * four issues in five would open with no replay to watch. Sentry records too,
+ * but only around an error (./sentry.ts), so the two do not double the cost of
+ * a quiet session. `defaultPrivacyLevel: "mask"` hides every piece of text on the page, not only
  * what is typed into a field, which is the SDK's default: the account page
  * DISPLAYS a person's name and phone number, and a replay would otherwise carry
  * them - the reason ./sentry.ts gives for sending no user info either.
@@ -82,7 +84,7 @@ export function initDatadog() {
     service,
     env,
     version,
-    sessionReplaySampleRate: 20,
+    sessionReplaySampleRate: 100,
     profilingSampleRate: 100,
     defaultPrivacyLevel: "mask",
     plugins: [reactPlugin({ router: true })],

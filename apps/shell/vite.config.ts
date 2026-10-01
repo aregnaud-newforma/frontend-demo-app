@@ -61,8 +61,7 @@ export default defineConfig(({ command }) => ({
   // apps/: `vite build` never noticed, because package.json's `build:*`
   // scripts hand the variables in through `process.env`, but `vite dev` is run
   // with no such flag and read no DSN at all, so Sentry stayed off in silence.
-  // Only the shell: it is the build that initialises Sentry, and no remote
-  // reads `import.meta.env`.
+  // The remotes read the same file, through ../../vite.base.ts.
   envDir: "../..",
   // The build's version, for src/datadog.ts to report: the version the
   // remotes' stamps carry, so the shell's events have to carry it too.

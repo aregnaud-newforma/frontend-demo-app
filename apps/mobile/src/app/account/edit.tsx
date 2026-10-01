@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/react-native";
+import { DdRum, RumActionType } from "@datadog/mobile-react-native";
 import { revalidateLogic, useForm, type AnyFieldApi } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Stack, router } from "expo-router";
@@ -16,6 +17,9 @@ import {
 import { FieldError, errorProps } from "../../components/FieldError";
 import { ErrorBanner, LoadingStatus } from "../../components/PageState";
 import { Screen } from "../../components/Screen";
+import { useViewLoaded } from "../../datadog";
+import { log } from "../../log";
+import { reportError } from "../../report-error";
 
 /**
  * The form - the twin of apps/account/src/EditAccountPage.tsx, and the screen
@@ -109,6 +113,7 @@ const controlStyle = (field: AnyFieldApi) => [
 
 function EditAccountScreen() {
   const { data: account, isError: loadFailed } = useAccount();
+  useViewLoaded(account !== undefined);
 
   return (
     <Screen>
@@ -128,6 +133,20 @@ function EditAccountScreen() {
 // A mount span per visit - ../../sentry.ts says why.
 export default Sentry.withProfiler(EditAccountScreen);
 
+/**
+ * A crash on purpose, for looking at how Sentry and Datadog report one - the
+ * issue, its stack and the session replay attached to it. The twin of the
+ * web's `VITE_CRASH_ACCOUNT_SAVE`: off unless
+ * `EXPO_PUBLIC_CRASH_ACCOUNT_SAVE=true`, and off under jest whatever it says.
+ *
+ * Thrown from `onSubmit`, so only a form that passed validation throws. The
+ * form rethrows it as a rejected `handleSubmit`, which the Save button hands
+ * to `reportError` - ../../report-error.ts says why neither SDK would see it
+ * otherwise - and the form stays on screen.
+ */
+const crashOnSave =
+  process.env.EXPO_PUBLIC_CRASH_ACCOUNT_SAVE === "true" && process.env.NODE_ENV !== "test";
+
 function AccountFields({ account }: { account: Account }) {
   const queryClient = useQueryClient();
 
@@ -138,19 +157,41 @@ function AccountFields({ account }: { account: Account }) {
      * the network cannot see, from the tap to the cache holding the answer.
      * `startSpan` ends the span when the promise settles, so the wrapper has to
      * BE the mutationFn.
+     *
+     * Datadog's twin is the RUM action the web starts and stops around the
+     * same promise (apps/account/src/EditAccountPage.tsx says why an action
+     * and not a vital). CUSTOM, because no finger did it - the tap on Save is
+     * its own action, named by the button's label. Stopped by type and name
+     * rather than the bare `stopAction()`: that older form ends "the current
+     * action" through a native telemetry call the SDK makes first, which
+     * throws under jest, where there is no native module to make it on.
      */
-    mutationFn: (values: ValidAccount) =>
-      Sentry.startSpan({ name: "account.save", op: "ui.submit" }, () => updateAccount(values)),
+    mutationFn: (values: ValidAccount) => {
+      void DdRum.startAction(RumActionType.CUSTOM, "account.save");
+      return Sentry.startSpan({ name: "account.save", op: "ui.submit" }, () =>
+        updateAccount(values),
+      ).finally(() => void DdRum.stopAction(RumActionType.CUSTOM, "account.save"));
+    },
     onSuccess: (saved) => {
       // Write the server's response straight into the cache, THEN leave.
       queryClient.setQueryData(accountQueryKey, saved);
       // The SHAPE of what was saved, never the contents - the same line
       // ../../sentry.ts draws with `sendDefaultPii: false`.
-      Sentry.logger.info("Account updated", {
+      log.info("Account updated", {
         langue: saved.langue,
         hasTelephone: saved.telephone !== null,
         bioLength: saved.bio.length,
       });
+      // The same event counted rather than written down, under the web's
+      // names and attributes so one chart in Sentry holds both apps -
+      // apps/account/src/EditAccountPage.tsx says why a count and a
+      // distribution. On by default (`enableMetrics`), unlike the logs above.
+      // Datadog's SDK has no metrics call; its way is a log-based metric over
+      // the log above, defined in Datadog, as on the web.
+      Sentry.metrics.count("account.updated", 1, {
+        attributes: { langue: saved.langue, hasTelephone: saved.telephone !== null },
+      });
+      Sentry.metrics.distribution("account.bio_length", saved.bio.length);
       /*
        * `dismissTo` rather than `navigate("/account")`: the summary is already
        * the screen underneath, and pushing a second copy of it is how a native
@@ -163,6 +204,18 @@ function AccountFields({ account }: { account: Account }) {
        * no-op that strands the user on a form they have already saved.
        */
       router.dismissTo("/account");
+    },
+    /*
+     * A failed save is a warning, not an issue: the banner below tells the
+     * user, and a 500 is the API's own issue, reported on the .NET side. What
+     * only the phone knows is that the user saw it, and that is this line.
+     *
+     * `logger.fmt` rather than a plain template string: every failed save
+     * keeps one `message.template` to group by, and the reason becomes
+     * `message.parameter.0`, searchable on its own.
+     */
+    onError: (error) => {
+      log.warn(Sentry.logger.fmt`Account save failed: ${error.message}`);
     },
   });
 
@@ -178,9 +231,24 @@ function AccountFields({ account }: { account: Account }) {
       },
     },
     onSubmit: ({ value }) => {
+      if (crashOnSave) {
+        throw new Error("Deliberate crash on saving the account (EXPO_PUBLIC_CRASH_ACCOUNT_SAVE)");
+      }
       // The form state holds what the controls hold, so `value` is the schema's
       // INPUT. Parsing here is what produces the OUTPUT the api layer wants.
       save.mutate(accountSchema.parse(value));
+    },
+    // Which fields stopped a submit - their NAMES, never what was typed in
+    // them. `debug`, so both tools drop it from a release build: it is
+    // for watching the form on a device, and a release would send one per tap.
+    onSubmitInvalid: ({ formApi }) => {
+      log.debug("Account form rejected", {
+        // A string, because a log attribute holds a string, number or boolean.
+        invalidFields: Object.entries(formApi.state.fieldMeta)
+          .filter(([, meta]) => meta.errors.length > 0)
+          .map(([name]) => name)
+          .join(","),
+      });
     },
   });
 
@@ -196,8 +264,9 @@ function AccountFields({ account }: { account: Account }) {
                 return (
                   <Pressable
                     accessibilityRole="button"
+                    accessibilityLabel="Save"
                     disabled={busy}
-                    onPress={() => void form.handleSubmit()}
+                    onPress={() => void form.handleSubmit().catch(reportError)}
                     testID="save-account"
                   >
                     <Text style={[styles.headerButton, busy && styles.headerButtonDisabled]}>

@@ -54,5 +54,22 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
           ] as [string, unknown],
         ]
       : []),
+    // Sentry's twin of the plugin above, on the same switch: SENTRY_AUTH_TOKEN,
+    // as for the web's upload. AFTER `expo-datadog` on purpose, because Expo
+    // applies the two in reverse: both rewrite Xcode's "Bundle React Native
+    // code and images" phase, and only `expo-datadog` knows the other - finding
+    // Sentry's script already there, it appends a second bundling of its own.
+    // In the other order Sentry wraps Datadog's whole command as if it were a
+    // script path, which fails every build, Debug included. Measured on the
+    // generated project. The token is read again when Xcode runs the phase,
+    // like Datadog's key.
+    ...(process.env.SENTRY_AUTH_TOKEN
+      ? [
+          [
+            "@sentry/react-native/expo",
+            { organization: "alexisregnaud", project: "demo-mobile-frontend" },
+          ] as [string, unknown],
+        ]
+      : []),
   ],
 });

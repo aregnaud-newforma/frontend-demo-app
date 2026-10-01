@@ -339,6 +339,10 @@ export const remoteConfig = (
     // public/ is the shell's: index.html's favicon, the MSW worker the tests
     // register. A remote serves what it exposes and nothing else.
     publicDir: false,
+    // The repository's .env, as the shell reads it (apps/shell/vite.config.ts
+    // says why the default misses it): `VITE_CRASH_ACCOUNT_SAVE` is read by
+    // the account remote, and `yarn dev` hands a remote nothing else.
+    envDir: fromRoot(""),
     // No `cacheDir` override any more. It was here because three builds shared
     // one Vite root and therefore one node_modules/.vite: each wrote
     // pre-bundled dependencies carrying ITS federation ids, and the last to

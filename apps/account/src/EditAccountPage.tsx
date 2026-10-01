@@ -131,6 +131,20 @@ export function EditAccountPage() {
   );
 }
 
+/**
+ * A crash on purpose, for looking at how Sentry and Datadog report one - the
+ * issue, its stack and the session replay attached to it. Off unless
+ * `VITE_CRASH_ACCOUNT_SAVE=true`, and off in `test` whatever it says, for the
+ * reason apps/shell/src/sentry.ts gives: Vitest loads .env too.
+ *
+ * Thrown from `onSubmit`, so only a form that passed validation throws. The
+ * form rethrows it, the `void` on `handleSubmit` below leaves it unhandled,
+ * and both SDKs report an unhandled rejection on their own - no boundary is
+ * involved, and the form stays on screen.
+ */
+const crashOnSave =
+  import.meta.env.VITE_CRASH_ACCOUNT_SAVE === "true" && import.meta.env.MODE !== "test";
+
 function AccountFields({ account }: { account: Account }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -215,6 +229,9 @@ function AccountFields({ account }: { account: Account }) {
       },
     },
     onSubmit: ({ value }) => {
+      if (crashOnSave) {
+        throw new Error("Deliberate crash on saving the account (VITE_CRASH_ACCOUNT_SAVE)");
+      }
       // The form state holds what the DOM holds, so `value` is the schema's
       // INPUT. Parsing here is what produces the OUTPUT the api layer wants.
       save.mutate(accountSchema.parse(value));
