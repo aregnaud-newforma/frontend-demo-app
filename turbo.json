@@ -24,8 +24,6 @@
     //   npm graph at all.
     // - e2e starts five processes and a Postgres, and drives the built app
     //   across all of them.
-    // - the eval harness cuts git worktrees off `git rev-parse --show-toplevel`
-    //   (evals/config.ts), so it only works from the root.
     "//#lint": {},
     "//#format:check": {},
     // Scoped to server/, or any frontend edit would invalidate them: a root

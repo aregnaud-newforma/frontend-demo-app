@@ -141,7 +141,7 @@ jobs:
           global-json-file: global.json
       # Turborepo's task cache, carried BETWEEN runs - a fresh runner otherwise
       # has nothing and every build is cold. The win is a commit that touches
-      # only server/, docs/ or evals/: the three Vite builds are then restored
+      # only server/ or docs/: the three Vite builds are then restored
       # rather than run, in both this job and e2e.
       #
       # Not a win WITHIN a run, and the key says so by including the job name:
@@ -213,7 +213,7 @@ jobs:
           key: ms-playwright-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
       # Turborepo's task cache, carried BETWEEN runs - a fresh runner otherwise
       # has nothing and every build is cold. The win is a commit that touches
-      # only server/, docs/ or evals/: the three Vite builds are then restored
+      # only server/ or docs/: the three Vite builds are then restored
       # rather than run, in both this job and e2e.
       #
       # Not a win WITHIN a run, and the key says so by including the job name:

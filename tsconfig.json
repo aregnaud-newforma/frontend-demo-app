@@ -62,7 +62,6 @@
     "packages",
     "server",
     "e2e",
-    "evals",
     "lighthouse",
     "synthetics",
     "types",

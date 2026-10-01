@@ -66,5 +66,3 @@ process that does not exist in production.
 - `server/` is a .NET solution, so it leaves `tsconfig.json`, the Vitest
   `unit` project and the JS toolchain. The `@sentry/node`, `drizzle-orm`,
   `drizzle-kit`, `pg` and `@electric-sql/pglite` packages are gone.
-- The evals in `evals/tasks.ts` that ask for a change to `server/api.ts` name
-  a file that no longer exists; they need new subjects before the next run.
