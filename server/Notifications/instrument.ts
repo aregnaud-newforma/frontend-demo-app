@@ -17,6 +17,8 @@
 import * as Sentry from "@sentry/node";
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
 
+const datadogProfiles = process.env.DD_PROFILING_ENABLED === "true";
+
 Sentry.init({
   // ITS OWN SENTRY PROJECT, `alexisregnaud/demo-notifications-backend`, when
   // SENTRY_DSN_NOTIFICATIONS is set - so a stack from this service is its
@@ -41,15 +43,22 @@ Sentry.init({
   // the variable that carries it here, and unset means the same default the
   // other two have.
   environment: process.env.NODE_ENV ?? "development",
-  // WHICH BUILD this is, in the same words as every other part. Unset is fine;
-  // the parts just stop lining up in a release comparison. One
+  // WHICH BUILD this is, in the same words as every other part. One
   // `SENTRY_RELEASE=$(git rev-parse HEAD)` covers the browser's three builds,
-  // the account API and this.
+  // the account API and this, and ./datadog.ts fills it with the commit when
+  // `yarn notifications:start` runs this. Unset is still fine; the parts just
+  // stop lining up in a release comparison.
   release: process.env.SENTRY_RELEASE,
   // The same thing the browser half does (../../src/sentry.ts) and the account
   // API does, on the third side of the request: the trace says the POST took
   // 12ms, the profile says which frames spent them.
-  integrations: [nodeProfilingIntegration()],
+  //
+  // UNLESS DATADOG PROFILES THIS PROCESS, which ./datadog.ts turns on whenever
+  // it starts the tracer and says so in DD_PROFILING_ENABLED before this file
+  // runs. Both profilers sample the same V8 isolate, so running the two would
+  // make each one's overhead look worse than it is alone. One at a time, and
+  // Datadog's when there is an Agent to send to.
+  integrations: datadogProfiles ? [] : [nodeProfilingIntegration()],
   // A sampler rather than a flat `tracesSampleRate`, and the same one
   // ../Accounts/SentrySetup.cs runs, decision for decision.
   //
@@ -98,7 +107,7 @@ Sentry.init({
   // than running the profiler continuously, so the /health polls the sampler
   // drops are not profiled either - the same relationship
   // `ProfilesSampleRate` has to the sampler on the .NET side.
-  profileSessionSampleRate: 1,
+  profileSessionSampleRate: datadogProfiles ? 0 : 1,
   profileLifecycle: "trace",
   // WHAT THIS SERVICE DOES NOT SEND, spelled out rather than left to a default,
   // because the default here is the opposite of the one the .NET half had.

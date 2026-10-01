@@ -20,6 +20,10 @@
     <!-- No culture-aware formatting anywhere in this API, so no ICU to ship. -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <RootNamespace>Accounts</RootNamespace>
+    <!-- The repository's URL in the assembly, beside the commit Source Link
+         already puts in its version: DatadogSetup.cs reads both, so Datadog can
+         show the code of each stack frame. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
   </PropertyGroup>
 
   <!--

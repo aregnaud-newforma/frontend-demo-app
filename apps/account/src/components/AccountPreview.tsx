@@ -1,6 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { useAccount } from "@demo/account-core/use-account";
-import { ErrorBanner, LoadingStatus } from "./PageState";
+import { useSuspenseAccount } from "@demo/account-core/use-account";
 import { colors, radius, space, text } from "@demo/tokens/tokens.stylex";
 
 /**
@@ -17,6 +16,13 @@ import { colors, radius, space, text } from "@demo/tokens/tokens.stylex";
  * The same query key as the summary page, so a visitor who follows the link
  * finds the account already in the cache: the preview paid for the request,
  * the page reads it.
+ *
+ * It SUSPENDS on the account and THROWS when it cannot be loaded, rather than
+ * saying either itself. The page that embeds it already waits on a Suspense and
+ * catches on a boundary for the module to arrive over the wire; this puts the
+ * data behind the same two, so "the preview is on screen" is one moment the
+ * embedding page can see - the one apps/home/src/HomePage.tsx reports to
+ * Datadog - and the wording of both states is that page's.
  */
 const styles = stylex.create({
   preview: {
@@ -36,10 +42,7 @@ const styles = stylex.create({
 });
 
 export function AccountPreview() {
-  const { data: account, isPending, isError } = useAccount();
-
-  if (isPending) return <LoadingStatus>Loading your account...</LoadingStatus>;
-  if (isError) return <ErrorBanner>Could not load your account.</ErrorBanner>;
+  const { data: account } = useSuspenseAccount();
 
   return (
     <p data-testid="account-preview" {...stylex.props(styles.preview)}>

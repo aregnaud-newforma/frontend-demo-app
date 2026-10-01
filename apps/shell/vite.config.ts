@@ -5,6 +5,9 @@ import {
   appPlugins,
   appVersion,
   browserTargets,
+  previewHost,
+  runtimePlugins,
+  shellDatadogService,
   shellSentryProject,
   sourcemap,
   sourcemapUploads,
@@ -47,7 +50,7 @@ const profilingHeaders = { "Document-Policy": "js-profiling" };
 const outDir = "dist";
 
 // Where the build is served, which is what Datadog matches a map's file by -
-// ../../vite.base.ts's `datadogUpload` says why it is the whole origin.
+// ../../vite.base.ts's `datadogPlugin` says why it is the whole origin.
 const previewPort = 4173;
 
 // A function of `command`, because the remotes' URLs are baked into the bundle
@@ -58,11 +61,10 @@ export default defineConfig(({ command }) => ({
   // apps/: `vite build` never noticed, because package.json's `build:*`
   // scripts hand the variables in through `process.env`, but `vite dev` is run
   // with no such flag and read no DSN at all, so Sentry stayed off in silence.
-  // Only the shell: it is the build that initialises Sentry, and no remote
-  // reads `import.meta.env`.
+  // The remotes read the same file, through ../../vite.base.ts.
   envDir: "../..",
-  // The build's version, for src/datadog.ts to report: Datadog looks a map up
-  // by it, so it has to be the one the maps were uploaded under.
+  // The build's version, for src/datadog.ts to report: the version the
+  // remotes' stamps carry, so the shell's events have to carry it too.
   define: { APP_VERSION: JSON.stringify(appVersion) },
   build: { outDir, target: browserTargets, sourcemap },
   // The uploads go last: they read what the others emitted.
@@ -77,8 +79,9 @@ export default defineConfig(({ command }) => ({
       ),
       shared,
       dts,
+      runtimePlugins,
     }),
-    ...sourcemapUploads(outDir, `http://localhost:${previewPort}/`, shellSentryProject),
+    ...sourcemapUploads(outDir, shellSentryProject, shellDatadogService),
   ],
   // The shell's own stylesheet: the layout, and the tokens every build shares.
   // What a page needs arrives with the page, in the remote's stylesheet.
@@ -90,5 +93,11 @@ export default defineConfig(({ command }) => ({
     fromRoot("packages/tokens/tokens.stylex.ts"),
   ]),
   server: { port: 5173, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
-  preview: { port: previewPort, strictPort: true, proxy: apiProxy, headers: profilingHeaders },
+  preview: {
+    host: previewHost,
+    port: previewPort,
+    strictPort: true,
+    proxy: apiProxy,
+    headers: profilingHeaders,
+  },
 }));

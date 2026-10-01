@@ -34,13 +34,12 @@ import * as Sentry from "@sentry/react-native";
  * found. 8.25 stopped trusting that clock (getsentry/sentry-react-native#6654).
  * Errors and sessions were never affected - they are stamped with `Date.now()`.
  *
- * What is NOT here is the `@sentry/react-native` config PLUGIN, and its absence
- * is the same decision the web makes with SENTRY_AUTH_TOKEN: the plugin exists
- * to upload debug symbols - dSYMs and ProGuard maps - and it adds an Xcode
- * build phase that FAILS the build when it has no organisation to upload to,
- * which is every machine that has not been given credentials. Reporting works
- * without it; what you lose until you add it back, with `organization` and
- * `project`, is a symbolicated native stack.
+ * The `@sentry/react-native` config PLUGIN, which uploads the JS source maps
+ * and dSYMs of a Release build, is added by ../app.config.ts only when
+ * SENTRY_AUTH_TOKEN is set - the switch the web's upload hangs off. Always on,
+ * it adds an Xcode build phase that FAILS the build on every machine that has
+ * not been given credentials. Reporting works without it; what you lose is a
+ * readable stack.
  */
 
 /*
@@ -106,9 +105,37 @@ export function initSentry() {
       // request had a span or sent a `sentry-trace` header, and every
       // `GET /api/account` started a trace of its own on the .NET side.
       Sentry.reactNativeTracingIntegration({ traceFetch: true }),
+      // Masks every text, image and vector by default - the line the web's
+      // replay draws, for the same name and phone number on the account screen.
+      Sentry.mobileReplayIntegration(),
     ],
+    // A replay only for a session that errs, as on the web: the SDK keeps the
+    // last minute on the device and sends it with the error, so every issue
+    // has one and a quiet session sends nothing.
+    replaysSessionSampleRate: 0,
+    replaysOnErrorSampleRate: 1,
     // The same line the web draws (`dataCollection.userInfo` there): what the
     // form does is worth reporting, who filled it in is not.
     sendDefaultPii: false,
+    /*
+     * Structured logs - the `Sentry.logger.*` calls. Opt-in here where the web
+     * sends them always: this SDK is still on `@sentry/core` 10, which wants
+     * `enableLogs: true`, and v11 is what removed the flag
+     * (apps/shell/src/sentry.ts). Without it every `Sentry.logger` call is a
+     * silent no-op. Each log is stamped with the span current when it ran, so
+     * it reads inside that trace next to the spans.
+     *
+     * `console.*` stays out. On by default once logs are, it would ship every
+     * React warning and library chatter as a log line with no attributes to
+     * search by - and the error-level ones already reach the issue as
+     * breadcrumbs. A log here is a line somebody chose to write.
+     */
+    enableLogs: true,
+    enableAutoConsoleLogs: false,
+    // Logs have no sample rate, so this is the only volume control: `debug`
+    // and `trace` are for watching a device during development, not for a
+    // release build.
+    beforeSendLog: (log) =>
+      !__DEV__ && (log.level === "debug" || log.level === "trace") ? null : log,
   });
 }

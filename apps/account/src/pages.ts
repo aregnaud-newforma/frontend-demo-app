@@ -7,6 +7,7 @@ import "./styles.css";
 import { withProfiler } from "@sentry/react";
 import { AccountPage as Account } from "./AccountPage";
 import { EditAccountPage as EditAccount } from "./EditAccountPage";
+import { withRenderTracking } from "./helpers/with-render-tracking";
 
 /*
  * Each page goes to the shell through `withProfiler`, which adds a span for
@@ -22,6 +23,12 @@ import { EditAccountPage as EditAccount } from "./EditAccountPage";
  * `name` is written out because production code is minified: the default reads
  * the function's name, which by then is a letter. Without a Sentry client -
  * the tests, a local run with no DSN - the wrapper records nothing.
+ *
+ * Datadog's view of the same renders is ./helpers/with-render-tracking.tsx.
  */
-export const AccountPage = withProfiler(Account, { name: "AccountPage" });
-export const EditAccountPage = withProfiler(EditAccount, { name: "EditAccountPage" });
+export const AccountPage = withProfiler(withRenderTracking(Account, "AccountPage"), {
+  name: "AccountPage",
+});
+export const EditAccountPage = withProfiler(withRenderTracking(EditAccount, "EditAccountPage"), {
+  name: "EditAccountPage",
+});

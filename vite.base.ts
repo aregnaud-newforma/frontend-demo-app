@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { glob, rm } from "node:fs/promises";
-import type { CSSOptions, Plugin, PluginOption, UserConfig } from "vite";
+import { loadEnv, type CSSOptions, type Plugin, type PluginOption, type UserConfig } from "vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import { federation } from "@module-federation/vite";
@@ -9,7 +9,6 @@ import { datadogVitePlugin } from "@datadog/vite-plugin";
 import {
   dts,
   remoteEntry,
-  remoteOrigin,
   remoteRef,
   remotes,
   shared,
@@ -47,6 +46,21 @@ import { fromRoot, stylexBabelPlugin, stylexPostcss } from "./stylex.config.ts";
 // a browser at the floor, and works in `vite dev`, which always runs esnext.
 export const browserTargets = ["chrome111", "edge111", "firefox114", "safari16.4", "ios16.4"];
 
+// The federation runtime's plugins, in every build: each build runs its own
+// runtime instance, and a plugin only the shell registered would miss the
+// remotes the home build fetches itself. Absolute, for the reason `fromRoot`
+// gives. apps/shell/src/remote-load-timing.ts says what the one here does.
+export const runtimePlugins = [fromRoot("apps/shell/src/remote-load-timing.ts")];
+
+// Where every `vite preview` listens: IPv4 loopback, spelled out. Left to
+// "localhost", Node binds ::1 alone on macOS, and a Docker container cannot
+// reach the host's ::1 - the Synthetics private location in ../compose.yaml
+// reaches the preview builds through host.docker.internal, which is IPv4.
+// Still loopback only, so nothing on the network sees the builds; browsers and
+// Node's fetch both fall back from ::1 to 127.0.0.1, so `localhost` URLs keep
+// working. `vite dev` is left alone: no container needs it.
+export const previewHost = "127.0.0.1";
+
 // plugin-react v6 transforms with Oxc, not Babel, so the React Compiler is not
 // an option on `react()` any more: it runs as its own Babel pass alongside it.
 export const appPlugins = (): PluginOption[] => [
@@ -65,8 +79,9 @@ export const stylexCss = (include: string[]): CSSOptions => ({
 
 /**
  * WHICH BUILD this is: the Sentry release and the Datadog `version`, one string
- * for both, because each tool finds a build's source maps by it and a map
- * uploaded under any other string un-minifies nothing. CI names it
+ * for both, so a deploy reads the same in either tool. Sentry files a build's
+ * source maps under it; Datadog matches maps by debug ID (`datadogPlugin`) and
+ * uses it only to say which build an event came from. CI names it
  * (`SENTRY_RELEASE` in .github/workflows/ci.yml); anywhere else it is the
  * commit, which is what the Sentry plugin would derive on its own. The shell's
  * vite.config.ts hands it to the browser as `APP_VERSION`.
@@ -91,7 +106,8 @@ export const appVersion =
 // to be deleted.
 //
 // The credentials are read from `process.env`, and package.json's `build:*`
-// scripts run Vite through `node --env-file-if-exists=.env` for them: Vite reads
+// scripts run Vite through `node --env-file-if-exists=.env` for them - and so
+// does `preview:web`, whose `preview` task builds first: Vite reads
 // .env into `import.meta.env` for the CLIENT bundle and deliberately leaves
 // `process.env` alone, so a token sitting in .env is invisible here without that
 // flag - the build succeeds, uploads nothing, and says nothing about it. CI
@@ -150,12 +166,58 @@ const sentryUpload = ({ project, dsn }: { project: string; dsn?: string }): Plug
     : [];
 
 /**
- * Datadog finds a map by `service`, `version` and the URL of the file it maps,
- * so all three have to be what the browser reports. `service` is the one
- * apps/shell/src/datadog.ts sets - every build reports through that init, so
- * every build's maps are under it. `origin` is where this build is served, and
- * it has to be the whole origin rather than `/`: the two remotes each ship a
- * `remoteEntry.js`, and by path alone their maps would overwrite each other.
+ * Whether the browser will start RUM - the question apps/shell/src/datadog.ts
+ * answers from `import.meta.env`, asked of the same file. Not `process.env`
+ * alone: only `yarn build` loads .env into it, and `yarn dev` and
+ * `yarn preview` would build with RUM on and every stamp missing, each event
+ * filed under the shell's service with nothing to say why. The mode only picks
+ * `.env.<mode>` files, of which there are none.
+ */
+const rumEnabled = Boolean(
+  process.env.VITE_DATADOG_APPLICATION_ID ??
+  loadEnv("production", fromRoot(""), "VITE_DATADOG_").VITE_DATADOG_APPLICATION_ID,
+);
+
+/**
+ * The Datadog `service` a build's events and maps are filed under - one per
+ * build, so a remote's team can filter on its own. The shell's is the one
+ * apps/shell/src/datadog.ts initialises the SDK with, and what an event no
+ * build claims falls back to. A remote's is named like its Sentry project
+ * (`sentryProjectFor`), so one name finds it in either tool. Unlike Sentry
+ * there is nothing to create first: Datadog lists a service when its first
+ * event arrives.
+ */
+export const shellDatadogService = "demo-web-frontend";
+const datadogServiceFor = (name: RemoteName) => `demo-web-${name}-frontend`;
+
+/**
+ * Two jobs, one plugin.
+ *
+ * `sourceCodeContext` is the micro-frontend half, Datadog's counterpart to
+ * Sentry's `moduleMetadata` above: it stamps every chunk of THIS build with
+ * its service and version, and the SDK the shell starts reads the stamps back
+ * to set `service` and `version` on each error, fetch, custom action, long task
+ * and vital whose stack runs through the chunk. On the event itself, not in its
+ * custom context - a service put in the context is an attribute no filter
+ * sees. Views, automatic clicks and non-fetch resources carry no stack, so they
+ * stay the shell's. Stamped whenever RUM runs, key or no key: the stamps need
+ * no upload.
+ *
+ * The upload, when there is a key, matches each map to its chunk by DEBUG ID
+ * rather than by `service`, `version` and URL. The stamp then carries an id
+ * derived from the chunk, the upload tags the chunk's map with the same id, and
+ * the SDK sends the ids of the chunks an error's stack runs through. The older
+ * matching could not work here: the SDK tags every event with the service it
+ * was started with, the shell's, while the stamps move the event's own
+ * `service` to the remote, and Datadog looked the map up by the tag - so a
+ * remote's maps under its own service left its errors minified, and under the
+ * shell's they would have been filed under the wrong service. A debug ID names
+ * one chunk of one build, so it has neither half of that problem, nor the
+ * collision of the two remotes' `remoteEntry.js` at the same path.
+ *
+ * Neither without Datadog configured: the plugin also reports each build to
+ * Datadog's own telemetry, which a build that uses nothing of Datadog has no
+ * reason to send.
  *
  * The site comes from `VITE_DATADOG_SITE`, the variable the browser SDK reads,
  * so the upload and the events cannot be sent to two different sites.
@@ -164,20 +226,38 @@ const sentryUpload = ({ project, dsn }: { project: string; dsn?: string }): Plug
  * carrying a dependency, each node_modules file it cannot link to git - a
  * screenful per build that says nothing. A failed upload is still printed.
  */
-const datadogUpload = (origin: `http://${string}/`): PluginOption[] =>
-  datadogApiKey
-    ? datadogVitePlugin({
-        logLevel: "error",
-        auth: { apiKey: datadogApiKey, site: process.env.VITE_DATADOG_SITE || undefined },
-        errorTracking: {
-          sourcemaps: {
-            service: "demo-web-frontend",
-            releaseVersion: appVersion,
-            minifiedPathPrefix: origin,
-          },
-        },
-      })
+const datadogPlugin = (service: string): PluginOption[] =>
+  datadogApiKey || rumEnabled
+    ? [
+        ...datadogVitePlugin({
+          logLevel: "error",
+          auth: { apiKey: datadogApiKey, site: process.env.VITE_DATADOG_SITE || undefined },
+          rum: { enable: true, sourceCodeContext: { service, version: appVersion } },
+          ...(datadogApiKey && { sourcemaps: { debugId: true, upload: true } }),
+        }),
+        ...(datadogApiKey ? [quoteDatadogDebugIds] : []),
+      ]
     : [];
+
+/**
+ * The upload finds a chunk's debug ID by reading `ddDebugId:"<id>"` from the
+ * file, and Rolldown's minifier prints that string as a template literal, so
+ * without this every build aborts its upload with "No debug ID found in any
+ * minified file". `generateBundle` runs after the minifier and before anything
+ * is written, and a backtick swapped for a double quote moves no column, so the
+ * source maps stay exact.
+ */
+const quoteDatadogDebugIds: Plugin = {
+  name: "quote-datadog-debug-ids",
+  apply: "build",
+  generateBundle(_options, bundle) {
+    for (const chunk of Object.values(bundle)) {
+      if (chunk.type === "chunk") {
+        chunk.code = chunk.code.replace(/ddDebugId:`([0-9a-f-]{36})`/, 'ddDebugId:"$1"');
+      }
+    }
+  },
+};
 
 /**
  * The maps' last step, once every upload has read them. Not Sentry's own
@@ -198,16 +278,16 @@ const deleteSourcemaps = (outDir: string): Plugin => ({
 });
 
 /**
- * Every upload this build makes, and the delete that follows them. `origin`
- * is where the build is served - see `datadogUpload`.
+ * Every upload this build makes, the stamps that tell each tool which build a
+ * frame came from, and the delete that follows them.
  */
 export const sourcemapUploads = (
   outDir: string,
-  origin: `http://${string}/`,
   sentryProject: { project: string; dsn?: string },
+  datadogService: string,
 ): PluginOption[] => [
   ...sentryUpload(sentryProject),
-  ...datadogUpload(origin),
+  ...datadogPlugin(datadogService),
   ...(sourcemap ? [deleteSourcemaps(outDir)] : []),
 ];
 
@@ -259,6 +339,10 @@ export const remoteConfig = (
     // public/ is the shell's: index.html's favicon, the MSW worker the tests
     // register. A remote serves what it exposes and nothing else.
     publicDir: false,
+    // The repository's .env, as the shell reads it (apps/shell/vite.config.ts
+    // says why the default misses it): `VITE_CRASH_ACCOUNT_SAVE` is read by
+    // the account remote, and `yarn dev` hands a remote nothing else.
+    envDir: fromRoot(""),
     // No `cacheDir` override any more. It was here because three builds shared
     // one Vite root and therefore one node_modules/.vite: each wrote
     // pre-bundled dependencies carrying ITS federation ids, and the last to
@@ -279,8 +363,16 @@ export const remoteConfig = (
     },
     plugins: [
       ...appPlugins(),
-      federation({ name, filename: remoteEntry, exposes, remotes: consumed, shared, dts }),
-      ...sourcemapUploads(outDir, remoteOrigin(name, "build"), sentryProjectFor(name)),
+      federation({
+        name,
+        filename: remoteEntry,
+        exposes,
+        remotes: consumed,
+        shared,
+        dts,
+        runtimePlugins,
+      }),
+      ...sourcemapUploads(outDir, sentryProjectFor(name), datadogServiceFor(name)),
     ],
     // Absolute, because this build runs with apps/<name>/ as its cwd and the
     // tokens are outside it - ../stylex.config.ts's `fromRoot` says why a
@@ -290,6 +382,6 @@ export const remoteConfig = (
       fromRoot("packages/tokens/tokens.stylex.ts"),
     ]),
     server: { port: port.dev, strictPort: true, origin: `http://localhost:${port.dev}` },
-    preview: { port: port.preview, strictPort: true },
+    preview: { host: previewHost, port: port.preview, strictPort: true },
   };
 };

@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@datadog/mobile-react-native": "^3.8.0",
+    "@datadog/mobile-react-native-session-replay": "3.8.0",
     "@demo/account-core": "1.0.0",
     "@demo/tokens": "1.0.0",
     "@sentry/react-native": "~8.28.0",

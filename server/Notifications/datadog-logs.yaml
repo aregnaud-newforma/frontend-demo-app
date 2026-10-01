@@ -1,0 +1,8 @@
+# What the Datadog Agent collects of the notifications service's logs: the JSON
+# lines ./datadog.ts sends to this port, which compose.yaml publishes. Each
+# line carries its own `dd.trace_id`, which is how Datadog joins it to the trace.
+logs:
+  - type: udp
+    port: 10518
+    service: notifications
+    source: nodejs

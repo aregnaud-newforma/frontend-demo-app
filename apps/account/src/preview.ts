@@ -5,4 +5,8 @@
 // offers beyond its routes is one short list.
 import "./styles.css";
 
-export { AccountPreview } from "./components/AccountPreview";
+import { AccountPreview as Preview } from "./components/AccountPreview";
+import { withRenderTracking } from "./helpers/with-render-tracking";
+
+// Timed in Datadog as the home page renders it - ./helpers/with-render-tracking.tsx.
+export const AccountPreview = withRenderTracking(Preview, "AccountPreview");

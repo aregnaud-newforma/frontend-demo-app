@@ -4,6 +4,7 @@ import { Pressable, Text } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { AccountPreview } from "../components/AccountPreview";
 import { Screen } from "../components/Screen";
+import { useViewLoaded } from "../datadog";
 
 /**
  * The landing screen - the twin of apps/home/src/HomePage.tsx.
@@ -49,6 +50,10 @@ const styles = StyleSheet.create((theme) => ({
 }));
 
 function HomeScreen() {
+  // Loaded as soon as it is on screen: the welcome is static, and the preview
+  // has a loading state of its own.
+  useViewLoaded(true);
+
   return (
     <Screen>
       {/* No <Stack.Screen> and no header: this tab is a single screen with
@@ -65,8 +70,13 @@ function HomeScreen() {
         tests for the pure helpers underneath.
       </Text>
 
+      {/* The label is what names the tap in Datadog RUM as much as what a
+          screen reader says: without one, the action is called after the
+          native view it landed on - `RCTView` - and every button reads the
+          same. The account screen's link and the form's Save do the same. */}
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel="Go to your account"
         onPress={() => router.navigate("/account")}
         style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
       >

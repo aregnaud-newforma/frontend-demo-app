@@ -1,17 +1,18 @@
 import type { RouteObject } from "react-router";
-import { createBrowserRouter } from "@datadog/browser-rum-react/react-router-v8";
+import { createBrowserRouter } from "react-router";
 import { wrapCreateBrowserRouter } from "@sentry/react";
 import { initDatadog } from "./datadog";
 import { PageLoading } from "./layout/PageLoading";
 import { RootLayout } from "./layout/RootLayout";
 import { RouteErrorBoundary } from "./layout/RouteErrorBoundary";
+import { trackRumViews } from "./rum-views";
 import { initSentry, routerInstrumentation } from "./sentry";
 
 /*
  * Before `wrapCreateBrowserRouter` at the bottom of this file, which is Sentry's
  * own instruction - "call this AFTER Sentry.init()" - and the reason the call
  * lives here rather than in ./main.tsx. ../sentry.ts says the rest. Datadog's
- * router wants the same order, for the reason ./datadog.ts gives.
+ * views want the same order, for the reason ./datadog.ts gives.
  */
 initSentry();
 initDatadog();
@@ -119,11 +120,15 @@ export const createRoutes = (): RouteObject[] => [
  * has loaded, and the hook is what sees the click. ../sentry.ts says the rest.
  * The tests' memory router does without it - Sentry is off there.
  *
- * `createBrowserRouter` is Datadog's, and Sentry wraps it: Datadog's is
- * React Router's own with a subscriber that names each RUM view by the route
- * that matched, so the two wrappers stack without either knowing, and both
- * tools name a navigation `/account/edit` rather than by its URL.
+ * `createBrowserRouter` is React Router's own, not the one
+ * `@datadog/browser-rum-react` wraps: that one starts a RUM view at the same
+ * URL change Sentry's wrapper listens for, and so filed a remote's chunks
+ * under the page being left. `trackRumViews` below starts Datadog's views from
+ * the navigation instead - ./rum-views.ts says the rest - and, like Sentry,
+ * names them by the route that matched: `/account/edit`, not its URL.
  */
 export const router = wrapCreateBrowserRouter(createBrowserRouter)(createRoutes(), {
   instrumentations: [routerInstrumentation],
 });
+
+trackRumViews(router);

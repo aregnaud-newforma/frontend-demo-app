@@ -714,6 +714,11 @@
     "@datadog/browser-rum-core" "7.14.0"
     "@datadog/js-core" "0.0.15"
 
+"@datadog/datadog-ci-plugin-synthetics@^5.24.1":
+  version "5.24.1"
+  resolved "https://registry.yarnpkg.com/@datadog/datadog-ci-plugin-synthetics/-/datadog-ci-plugin-synthetics-5.24.1.tgz#2a06e8a903a9ceccdf5e7545ccb075a5f38b9077"
+  integrity sha512-7qkhTnZ22B570LkEyUhXETW/PYX+PA/COv257v7EpMBbKphD/9KhP1aV7fm9McRAh4zf5Ie6AlyeaQsJc9zTPA==
+
 "@datadog/datadog-ci@^5.24.1":
   version "5.24.1"
   resolved "https://registry.yarnpkg.com/@datadog/datadog-ci/-/datadog-ci-5.24.1.tgz#d8d546ffac215129f10dc5e9fcd69cca15eb393a"
@@ -752,6 +757,13 @@
   integrity sha512-6JQVv7LGBYG6uiY2wtno5paqP/G1UFXK1tA4LZEt2Bc9AzbCMtO2yrs1VfYDzMyVaFSj0+6QLdR8Hu5DQUODmw==
   dependencies:
     "@datadog/libdatadog-wasm" "0.21.0"
+
+"@datadog/mobile-react-native-session-replay@3.8.0":
+  version "3.8.0"
+  resolved "https://registry.yarnpkg.com/@datadog/mobile-react-native-session-replay/-/mobile-react-native-session-replay-3.8.0.tgz#bd64b7a32db05df3f38432fd9f373c3884da1706"
+  integrity sha512-rQMGUlx98btMpw1lDkZ2SLfdzmJ6VAlVaA+bIN+2K1xcuI7u6j5VWVF7aKknQ0bib2K/4WX3Z+ilRvrVyP+KBA==
+  dependencies:
+    chokidar "^4.0.3"
 
 "@datadog/mobile-react-native@^3.8.0":
   version "3.8.0"
@@ -4512,6 +4524,13 @@ chardet@^0.7.0:
   version "0.7.0"
   resolved "https://registry.yarnpkg.com/chardet/-/chardet-0.7.0.tgz#90094849f0937f2eedc2425d0d28a9e5f0cbad9e"
   integrity sha512-mT8iDcrh03qDGRRmoA2hmBJnxpllMR+0/0qlzjqZES6NdiWDcZkCNAk4rPFZ9Q85r27unkiNNg8ZOiwZXBHwcA==
+
+chokidar@^4.0.3:
+  version "4.0.3"
+  resolved "https://registry.yarnpkg.com/chokidar/-/chokidar-4.0.3.tgz#7be37a4c03c9aee1ecfe862a4a23b2c70c205d30"
+  integrity sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==
+  dependencies:
+    readdirp "^4.0.1"
 
 chrome-launcher@^0.13.4:
   version "0.13.4"
@@ -8730,6 +8749,11 @@ readable-stream@~2.3.6:
     safe-buffer "~5.1.1"
     string_decoder "~1.1.1"
     util-deprecate "~1.0.1"
+
+readdirp@^4.0.1:
+  version "4.1.2"
+  resolved "https://registry.yarnpkg.com/readdirp/-/readdirp-4.1.2.tgz#eb85801435fbf2a7ee58f19e0921b068fc69948d"
+  integrity sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==
 
 redent@^3.0.0:
   version "3.0.0"

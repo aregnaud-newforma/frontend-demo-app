@@ -63,6 +63,7 @@
     "server",
     "e2e",
     "lighthouse",
+    "synthetics",
     "types",
     "vitest.setup.ts",
     "*.config.ts"

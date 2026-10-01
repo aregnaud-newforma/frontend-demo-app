@@ -8,6 +8,7 @@ import { useAccount } from "@demo/account-core/use-account";
 import { ErrorBanner, LoadingStatus } from "../../components/PageState";
 import { Screen } from "../../components/Screen";
 import { SummaryRow } from "../../components/SummaryRow";
+import { useViewLoaded } from "../../datadog";
 
 /**
  * The account, read-only - the twin of apps/account/src/AccountPage.tsx, field
@@ -42,6 +43,7 @@ const styles = StyleSheet.create((theme) => ({
 
 function AccountScreen() {
   const { data: account, isError: loadFailed } = useAccount();
+  useViewLoaded(account !== undefined);
 
   return (
     <Screen>
@@ -80,7 +82,12 @@ function AccountSummary({ account }: { account: Account }) {
         <SummaryRow term="Bio">{account.bio || "Not provided"}</SummaryRow>
       </View>
 
-      <Link href="/account/edit" testID="edit-account-link" style={styles.editLink}>
+      <Link
+        href="/account/edit"
+        accessibilityLabel="Edit your account"
+        testID="edit-account-link"
+        style={styles.editLink}
+      >
         Edit your account
       </Link>
     </>

@@ -13,6 +13,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@datadog/browser-rum": "^7.14.0",
     "@datadog/browser-rum-react": "^7.14.0",
     "@demo/tokens": "1.0.0",
     "@sentry/react": "^11.0.0",

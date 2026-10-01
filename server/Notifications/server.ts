@@ -30,6 +30,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import * as Sentry from "@sentry/node";
 import tracer from "dd-trace";
+import { datadogLog } from "./datadog.ts";
 import { messageFor, type AccountChanged } from "./messages.ts";
 import { Outbox } from "./outbox.ts";
 
@@ -127,14 +128,21 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     // Core, and a service that only renders a string has no library to get them
     // from. `startSpan` marks the span errored and rethrows if the callback
     // throws, which is the whole of the error handling the C# version wrote out.
-    Sentry.startSpan({ op: "notification.send", name: "account changed" }, () => {
-      outbox.record(sessionOf(request), messageFor(change));
-      // The SHAPE, never the contents - the address is the one field a
-      // notification is guaranteed to carry and the one Sentry has no business
-      // holding. The same line ../Accounts/Program.cs draws on its own log, and
-      // the same one `sendDefaultPii: false` draws for the SDK.
-      Sentry.logger.info("Notification rendered", { langue: change.langue });
-    });
+    //
+    // Datadog's span is the same one in its own words - the operation is the
+    // op, the resource is the name - and `tracer.trace` marks it errored and
+    // rethrows the same way. A no-op span when ./datadog.ts left the tracer off.
+    Sentry.startSpan({ op: "notification.send", name: "account changed" }, () =>
+      tracer.trace("notification.send", { resource: "account changed" }, () => {
+        outbox.record(sessionOf(request), messageFor(change));
+        // The SHAPE, never the contents - the address is the one field a
+        // notification is guaranteed to carry and the one Sentry has no business
+        // holding. The same line ../Accounts/Program.cs draws on its own log, and
+        // the same one `sendDefaultPii: false` draws for the SDK.
+        Sentry.logger.info("Notification rendered", { langue: change.langue });
+        datadogLog("info", "Notification rendered", { langue: change.langue });
+      }),
+    );
     json(response, 202, null);
     return;
   }
@@ -163,6 +171,16 @@ const server = createServer((request, response) => {
   // `http.client` span red inside a save that succeeded.
   void handle(request, response).catch((error: unknown) => {
     Sentry.captureException(error);
+    // Datadog's version of the same report. The 500 below already marks the
+    // server span errored, but with no type, message or stack - and a span
+    // without them is one Datadog's Error Tracking cannot group into an issue.
+    tracer.scope().active()?.setTag("error", error);
+    datadogLog("error", "Request failed", {
+      error:
+        error instanceof Error
+          ? { kind: error.name, message: error.message, stack: error.stack }
+          : { message: String(error) },
+    });
     console.error(error);
     if (!response.headersSent) {
       json(response, 500, { error: "Internal server error" });

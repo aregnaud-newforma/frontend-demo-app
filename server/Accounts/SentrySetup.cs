@@ -79,9 +79,10 @@ public static class SentrySetup
             // projects cannot be compared over a deploy.
             //
             // The same variable the JS tooling reads, so one
-            // `SENTRY_RELEASE=$(git rev-parse HEAD)` covers every build. Unset
-            // leaves the SDK's own default - a name that is right but spelled
-            // differently.
+            // `SENTRY_RELEASE=$(git rev-parse HEAD)` covers every build, and
+            // Program.cs fills it with the commit when `yarn accounts:start`
+            // runs this. Still unset - a bare `dotnet run` - leaves the SDK's
+            // own default: a name that is right but spelled differently.
             if (Environment.GetEnvironmentVariable("SENTRY_RELEASE") is { Length: > 0 } release)
             {
                 options.Release = release;

@@ -106,8 +106,8 @@ jobs:
       # and its stamped DSN go to a project of its own.
       SENTRY_DSN_ACCOUNT: ${{ secrets.SENTRY_DSN_ACCOUNT }}
       SENTRY_DSN_HOME: ${{ secrets.SENTRY_DSN_HOME }}
-      # The same maps to Datadog, under the same SENTRY_RELEASE below
-      # (vite.base.ts's `appVersion`). The site is a repository variable, not a
+      # The same maps to Datadog, matched to their chunks by debug ID
+      # (vite.base.ts's `datadogPlugin`). The site is a repository variable, not a
       # secret: it names the organisation's region and is in every event anyway.
       DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
       VITE_DATADOG_SITE: ${{ vars.VITE_DATADOG_SITE }}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import * as Sentry from "@sentry/react-native";
 import { DatadogProvider, DdRum } from "@datadog/mobile-react-native";
+import { SessionReplay } from "@datadog/mobile-react-native-session-replay";
 import { useNavigationContainerRef, usePathname, useSegments } from "expo-router";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { datadogConfiguration } from "../datadog";
@@ -86,12 +87,22 @@ function RootLayout() {
  */
 function DatadogRoot() {
   return datadogConfiguration ? (
-    <DatadogProvider configuration={datadogConfiguration}>
+    <DatadogProvider configuration={datadogConfiguration} onInitialization={enableSessionReplay}>
       <RootLayout />
     </DatadogProvider>
   ) : (
     <RootLayout />
   );
+}
+
+/**
+ * Every session recorded, as on the web (apps/shell/src/datadog.ts says why),
+ * once the SDK has started - the package records nothing before then. Its
+ * defaults already mask every text, input and image, the line the web's
+ * `defaultPrivacyLevel: "mask"` draws.
+ */
+function enableSessionReplay() {
+  void SessionReplay.enable({ replaySampleRate: 100 });
 }
 
 // Wrapped only when there is a client to report to - ../sentry.ts says why.
