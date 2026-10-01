@@ -86,6 +86,12 @@ builder.WebHost.UseUrls($"http://localhost:{Environment.GetEnvironmentVariable("
 // from the notifications service when the two share a DSN.
 builder.AddDemoObservability();
 
+// The same request again, for Datadog: the browser's RUM trace continued
+// through this API and on to the notifications service, beside Sentry's rather
+// than instead of it. Off unless DD_AGENT_HOST is set - DatadogSetup.cs says
+// why it goes through OpenTelemetry and which headers it leaves to Sentry.
+builder.AddDatadogTracing();
+
 builder.Services.AddDbContext<AccountsDb>(options => options.UseNpgsql(AccountsDb.ConnectionString()));
 
 // The line that makes the second service visible in a trace, and it is easy to

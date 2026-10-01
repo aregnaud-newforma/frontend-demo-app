@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import * as Sentry from "@sentry/react-native";
-import { useNavigationContainerRef } from "expo-router";
+import { DatadogProvider, DdRum } from "@datadog/mobile-react-native";
+import { useNavigationContainerRef, usePathname, useSegments } from "expo-router";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
+import { datadogConfiguration } from "../datadog";
 import { createQueryClient } from "../query-client";
 import { initSentry, navigationIntegration, sentryEnabled } from "../sentry";
 
@@ -46,6 +48,21 @@ function RootLayout() {
     navigationIntegration.registerNavigationContainer(navigationRef);
   }, [navigationRef]);
 
+  /*
+   * The same for Datadog: one RUM view per screen, named by its ROUTE
+   * (`account/edit`) the way the web names one by the route that matched,
+   * rather than by the URL the SDK would otherwise guess from native view
+   * controllers. This is the pattern Datadog documents for Expo Router, which
+   * has no navigation-container hook of its own. A call before the SDK has
+   * started is held until it has, and a no-op when it never does.
+   */
+  const pathname = usePathname();
+  const route = useSegments().join("/");
+
+  useEffect(() => {
+    DdRum.startView(route || "index", pathname);
+  }, [route, pathname]);
+
   return (
     <QueryClientProvider client={queryClient}>
       <NativeTabs>
@@ -62,5 +79,20 @@ function RootLayout() {
   );
 }
 
+/**
+ * Inside Datadog's provider when there is a configuration to start it with -
+ * ../datadog.ts says when. The provider is what starts the SDK, and what
+ * installs its error, resource and interaction tracking around the tree.
+ */
+function DatadogRoot() {
+  return datadogConfiguration ? (
+    <DatadogProvider configuration={datadogConfiguration}>
+      <RootLayout />
+    </DatadogProvider>
+  ) : (
+    <RootLayout />
+  );
+}
+
 // Wrapped only when there is a client to report to - ../sentry.ts says why.
-export default sentryEnabled ? Sentry.wrap(RootLayout) : RootLayout;
+export default sentryEnabled ? Sentry.wrap(DatadogRoot) : DatadogRoot;

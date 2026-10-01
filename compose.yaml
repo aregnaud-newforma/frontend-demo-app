@@ -50,6 +50,50 @@ services:
       timeout: 5s
       retries: 30
 
+  # The Datadog Agent, which both backend services send their traces to, and
+  # which forwards them to Datadog beside the browser's RUM. `yarn datadog:start`
+  # brings it up; `yarn start` does not, because it cannot start without an API
+  # key and the demo has to run for someone who has none.
+  #
+  # Two doors, one per service, because they reach it by different roads
+  # (docs/adr/0008): 8126 is dd-trace's, from the notifications service, and
+  # 4318 is OTLP over HTTP, from the account API's OpenTelemetry. Neither
+  # service sends anything unless DD_AGENT_HOST is set (.env.example).
+  #
+  # The key and the site are read from the repository's .env, which Compose
+  # loads on its own: the same DATADOG_API_KEY the source-map upload uses, and
+  # the site the browser SDK reports to, so the traces land beside the RUM
+  # sessions they belong to.
+  datadog-agent:
+    image: datadog/agent:7
+    environment:
+      DD_API_KEY: ${DATADOG_API_KEY}
+      DD_SITE: ${VITE_DATADOG_SITE:-datadoghq.com}
+      # Docker Desktop hides the machine's name from the container, and the
+      # Agent refuses to start without one.
+      DD_HOSTNAME: local-dev
+      DD_APM_ENABLED: "true"
+      DD_APM_NON_LOCAL_TRAFFIC: "true"
+      DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT: 0.0.0.0:4318
+      # Playwright's webServer polls /health on both services until they
+      # answer, and every poll would otherwise be a trace. Dropped here, once,
+      # for both - the job Sentry's samplers do in each service.
+      DD_APM_IGNORE_RESOURCES: GET /health
+      # Traces only. The host metrics the Agent would report are this laptop's.
+      DD_ENABLE_PAYLOADS_EVENTS: "false"
+      DD_ENABLE_PAYLOADS_SERIES: "false"
+      DD_ENABLE_PAYLOADS_SERVICE_CHECKS: "false"
+      DD_ENABLE_PAYLOADS_SKETCHES: "false"
+      DD_PROCESS_AGENT_ENABLED: "false"
+    ports:
+      - "8126:8126"
+      - "4318:4318"
+    healthcheck:
+      test: ["CMD", "agent", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
 volumes:
   postgres-data:
   lhci-data:

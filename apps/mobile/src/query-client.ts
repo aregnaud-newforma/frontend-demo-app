@@ -1,5 +1,6 @@
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 import * as Sentry from "@sentry/react-native";
+import { DdRum, ErrorSource } from "@datadog/mobile-react-native";
 
 /**
  * The client every screen's queries run on - the twin of the web's
@@ -24,12 +25,21 @@ import * as Sentry from "@sentry/react-native";
  */
 export function createQueryClient() {
   return new QueryClient({
+    // Datadog is told the same as Sentry, as on the web: a failed query is
+    // handled here and never reaches the global handler either SDK installs.
+    // `ErrorSource.SOURCE` is the JS side, which is where these come from.
     queryCache: new QueryCache({
-      onError: (error, query) =>
-        Sentry.captureException(error, { tags: { queryKey: JSON.stringify(query.queryKey) } }),
+      onError: (error, query) => {
+        const queryKey = JSON.stringify(query.queryKey);
+        Sentry.captureException(error, { tags: { queryKey } });
+        void DdRum.addError(error.message, ErrorSource.SOURCE, error.stack ?? "", { queryKey });
+      },
     }),
     mutationCache: new MutationCache({
-      onError: (error) => Sentry.captureException(error),
+      onError: (error) => {
+        Sentry.captureException(error);
+        void DdRum.addError(error.message, ErrorSource.SOURCE, error.stack ?? "");
+      },
     }),
     defaultOptions: {
       queries: { retry: false },

@@ -65,6 +65,6 @@ module.exports = {
     "\\.mjs$": expoPreset.transform["\\.[jt]sx?$"],
   },
   transformIgnorePatterns: [
-    "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|standard-navigation|use-latest-callback|nanoid|query-string|decode-uri-component|split-on-first|filter-obj|@unimodules/.*|unimodules|sentry-expo|@sentry/.*|native-base|react-native-svg|react-native-unistyles|react-native-nitro-modules|msw|@msw/.*|@mswjs/.*|@bundled-es-modules/.*|@open-draft/.*|until-async|rettime|outvariant|strict-event-emitter|headers-polyfill|is-node-process|tough-cookie|@faker-js/.*|fishery|enforce-unique)",
+    "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|standard-navigation|use-latest-callback|nanoid|query-string|decode-uri-component|split-on-first|filter-obj|@unimodules/.*|unimodules|sentry-expo|@sentry/.*|@datadog/.*|native-base|react-native-svg|react-native-unistyles|react-native-nitro-modules|msw|@msw/.*|@mswjs/.*|@bundled-es-modules/.*|@open-draft/.*|until-async|rettime|outvariant|strict-event-emitter|headers-polyfill|is-node-process|tough-cookie|@faker-js/.*|fishery|enforce-unique)",
   ],
 };

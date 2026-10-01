@@ -29,6 +29,7 @@
 // webServer array in playwright.config.ts), so no one has to remember to.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import * as Sentry from "@sentry/node";
+import tracer from "dd-trace";
 import { messageFor, type AccountChanged } from "./messages.ts";
 import { Outbox } from "./outbox.ts";
 
@@ -87,10 +88,16 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   // Core produced for free: `POST /notifications/account-changed`. The paths are
   // fixed, so this is a description and not a cardinality risk - a service with
   // an id in its path would have to name the PATTERN, never the value.
+  //
+  // Datadog's span is named the same way and for the same reason: dd-trace
+  // calls it by its method too. Its active span here is the server span, and a
+  // no-op when ./datadog.ts left the tracer off.
+  const route = `${request.method ?? "GET"} ${path}`;
   const activeSpan = Sentry.getActiveSpan();
   if (activeSpan !== undefined) {
-    Sentry.updateSpanName(Sentry.getRootSpan(activeSpan), `${request.method ?? "GET"} ${path}`);
+    Sentry.updateSpanName(Sentry.getRootSpan(activeSpan), route);
   }
+  tracer.scope().active()?.setTag("resource.name", route);
 
   // Playwright's webServer polls this to know the process is up, and the
   // sampler in instrument.ts drops its trace by name.
