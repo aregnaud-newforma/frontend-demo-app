@@ -87,6 +87,7 @@ jobs:
           # Through the environment, not the command line: a title or a body
           # is text somebody typed, and a quote in it must not end the command.
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           BASE: ${{ github.base_ref }}
@@ -105,7 +106,7 @@ jobs:
           # Whether the judge runs is `judge` in evals.json, not a flag here: a
           # decision about this repository, reviewed in a pull request rather
           # than set in a settings page.
-          yarn --silent --cwd "$RULES_CHECK" rules-check --base "origin/$BASE" --pr "$PR_NUMBER" \
+          yarn --silent --cwd "$RULES_CHECK" rules-check --base "origin/$BASE" --pr "$PR_NUMBER" --pr-url "$PR_URL" \
             --title "$PR_TITLE" --body-file "$RUNNER_TEMP/body.md" \
             --report-file "$RUNNER_TEMP/report.json" \
             | tee -a "$GITHUB_STEP_SUMMARY"
