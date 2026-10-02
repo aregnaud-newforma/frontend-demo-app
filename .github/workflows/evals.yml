@@ -1,11 +1,12 @@
 # The Rules check: every pull request's diff, graded against the Criteria of
-# the plugins `.claude/settings.json` enables, reported to Langfuse as one
-# trace and to the pull request as one comment.
+# the plugins `evals.json` lists, reported to Langfuse as one trace and to the
+# pull request as one comment.
 #
 # The Criteria and the code that grades them are not in this repository: they
 # live beside the Skills they check, in the plugin repository, and this job
 # clones it. `evals.json` at the root is this repository's side of the
-# arrangement - which paths are source, and whether to ask the judge.
+# arrangement - which paths are source, which plugins' Rules to check, and
+# whether to ask the judge.
 #
 # Informative, not blocking: the check exits zero whatever the verdicts, so a
 # failing Rule never stops a merge. A red job is a check that could not run - a
