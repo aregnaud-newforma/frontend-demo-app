@@ -5,6 +5,7 @@ import { addReactError } from "@datadog/browser-rum-react";
 import { ErrorBoundary } from "@sentry/react";
 import { Link } from "react-router";
 import { colors, radius, space, text } from "@demo/tokens/tokens.stylex";
+import { CitySearch } from "./city-search/CitySearch";
 
 /**
  * The landing route. "/" used to forward straight to the summary; it now holds
@@ -182,6 +183,8 @@ export function HomePage() {
           <OnRevealed onRevealed={operation.succeed} />
         </Suspense>
       </ErrorBoundary>
+
+      <CitySearch />
 
       <p {...stylex.props(styles.lede)}>
         A small account app, kept deliberately small so the tests around it can be the interesting
