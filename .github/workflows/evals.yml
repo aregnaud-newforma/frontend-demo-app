@@ -11,7 +11,7 @@
 # failing Rule never stops a merge. A red job is a check that could not run - a
 # missing secret, a judge that could not be reached - and the reasons are in
 # the job summary.
-name: Rules check
+name: Evals
 
 on:
   pull_request:
@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   rules-check:
-    name: grade the diff
+    name: Rules check
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # `write` for the comment below; nothing else here needs more than reading.
@@ -127,7 +127,7 @@ jobs:
               > "$RUNNER_TEMP/comment.md"
           elif [ "$OUTCOME" != "success" ]; then
             {
-              echo '## Rules check'
+              echo '## Evals'
               echo
               echo "The check could not run on this diff. What stopped it is in the [job]($JOB_URL); it is a broken check, not a verdict on this pull request."
             } > "$RUNNER_TEMP/comment.md"
