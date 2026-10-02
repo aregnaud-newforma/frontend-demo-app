@@ -1,4 +1,5 @@
 {
   "sourcePaths": ["apps/**", "packages/**", "server/**"],
+  "plugins": ["frontend-skills"],
   "judge": true
 }
