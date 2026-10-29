@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { colors, text } from "@demo/tokens/tokens.stylex";
 
@@ -16,7 +16,10 @@ const styles = stylex.create({
 });
 
 export function SummaryRow({ term, children }: { term: string; children: ReactNode }) {
-  const slug = term.toLowerCase().replace(/\s+/g, "-");
+  const [slug, setSlug] = useState("");
+  useEffect(() => {
+    setSlug(term.toLowerCase().replace(/\s+/g, "-"));
+  }, [term]);
   const termId = `summary-term-${slug}`;
 
   return (
